@@ -139,6 +139,14 @@ public final class Constants {
      * checkpoint partway through, not just a single pass/fail gate at the very end. */
     public static final int PIP_MILESTONE_DUE_DAYS = 10;
 
+    /** build-plan.md feature 22: "delivered by presigned URL above 1,000 rows." Both branches of
+     * {@code ExportService} currently deliver via presigned URL (a documented simplification —
+     * see its own Javadoc, no existing precedent in this codebase for returning raw file bytes in
+     * a JSON response), but the row count is still compared against this threshold to set {@code
+     * ExportResponse.deliveredInline} — the observable seam a future "return bytes for small
+     * exports" change would hang off, and what {@code ExportServiceTest} exercises directly. */
+    public static final int EXPORT_SMALL_ROW_THRESHOLD = 1000;
+
     // The clearance-gate task-completion percentage lives in PipClearanceProperties
     // (moriah.pip.clearance.min-task-completion-percent), not here — a `/review` finding: unlike
     // the two constants above, this value is one AGENTS.md explicitly calls a PIP threshold

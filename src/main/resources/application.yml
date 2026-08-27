@@ -85,6 +85,16 @@ springdoc:
     path: /swagger-ui.html
 
 moriah:
+  datasource:
+    # build-plan.md feature 22 / ReplicaDataSourceConfig: exports and heavy metrics/audit reads
+    # target this pool instead of the primary. Same moriah_app credentials as the primary
+    # (architecture.md: "the replica has the same schema/users via real replication" — no new DB
+    # user needed), pointed at the docker-compose mysql-replica service instead of mysql.
+    replica:
+      url: jdbc:mysql://${DB_REPLICA_HOST}:${DB_REPLICA_PORT:3307}/${DB_NAME}?useSSL=true&serverTimezone=UTC
+      username: ${DB_USERNAME}
+      password: ${DB_PASSWORD}
+      max-pool-size: ${DB_REPLICA_POOL_MAX:10}
   security:
     cors:
       allowed-origins: []
@@ -121,6 +131,8 @@ moriah:
     default-ttl-minutes: 10
     # build-plan.md feature 12: "Cache verification results in Redis 5 min keyed owner/repo/pr."
     github-pr-ttl-minutes: 5
+    # build-plan.md feature 22: "Overview cached 5 minutes."
+    admin-metrics-overview-ttl-minutes: 5
   razorpay:
     key-id: ${RAZORPAY_KEY_ID}
     key-secret: ${RAZORPAY_KEY_SECRET}

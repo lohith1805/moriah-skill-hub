@@ -102,6 +102,23 @@ public abstract class IntegrationTestBase {
         return "http://" + MINIO.getHost() + ":" + MINIO.getMappedPort(9000);
     }
 
+    /** feature 22's {@code ReplicaDataSourceConfig} — no separate replica container in this test
+     * suite (architecture.md's local {@code mysql-replica} docker-compose service already proves
+     * real MySQL async replication; re-proving replication itself inside a fast
+     * Testcontainers-per-run suite isn't this feature's job). Pointing the "replica" {@code
+     * JdbcTemplate} at the same primary container/schema/user is a documented test-only
+     * simplification — the replica-routing *code path* (a distinct, qualified {@code JdbcTemplate}
+     * bean, wired into {@code MetricsService}/{@code AuditQueryService}/{@code
+     * ExportGenerationService} instead of the default one) is still exercised for real. Same
+     * {@code moriah_app}/{@code app_dev_only} credentials {@code docker/mysql-init/01-users.sql}
+     * provisions in this same container. */
+    @DynamicPropertySource
+    static void replicaDataSourceProperties(DynamicPropertyRegistry registry) {
+        registry.add("moriah.datasource.replica.url", MYSQL::getJdbcUrl);
+        registry.add("moriah.datasource.replica.username", () -> "moriah_app");
+        registry.add("moriah.datasource.replica.password", () -> "app_dev_only");
+    }
+
     /** MinIO doesn't auto-create a bucket — a throwaway {@link S3Client}, used once here and
      * never again, since {@link com.moriah.skillhub.common.config.S3Config}'s real bean isn't
      * available yet at this point in the container-singleton static initializer. Idempotent —

@@ -44,6 +44,11 @@ import java.util.Objects;
  * {@link #isStaffWithRole} helper parameterized by role list rather than either duplicating the
  * {@code JdbcTemplate} role query a third time verbatim or overloading {@code isHrStaff} with an
  * unrelated role set.
+ * <p>
+ * Feature 22 adds {@code exports/{report}/{uuid}.xlsx} — every caller of {@code POST
+ * /admin/exports/{report}} is already {@code @PreAuthorize("hasRole('ADMIN')")}-gated, so this
+ * namespace is simply ADMIN-only with no owner concept at all, reusing {@link #isStaffWithRole}
+ * with a single-role list rather than adding a fourth bespoke helper.
  */
 @Component
 @RequiredArgsConstructor
@@ -71,6 +76,8 @@ public class OwnershipGuard {
             allowed = segments.length >= 2 && canAccessHrLetter(segments[1], callerUuid);
         } else if (key.startsWith("certificates/")) {
             allowed = segments.length >= 2 && canAccessCertificate(segments[1], callerUuid);
+        } else if (key.startsWith("exports/")) {
+            allowed = isStaffWithRole(callerUuid, "ADMIN");
         } else {
             allowed = false;
         }

@@ -39,6 +39,7 @@
         <zxing.version>3.5.3</zxing.version>
         <awssdk.version>2.29.52</awssdk.version>
         <sendgrid.version>4.10.3</sendgrid.version>
+        <poi.version>5.3.0</poi.version>
         <!--
             This dev/CI host has ~6GB total RAM shared with Docker Desktop's WSL2 VM (MySQL +
             Redis + MinIO Testcontainers) and everything else running on the machine. The forked
@@ -226,6 +227,14 @@
             <groupId>com.google.zxing</groupId>
             <artifactId>javase</artifactId>
             <version>${zxing.version}</version>
+        </dependency>
+
+        <!-- XLSX export (feature 22: admin metrics/user/audit exports). Not managed by the
+             spring-boot-starter-parent BOM (unlike mysql-connector-j) — pinned explicitly. -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>${poi.version}</version>
         </dependency>
 
         <!-- Object storage (S3 / R2 via endpointOverride) and notification dispatch -->

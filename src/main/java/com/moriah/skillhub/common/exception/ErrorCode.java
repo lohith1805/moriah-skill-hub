@@ -19,6 +19,7 @@ public enum ErrorCode {
     UNSUPPORTED_FILE_TYPE(HttpStatus.BAD_REQUEST, "This file type is not supported."),
     FILE_TOO_LARGE(HttpStatus.BAD_REQUEST, "This file exceeds the maximum upload size."),
     INVALID_PR_URL(HttpStatus.BAD_REQUEST, "This does not look like a valid GitHub pull request URL."),
+    EXPORT_REPORT_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "This export report type is not supported."),
 
     // 401 — missing or expired credential
     UNAUTHENTICATED(HttpStatus.UNAUTHORIZED, "Authentication is required to access this resource."),
@@ -123,6 +124,7 @@ public enum ErrorCode {
     // 500
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred."),
     NOTIFICATION_CHANNEL_NOT_SUPPORTED(HttpStatus.INTERNAL_SERVER_ERROR, "This notification channel has no dispatcher configured yet."),
+    EXPORT_GENERATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "This export could not be generated. Please try again."),
 
     // 502 — an upstream service (not the caller, not us) failed
     PAYMENT_GATEWAY_ERROR(HttpStatus.BAD_GATEWAY, "The payment gateway could not be reached. Please try again."),

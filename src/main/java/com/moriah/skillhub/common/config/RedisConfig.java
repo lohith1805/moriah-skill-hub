@@ -44,9 +44,13 @@ public class RedisConfig {
         // RateLimitProperties).
         // githubPr: build-plan.md feature 12 — "Cache verification results in Redis 5 min keyed
         // owner/repo/pr — a batch refreshing must not burn the 5,000/hr limit."
+        // adminMetricsOverview: build-plan.md feature 22 — "Overview cached 5 minutes." A
+        // dedicated per-cache entry rather than falling back to defaultTtlMinutes (10m) — the
+        // build-plan spec names 5 minutes specifically, not "whatever the fallback happens to be".
         Map<String, RedisCacheConfiguration> perCacheConfig = Map.of(
                 "entitlements", defaultConfig.entryTtl(Duration.ofSeconds(cacheProperties.entitlementsTtlSeconds())),
-                "githubPr", defaultConfig.entryTtl(Duration.ofMinutes(cacheProperties.githubPrTtlMinutes())));
+                "githubPr", defaultConfig.entryTtl(Duration.ofMinutes(cacheProperties.githubPrTtlMinutes())),
+                "adminMetricsOverview", defaultConfig.entryTtl(Duration.ofMinutes(cacheProperties.adminMetricsOverviewTtlMinutes())));
 
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(defaultConfig)

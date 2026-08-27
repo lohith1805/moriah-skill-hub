@@ -13,6 +13,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record CacheProperties(
         int entitlementsTtlSeconds,
         int defaultTtlMinutes,
-        int githubPrTtlMinutes
+        int githubPrTtlMinutes,
+        int adminMetricsOverviewTtlMinutes
 ) {
 }
