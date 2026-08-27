@@ -95,6 +95,8 @@ moriah:
   auth-links:
     email-verification-url-template: http://localhost:3000/verify-email?token={token}
     password-reset-url-template: http://localhost:3000/reset-password?token={token}
+  certificates:
+    verify-url-template: http://localhost:3000/verify/{code}
   subscription:
     # Deliberately unreachable in the test window — SubscriptionExpiryJobTest calls runExpiry()
     # directly rather than waiting on a real cron trigger.

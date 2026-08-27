@@ -67,6 +67,7 @@ public enum ErrorCode {
     EMPLOYEE_NOT_FOUND(HttpStatus.NOT_FOUND, "This employee record does not exist."),
     HR_DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "This document does not exist."),
     LEAVE_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "This leave request does not exist."),
+    CERTIFICATE_NOT_FOUND(HttpStatus.NOT_FOUND, "This certificate does not exist."),
 
     // 409 — a business rule was violated
     BUSINESS_RULE_VIOLATION(HttpStatus.CONFLICT, "The request could not be completed."),
@@ -111,6 +112,7 @@ public enum ErrorCode {
     LEAVE_OVERLAPS_APPROVED_LEAVE(HttpStatus.CONFLICT, "This overlaps another already-approved leave for this employee."),
     PAYROLL_ALREADY_GENERATED(HttpStatus.CONFLICT, "Payroll for this employee and month has already been generated."),
     LETTER_NOT_ELIGIBLE(HttpStatus.CONFLICT, "This person is not eligible for this letter (must be graduated or cleanly exited, never terminated)."),
+    CERTIFICATE_ALREADY_REVOKED(HttpStatus.CONFLICT, "This certificate has already been revoked."),
 
     // 429
     RATE_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "Too many requests. Please try again shortly."),

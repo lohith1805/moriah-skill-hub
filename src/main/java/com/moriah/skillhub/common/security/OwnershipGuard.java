@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import java.util.Collections;
 import java.util.Objects;
 
 /**
@@ -24,16 +25,25 @@ import java.util.Objects;
  * instead, same "{@code common/} can't import a future feature's entities, but the table already
  * exists" reasoning {@link EntitlementFlagsLoader} already established for {@code
  * user_subscriptions}/{@code subscription_plans}. Every other namespace still resolves with no DB
- * hit. Namespaces owned by a resource id this class doesn't yet recognize ({@code certificates/},
- * {@code invoices/}, {@code submissions/}) deny by default rather than guessing — "signing a key
- * because the caller asked for it is an IDOR" (architecture.md "Object Storage") applies to
- * unrecognized keys too. Two more feature-19 namespaces — {@code payslips/{employeeCode}/...} and
+ * hit. Namespaces owned by a resource id this class doesn't yet recognize ({@code invoices/},
+ * {@code submissions/}) deny by default rather than guessing — "signing a key because the caller
+ * asked for it is an IDOR" (architecture.md "Object Storage") applies to unrecognized keys too.
+ * ({@code certificates/} was in that same unrecognized set through feature 19 — feature 20 adds
+ * it below, now that the entity backing it exists.) Two more feature-19 namespaces — {@code payslips/{employeeCode}/...} and
  * {@code hr-letters/{userUuid}/...} (the latter not in architecture.md's Object Storage list at
  * all, since no {@code hr_letters} table exists to hang a documented key template off — see
  * {@code HrLetterService}'s Javadoc) — both need "is this an HR_MANAGER/ADMIN, OR the resource's
  * own owner" rather than owner-only, since HR staff routinely act on someone else's payslip or
  * letter; both resolve with a raw {@code JdbcTemplate} read, same reasoning as {@link
  * #canAccessProject}.
+ * <p>
+ * Feature 20 adds {@code certificates/{certificateNumber}.pdf} — the certificate's own {@code
+ * user}, or a {@code TRAINER_PM}/{@code ADMIN} (the issuer's own role set, per {@code
+ * CertificateController}), may sign it. {@code isHrStaff}'s role list doesn't fit here (a
+ * TRAINER_PM issuing/revoking certificates has no reason to be HR staff), so this uses its own
+ * {@link #isStaffWithRole} helper parameterized by role list rather than either duplicating the
+ * {@code JdbcTemplate} role query a third time verbatim or overloading {@code isHrStaff} with an
+ * unrelated role set.
  */
 @Component
 @RequiredArgsConstructor
@@ -59,6 +69,8 @@ public class OwnershipGuard {
             allowed = segments.length >= 2 && canAccessPayslip(segments[1], callerUuid);
         } else if (key.startsWith("hr-letters/")) {
             allowed = segments.length >= 2 && canAccessHrLetter(segments[1], callerUuid);
+        } else if (key.startsWith("certificates/")) {
+            allowed = segments.length >= 2 && canAccessCertificate(segments[1], callerUuid);
         } else {
             allowed = false;
         }
@@ -129,22 +141,57 @@ public class OwnershipGuard {
         return userUuidSegment.equals(callerUuid) || isHrStaff(callerUuid);
     }
 
+    /** {@code certificates/{certificateNumber}.pdf} — the certificate's own {@code user}, or a
+     * {@code TRAINER_PM}/{@code ADMIN} (the same role set {@code CertificateController} restricts
+     * {@code issue}/{@code revoke} to), may sign it. There's only one path segment after the
+     * namespace (unlike {@code payslips/{employeeCode}/{yyyy-MM}.pdf}), so it still carries the
+     * {@code .pdf} extension — stripped before the lookup, since {@code certificate_number} itself
+     * never includes it. */
+    private boolean canAccessCertificate(String certificateNumberSegment, String callerUuid) {
+        String certificateNumber = certificateNumberSegment.endsWith(".pdf")
+                ? certificateNumberSegment.substring(0, certificateNumberSegment.length() - 4)
+                : certificateNumberSegment;
+        Boolean ownsCertificate = jdbcTemplate.query("""
+                SELECT EXISTS (
+                    SELECT 1 FROM certificates c JOIN users owner ON owner.id = c.user_id
+                     WHERE c.certificate_number = ? AND owner.uuid = ?
+                ) AS is_owner
+                """,
+                (rs, rowNum) -> rs.getBoolean("is_owner"),
+                certificateNumber, callerUuid)
+                .stream().findFirst().orElse(false);
+        return Boolean.TRUE.equals(ownsCertificate) || isStaffWithRole(callerUuid, "TRAINER_PM", "ADMIN");
+    }
+
     /** Shared "is this caller HR_MANAGER or ADMIN" check backing both {@link #canAccessPayslip}
-     * and {@link #canAccessHrLetter} — kept in one place so a future role rename/addition only
-     * needs to change here, not in two independently-drifting copies. */
+     * and {@link #canAccessHrLetter} — a thin wrapper over {@link #isStaffWithRole} now that
+     * {@link #canAccessCertificate} needs the same query shape with a different role list; kept as
+     * its own named method rather than inlining the two role codes at each of its two call sites. */
     private boolean isHrStaff(String callerUuid) {
-        Boolean isHr = jdbcTemplate.query("""
+        return isStaffWithRole(callerUuid, "HR_MANAGER", "ADMIN");
+    }
+
+    /** The role-query shape {@link #isHrStaff} and {@link #canAccessCertificate} both need,
+     * factored by role list instead of copied a third time verbatim (a `/review`-style concern
+     * this class's own Javadoc flags for exactly this situation). */
+    private boolean isStaffWithRole(String callerUuid, String... roleCodes) {
+        String placeholders = String.join(",", Collections.nCopies(roleCodes.length, "?"));
+        Object[] args = new Object[roleCodes.length + 1];
+        args[0] = callerUuid;
+        System.arraycopy(roleCodes, 0, args, 1, roleCodes.length);
+
+        Boolean isStaff = jdbcTemplate.query("""
                 SELECT EXISTS (
                     SELECT 1 FROM users caller
                       JOIN user_roles ur ON ur.user_id = caller.id
                       JOIN roles r ON r.id = ur.role_id
-                     WHERE caller.uuid = ? AND r.code IN ('HR_MANAGER', 'ADMIN')
-                ) AS is_hr
-                """,
-                (rs, rowNum) -> rs.getBoolean("is_hr"),
-                callerUuid)
+                     WHERE caller.uuid = ? AND r.code IN (%s)
+                ) AS is_staff
+                """.formatted(placeholders),
+                (rs, rowNum) -> rs.getBoolean("is_staff"),
+                args)
                 .stream().findFirst().orElse(false);
-        return Boolean.TRUE.equals(isHr);
+        return Boolean.TRUE.equals(isStaff);
     }
 
     public void requireKeyAccess(String callerUuid, String key) {

@@ -12,6 +12,7 @@ import com.moriah.skillhub.common.security.SecurityUtils;
 import com.moriah.skillhub.common.storage.StorageService;
 import com.moriah.skillhub.common.util.Constants;
 import com.moriah.skillhub.project.dto.ChallengeResponse;
+import com.moriah.skillhub.project.dto.CompletedProjectProjection;
 import com.moriah.skillhub.project.dto.CreateProjectRequest;
 import com.moriah.skillhub.project.dto.ProjectAssetResponse;
 import com.moriah.skillhub.project.dto.ProjectResponse;
@@ -318,6 +319,19 @@ public class ProjectService {
         if (project.getStatus() != ProjectStatus.PUBLISHED) {
             throw new BusinessException(ErrorCode.PROJECT_NOT_PUBLISHED);
         }
+    }
+
+    /** {@code UserService#getPortfolio}'s {@code completedProjects} field — called with the ids
+     * {@code sprint.TaskService#completedProjectIdsFor} returns, the same cross-package-service,
+     * not-repository, boundary {@link #requirePublished} already established for {@code
+     * TaskService}. An empty input list short-circuits rather than issuing a pointless
+     * {@code WHERE id IN ()} query. */
+    @Transactional(readOnly = true)
+    public List<CompletedProjectProjection> findTitlesAndSlugs(List<Long> projectIds) {
+        if (projectIds.isEmpty()) {
+            return List.of();
+        }
+        return projectRepository.findTitlesAndSlugsByIdIn(projectIds);
     }
 
     private void applyUpdate(Project project, UpdateProjectRequest request) {

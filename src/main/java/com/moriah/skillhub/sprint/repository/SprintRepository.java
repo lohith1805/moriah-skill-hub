@@ -23,6 +23,14 @@ public interface SprintRepository extends JpaRepository<Sprint, Long> {
      * {@code SprintService.transitionStatus} to enforce it. */
     Optional<Sprint> findByBatchIdAndStatus(Long batchId, SprintStatus status);
 
+    /** {@code SprintService#allSprintsClosed}'s backing check (build-plan.md feature 20's
+     * certificate-issuance eligibility gate: "all sprints closed") — "any sprint in this batch
+     * that is NOT COMPLETED", so a batch is eligible only when this returns {@code false}. A batch
+     * with zero sprints returns {@code false} here too (vacuously — nothing exists that isn't
+     * COMPLETED), which is the deliberate, unguarded pass-through {@code allSprintsClosed}'s own
+     * Javadoc documents. */
+    boolean existsByBatchIdAndStatusNot(Long batchId, SprintStatus status);
+
     Page<Sprint> findByBatchIdOrderBySprintNumberAsc(Long batchId, Pageable pageable);
 
     /** "Non-overlapping within a batch" (build-plan.md feature 11). {@code excludeId} is null on

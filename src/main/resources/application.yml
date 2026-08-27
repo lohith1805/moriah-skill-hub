@@ -160,6 +160,12 @@ moriah:
     # URL config exists (`/architect feature 08` decision).
     email-verification-url-template: ${EMAIL_VERIFICATION_URL_TEMPLATE:http://localhost:3000/verify-email?token={token}}
     password-reset-url-template: ${PASSWORD_RESET_URL_TEMPLATE:http://localhost:3000/reset-password?token={token}}
+  certificates:
+    # build-plan.md feature 20: the certificate QR encodes "{APP_BASE_URL}/verify/{verification_code}"
+    # — {code} substituted with verification_code. Same per-purpose full-URL-template convention as
+    # moriah.auth-links immediately above (see CertificateProperties' own Javadoc for why: no shared
+    # frontend-base-URL config exists in this build, a decision already made twice before this one).
+    verify-url-template: ${CERTIFICATE_VERIFY_URL_TEMPLATE:http://localhost:3000/verify/{code}}
   subscription:
     # `/architect feature 07` decision: 03:00 IST, after the 01:30->02:00 PIP pipeline finishes.
     expiry-cron: ${SUBSCRIPTION_EXPIRY_CRON:0 0 3 * * *}

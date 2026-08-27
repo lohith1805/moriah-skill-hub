@@ -46,4 +46,11 @@ public interface PipRecordRepository extends JpaRepository<PipRecord, Long> {
      * {@code POST /tasks/{id}/pull} — the hottest path this feature has, so it needs a genuinely
      * indexed lookup, not a scan (see V11's {@code idx_pip_records_pull_block} comment). */
     boolean existsByUserIdAndStatusInAndBlocksTaskPullTrue(Long userId, List<PipStatus> statuses);
+
+    /** {@code PipService#hasOpenPip}'s check for {@code CertificateService#issue}'s eligibility
+     * gate (build-plan.md feature 20: "no open pip_records row"). Filters on {@code openUserId}
+     * directly rather than {@code userId} + {@code status IN (...)} — same reasoning as {@link
+     * #findOpenUserIds}'s own Javadoc: this is the column {@code uq_one_open_pip} actually indexes,
+     * so a point lookup against it is genuinely indexed instead of an unindexed status scan. */
+    boolean existsByOpenUserId(Long userId);
 }

@@ -5,6 +5,7 @@ import com.moriah.skillhub.batch.dto.ActiveMemberProjection;
 import com.moriah.skillhub.batch.dto.AddStudentRequest;
 import com.moriah.skillhub.batch.dto.BatchResponse;
 import com.moriah.skillhub.batch.dto.CreateBatchRequest;
+import com.moriah.skillhub.batch.dto.GraduationResult;
 import com.moriah.skillhub.batch.dto.UpdateBatchRequest;
 import com.moriah.skillhub.batch.entity.Batch;
 import com.moriah.skillhub.batch.entity.BatchStudent;
@@ -266,6 +267,51 @@ public class BatchService {
     @Transactional(readOnly = true)
     public boolean hasGraduated(Long userId) {
         return batchStudentRepository.existsByUserIdAndStatus(userId, BatchStudentStatus.GRADUATED);
+    }
+
+    /** {@code CertificateService#issue}'s eligibility gate (build-plan.md feature 20: "requires
+     * GRADUATED") — batch-scoped, unlike {@link #hasGraduated}'s any-batch check for {@code
+     * HrLetterService}'s exit-letter eligibility. A certificate is issued for a specific batch, so
+     * "graduated from some batch, possibly a different one" would be the wrong question here. */
+    @Transactional(readOnly = true)
+    public boolean hasGraduatedFromBatch(Long batchId, Long userId) {
+        return batchStudentRepository.findByBatchIdAndUserId(batchId, userId)
+                .filter(bs -> bs.getStatus() == BatchStudentStatus.GRADUATED)
+                .isPresent();
+    }
+
+    /** build-plan.md feature 20: "Graduation sign-off... The PM sets batch_students.status to
+     * GRADUATED with graduated_at and graduated_by. Nothing else in the system sets this status,
+     * and certificate issuance requires it." Deliberately {@code ACTIVE}-only, exactly like {@link
+     * #removeStudent}'s own guard and for the identical reason: an {@code ON_PIP} student has an
+     * open {@code pip_records} row whose lifecycle ({@code PipService#review}) is the only
+     * legitimate way to change their enrollment status. A PM who needs to graduate an ON_PIP
+     * student clears the PIP back to {@code ACTIVE} first via the normal review flow — this
+     * endpoint never bypasses that. Releases the batch seat exactly like {@code updatePipStatus}'s
+     * {@code TERMINATED}/{@code REASSIGNED} branches: a graduated student is no longer occupying
+     * an enrollment slot either. Returns a {@link GraduationResult}, not the {@code BatchStudent}
+     * entity itself — see that record's own Javadoc for why. */
+    @Transactional
+    public GraduationResult graduate(Long callerUserId, Long batchId, String userUuid) {
+        Batch batch = requireBatch(batchId);
+        requireOwnerOrAdmin(callerUserId, batch);
+        User student = requireUserByUuid(userUuid);
+
+        BatchStudent batchStudent = batchStudentRepository.findByBatchIdAndUserId(batch.getId(), student.getId())
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.BATCH_STUDENT_NOT_FOUND));
+        if (batchStudent.getStatus() != BatchStudentStatus.ACTIVE) {
+            throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Only an ACTIVE student can be graduated (current status: %s). Clear an open PIP back to ACTIVE first."
+                            .formatted(batchStudent.getStatus()));
+        }
+
+        Instant graduatedAt = Instant.now();
+        batchStudent.setStatus(BatchStudentStatus.GRADUATED);
+        batchStudent.setGraduatedAt(graduatedAt);
+        batchStudent.setGraduatedBy(userRepository.getReferenceById(callerUserId));
+        batchRepository.releaseSeat(batch.getId());
+
+        return new GraduationResult(student.getId(), student.getFullName(), graduatedAt);
     }
 
     private Batch requireBatch(Long batchId) {

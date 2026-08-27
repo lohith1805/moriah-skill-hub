@@ -26,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -237,6 +238,15 @@ public class TaskService {
         if (outcome == TaskStatus.COMPLETED) {
             completeTask(task);
         }
+    }
+
+    /** {@code UserService#getPortfolio}'s {@code completedProjects} field — a cross-package
+     * service call, never {@code TaskRepository} directly. Returns bare project ids; {@code
+     * UserService} resolves them to titles/slugs via {@code project.ProjectService}, which owns
+     * that mapping (this class has no business reading {@code Project} rows itself). */
+    @Transactional(readOnly = true)
+    public List<Long> completedProjectIdsFor(Long userId) {
+        return taskRepository.findDistinctCompletedProjectIds(userId);
     }
 
     private void requireLegalTransition(TaskStatus from, TaskStatus to) {

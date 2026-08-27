@@ -55,9 +55,32 @@ class OwnershipGuardTest {
 
     @Test
     void canAccessKey_unrecognizedNamespace_deniesByDefault() {
-        // certificates/, invoices/, etc. aren't resource-id-owned yet (those entities don't
-        // exist until later features) — must deny, never guess.
-        assertThat(guard.canAccessKey("uuid-a", "certificates/MSH-CERT-2026-001.pdf")).isFalse();
+        // invoices/, submissions/, etc. still aren't resource-id-owned (those entities don't
+        // exist as a recognized namespace yet) — must deny, never guess.
+        assertThat(guard.canAccessKey("uuid-a", "invoices/MSH-INV-000001.pdf")).isFalse();
+    }
+
+    @Test
+    void canAccessKey_certificateOwnedByCaller_returnsTrue() {
+        stubCertificateOwnership(true);
+
+        assertThat(guard.canAccessKey("uuid-a", "certificates/MSH-CERT-2026-000001.pdf")).isTrue();
+    }
+
+    @Test
+    void canAccessKey_certificateNotOwnedByCallerAndCallerNotStaff_returnsFalse() {
+        stubCertificateOwnership(false);
+        stubStaffRole(false);
+
+        assertThat(guard.canAccessKey("uuid-bystander", "certificates/MSH-CERT-2026-000001.pdf")).isFalse();
+    }
+
+    @Test
+    void canAccessKey_certificateNotOwnedByCallerButCallerIsPmOrAdmin_returnsTrue() {
+        stubCertificateOwnership(false);
+        stubStaffRole(true);
+
+        assertThat(guard.canAccessKey("uuid-pm", "certificates/MSH-CERT-2026-000001.pdf")).isTrue();
     }
 
     @Test
@@ -96,5 +119,22 @@ class OwnershipGuardTest {
     private void stubProjectAccessible(boolean accessible) {
         when(jdbcTemplate.query(anyString(), any(RowMapper.class), anyString(), anyString(), anyLong()))
                 .thenReturn(List.of(accessible));
+    }
+
+    /** {@code canAccessCertificate}'s ownership lookup — 2 {@code String} args
+     * (certificateNumber, callerUuid), distinguishable from {@link #stubStaffRole}'s 3-arg shape
+     * by argument count alone, same technique {@link #stubProjectAccessible} already uses. */
+    @SuppressWarnings("unchecked")
+    private void stubCertificateOwnership(boolean owned) {
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class), anyString(), anyString()))
+                .thenReturn(List.of(owned));
+    }
+
+    /** {@code isStaffWithRole}'s role-membership query for {@code canAccessCertificate}'s
+     * {@code TRAINER_PM}/{@code ADMIN} check — 3 {@code String} args (callerUuid + 2 role codes). */
+    @SuppressWarnings("unchecked")
+    private void stubStaffRole(boolean isStaff) {
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class), anyString(), anyString(), anyString()))
+                .thenReturn(List.of(isStaff));
     }
 }

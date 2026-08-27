@@ -62,6 +62,13 @@ public class SecurityConfig {
      * public") — same "only ever exposes GET here" reasoning as {@code /api/v1/plans}, since
      * {@code UserController} never maps anything else under this prefix. {@code /api/v1/users/**}
      * deliberately stays out of this list, same reasoning as {@code /api/v1/subscriptions/**}.
+     * <p>
+     * Feature 20 addition: {@code /api/v1/certificates/verify/**} (build-plan.md: "GET
+     * /certificates/verify/{code} ← public, unauthenticated" — library-docs.md's own
+     * "OpenPDF + ZXing" section repeats this explicitly). {@code /api/v1/certificates/**} without
+     * the {@code /verify} segment deliberately stays out of this list — {@code issue}/{@code me}/
+     * {@code revoke} all need a real caller identity, same reasoning {@code
+     * /api/v1/subscriptions/**} was already given.
      */
     private static final String[] PUBLIC_PATHS = {
             "/actuator/health",
@@ -71,7 +78,8 @@ public class SecurityConfig {
             "/api/v1/auth/**",
             "/api/v1/plans",
             "/api/v1/webhooks/**",
-            "/api/v1/portfolio/**"
+            "/api/v1/portfolio/**",
+            "/api/v1/certificates/verify/**"
     };
 
     private final CorsProperties corsProperties;

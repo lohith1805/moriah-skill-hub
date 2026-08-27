@@ -9,6 +9,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
+
 public interface TaskRepository extends JpaRepository<Task, Long> {
 
     /**
@@ -48,4 +50,15 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
              ORDER BY t.dueAt ASC
             """)
     Page<Task> findReviewQueue(@Param("status") TaskStatus status, @Param("pmId") Long pmId, Pageable pageable);
+
+    /** {@code TaskService#completedProjectIdsFor}'s backing query — the Open Stub cleared this
+     * feature: {@code UserService#getPortfolio}'s {@code completedProjects}, defined as "at least
+     * one {@code COMPLETED} task assigned to this student under that project" (build-plan.md
+     * feature 20 decision — there is no per-student "project completion" table in this schema).
+     * {@code DISTINCT} because a student can complete more than one task under the same project. */
+    @Query("""
+            SELECT DISTINCT t.projectId FROM Task t
+             WHERE t.assignedTo.id = :userId AND t.status = 'COMPLETED' AND t.projectId IS NOT NULL
+            """)
+    List<Long> findDistinctCompletedProjectIds(@Param("userId") Long userId);
 }

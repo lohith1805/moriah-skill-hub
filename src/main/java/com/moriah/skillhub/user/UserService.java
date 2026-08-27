@@ -1,7 +1,10 @@
 package com.moriah.skillhub.user;
 
+import com.moriah.skillhub.certificate.CertificateService;
 import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
+import com.moriah.skillhub.project.ProjectService;
+import com.moriah.skillhub.sprint.TaskService;
 import com.moriah.skillhub.user.dto.PortfolioResponse;
 import com.moriah.skillhub.user.dto.UserProfileResponse;
 import com.moriah.skillhub.user.entity.RoleCode;
@@ -27,6 +30,9 @@ public class UserService {
     private final UserProfileRepository userProfileRepository;
     private final UserRoleRepository userRoleRepository;
     private final ProfileService profileService;
+    private final TaskService taskService;
+    private final ProjectService projectService;
+    private final CertificateService certificateService;
 
     /** Not read-only — the first call for a user lazily creates their {@code UserProfile} row
      * (see {@link ProfileService#getOrCreateProfile}). */
@@ -47,12 +53,16 @@ public class UserService {
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.PORTFOLIO_NOT_FOUND, slug));
         User user = profile.getUser();
 
+        List<Long> completedProjectIds = taskService.completedProjectIdsFor(user.getId());
+
         return new PortfolioResponse(
                 user.getFullName(),
                 profile.getCurrentTitle(),
                 profile.getBio(),
                 profile.getLocation(),
-                profileService.fromJsonList(profile.getSkills(), String.class));
+                profileService.fromJsonList(profile.getSkills(), String.class),
+                projectService.findTitlesAndSlugs(completedProjectIds),
+                certificateService.issuedCertificatesFor(user.getId()));
     }
 
     /** `/architect feature 10`: {@code BatchAllocationService} needs "every user holding role X"

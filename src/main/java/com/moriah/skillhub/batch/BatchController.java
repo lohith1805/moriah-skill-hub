@@ -4,6 +4,8 @@ import com.moriah.skillhub.batch.dto.AddStudentRequest;
 import com.moriah.skillhub.batch.dto.BatchResponse;
 import com.moriah.skillhub.batch.dto.CreateBatchRequest;
 import com.moriah.skillhub.batch.dto.UpdateBatchRequest;
+import com.moriah.skillhub.certificate.GraduationService;
+import com.moriah.skillhub.certificate.dto.GraduationResponse;
 import com.moriah.skillhub.common.dto.ApiResponse;
 import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.common.security.CurrentUser;
@@ -36,6 +38,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class BatchController {
 
     private final BatchService batchService;
+    private final GraduationService graduationService;
 
     @PostMapping
     @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
@@ -91,5 +94,21 @@ public class BatchController {
 
         batchService.removeStudent(callerUserId, id, userUuid);
         return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
+    /** {@code {userUuid}}, not build-plan.md's literal {@code {userId}} — same precedent as
+     * {@link #removeStudent}'s own Javadoc above. build-plan.md feature 20: "Graduation sign-off
+     * ... Nothing else in the system sets this status, and certificate issuance requires it."
+     * Delegates to {@code certificate.GraduationService}, not {@code BatchService} directly — the
+     * audit-log write and response assembly are that service's job (architecture.md package
+     * diagram: {@code GraduationService} lives in {@code certificate/}), even though the HTTP path
+     * itself is a batch-management concern and so stays on this controller. */
+    @PostMapping("/{id}/students/{userUuid}/graduate")
+    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @Operation(summary = "Graduate an ACTIVE student — required before a certificate can be issued")
+    public ResponseEntity<ApiResponse<GraduationResponse>> graduate(
+            @PathVariable Long id, @PathVariable String userUuid, @CurrentUser Long callerUserId) {
+
+        return ResponseEntity.ok(ApiResponse.success(graduationService.graduate(callerUserId, id, userUuid)));
     }
 }

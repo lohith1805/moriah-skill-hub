@@ -36,6 +36,7 @@
         <razorpay.version>1.4.7</razorpay.version>
         <stripe.version>28.3.0</stripe.version>
         <openpdf.version>2.0.3</openpdf.version>
+        <zxing.version>3.5.3</zxing.version>
         <awssdk.version>2.29.52</awssdk.version>
         <sendgrid.version>4.10.3</sendgrid.version>
         <!--
@@ -213,6 +214,18 @@
             <groupId>com.github.librepdf</groupId>
             <artifactId>openpdf</artifactId>
             <version>${openpdf.version}</version>
+        </dependency>
+
+        <!-- QR codes (feature 20: certificate verification QR) -->
+        <dependency>
+            <groupId>com.google.zxing</groupId>
+            <artifactId>core</artifactId>
+            <version>${zxing.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.zxing</groupId>
+            <artifactId>javase</artifactId>
+            <version>${zxing.version}</version>
         </dependency>
 
         <!-- Object storage (S3 / R2 via endpointOverride) and notification dispatch -->

@@ -67,6 +67,17 @@ public class PipService {
         return pipRecordRepository.existsByUserIdAndStatusInAndBlocksTaskPullTrue(userId, OPEN_STATUSES);
     }
 
+    /** {@code CertificateService#issue}'s eligibility gate (build-plan.md feature 20: "no open
+     * pip_records row") — a cross-package service call, never {@code PipRecordRepository} directly
+     * (architecture.md layer rule), same boundary {@link #blocksPull} already crosses for {@code
+     * sprint/TaskPullGuard}. Unlike {@link #blocksPull}, this doesn't filter on {@code
+     * blocksTaskPull} — <i>any</i> open PIP record blocks certificate issuance, not just the
+     * {@code PROJECT_DELAY} rule that blocks task pulls. */
+    @Transactional(readOnly = true)
+    public boolean hasOpenPip(Long userId) {
+        return pipRecordRepository.existsByOpenUserId(userId);
+    }
+
     @Transactional(readOnly = true)
     public PipRecordResponse me(Long callerUserId) {
         PipRecord record = pipRecordRepository.findByUserIdAndStatusIn(callerUserId, OPEN_STATUSES)

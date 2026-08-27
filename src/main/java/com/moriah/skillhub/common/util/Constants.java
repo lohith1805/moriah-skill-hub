@@ -23,6 +23,16 @@ public final class Constants {
      * (build-plan.md feature 07; code-standards.md's own Constants example lists this prefix). */
     public static final String INVOICE_PREFIX = "MSH-INV";
 
+    /** Certificate numbers are {@code MSH-CERT-<issue year>-<certificate id, zero-padded to 6
+     * digits>} (build-plan.md feature 20) — the same collision-free-by-construction reasoning as
+     * {@link #INVOICE_PREFIX} (a row's own auto-increment {@code id} is already unique and
+     * monotonic), with a year segment added since a certificate, unlike an invoice, is a
+     * human-facing, printed document where "issued in 2027" is meaningful at a glance.
+     * {@code CertificateService#issue} saves the row once (unset {@code certificateNumber},
+     * assigning the id), then sets and saves this value — the id doesn't exist until after the
+     * first insert, so there's no way to compute it beforehand. */
+    public static final String CERTIFICATE_PREFIX = "MSH-CERT";
+
     /** Upload cap for anything going through {@code StorageService} — resumes, project assets,
      * HR documents, submissions (code-standards.md "File uploads", build-plan.md feature 08). */
     public static final long MAX_UPLOAD_BYTES = 10L * 1024 * 1024;
@@ -87,6 +97,17 @@ public final class Constants {
      * or two attempts; this is a generous ceiling against a pathological retry loop, not a value
      * expected to matter in practice. */
     public static final int MAX_SLUG_GENERATION_ATTEMPTS = 5;
+
+    /** How many retries {@code CertificateService#generateUniqueVerificationCode} attempts on a
+     * {@code uq_certificates_verification_code} collision before giving up — same reasoning and
+     * same ceiling as {@link #MAX_SLUG_GENERATION_ATTEMPTS}: a 12-character code drawn from a
+     * ~32-character alphabet via {@code SecureRandom} has an astronomically small collision
+     * chance per attempt, so this is a generous ceiling against a pathological retry loop, not a
+     * value expected to matter in practice. Checked via a repository {@code
+     * existsByVerificationCode} call and retried, not an insert-and-catch race like {@code
+     * ProjectService#saveWithUniqueSlug} — certificate issuance is a low-frequency admin action
+     * with no concurrent-create scenario worth optimizing for (build-plan.md feature 20). */
+    public static final int MAX_CODE_GENERATION_ATTEMPTS = 5;
 
     /** {@code StudentMetricsService#applyAttendance}'s rolling window (architecture.md
      * `student_metrics.attendance_present`/`attendance_total`: "Rolling 14-day window") and the

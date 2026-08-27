@@ -1,5 +1,6 @@
 package com.moriah.skillhub.project.repository;
 
+import com.moriah.skillhub.project.dto.CompletedProjectProjection;
 import com.moriah.skillhub.project.entity.Project;
 import com.moriah.skillhub.project.entity.ProjectDifficulty;
 import com.moriah.skillhub.project.entity.ProjectStatus;
@@ -10,6 +11,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface ProjectRepository extends JpaRepository<Project, Long> {
@@ -38,4 +40,14 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
     /** Slug-collision probe for {@code ProjectService}'s slugify-then-disambiguate logic — a
      * single indexed lookup per candidate slug, not a table scan. */
     boolean existsBySlug(String slug);
+
+    /** {@code ProjectService#findTitlesAndSlugs}'s backing read — the Open Stub cleared this
+     * feature: {@code UserService#getPortfolio}'s {@code completedProjects}. A projection, not
+     * full entities — the portfolio needs title/slug only, never {@code techStack}/{@code status}/
+     * {@code createdBy}. */
+    @Query("""
+            SELECT new com.moriah.skillhub.project.dto.CompletedProjectProjection(p.title, p.slug)
+            FROM Project p WHERE p.id IN :projectIds
+            """)
+    List<CompletedProjectProjection> findTitlesAndSlugsByIdIn(@Param("projectIds") List<Long> projectIds);
 }

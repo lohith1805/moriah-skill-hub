@@ -124,6 +124,16 @@ public class SprintService {
                 .sum();
     }
 
+    /** {@code CertificateService#issue}'s eligibility gate (build-plan.md feature 20: "all
+     * sprints closed") — a cross-package service call, never {@code SprintRepository} directly.
+     * A batch with zero sprints passes vacuously — build-plan.md's own decision-log doesn't spec a
+     * guard against that edge case, and inventing one here would reject a legitimate short-track
+     * batch that never used the sprint feature at all. */
+    @Transactional(readOnly = true)
+    public boolean allSprintsClosed(Long batchId) {
+        return !sprintRepository.existsByBatchIdAndStatusNot(batchId, SprintStatus.COMPLETED);
+    }
+
     /**
      * The single source of truth for every sprint status change, whether it arrives via {@link
      * #update} or {@link #activate}. A same-status request is a no-op (lets {@link #update} edit

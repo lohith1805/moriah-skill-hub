@@ -1,12 +1,16 @@
 package com.moriah.skillhub.batch;
 
+import com.moriah.skillhub.batch.dto.GraduationResult;
 import com.moriah.skillhub.batch.entity.Batch;
 import com.moriah.skillhub.batch.entity.BatchStudent;
 import com.moriah.skillhub.batch.entity.BatchStudentStatus;
 import com.moriah.skillhub.batch.repository.BatchRepository;
 import com.moriah.skillhub.batch.repository.BatchStudentRepository;
 import com.moriah.skillhub.batch.repository.PendingBatchAllocationRepository;
+import com.moriah.skillhub.common.exception.BusinessException;
+import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ForbiddenOperationException;
+import com.moriah.skillhub.common.exception.ResourceNotFoundException;
 import com.moriah.skillhub.common.security.AuthenticatedPrincipal;
 import com.moriah.skillhub.subscription.EntitlementService;
 import com.moriah.skillhub.user.entity.User;
@@ -26,6 +30,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /** {@link BatchService#requireOwnerOrAdmin} was private and covered only by {@code
@@ -113,6 +119,108 @@ class BatchServiceTest {
         when(batchStudentRepository.findByBatchIdAndUserId(100L, 5L)).thenReturn(Optional.empty());
 
         assertThat(batchService.isActiveMember(100L, 5L)).isFalse();
+    }
+
+    @Test
+    void graduate_activeStudent_setsGraduatedAndReleasesSeat() {
+        authenticateAs(10L, List.of("TRAINER_PM"));
+        User student = new User();
+        student.setId(5L);
+        student.setUuid("student-uuid");
+        student.setFullName("Ada Lovelace");
+        BatchStudent batchStudent = new BatchStudent();
+        batchStudent.setStatus(BatchStudentStatus.ACTIVE);
+        when(batchRepository.findById(100L)).thenReturn(Optional.of(batch));
+        when(userRepository.findByUuid("student-uuid")).thenReturn(Optional.of(student));
+        when(batchStudentRepository.findByBatchIdAndUserId(100L, 5L)).thenReturn(Optional.of(batchStudent));
+        when(userRepository.getReferenceById(10L)).thenReturn(pm);
+
+        GraduationResult result = batchService.graduate(10L, 100L, "student-uuid");
+
+        assertThat(result.userId()).isEqualTo(5L);
+        assertThat(result.userFullName()).isEqualTo("Ada Lovelace");
+        assertThat(result.graduatedAt()).isNotNull();
+        assertThat(batchStudent.getStatus()).isEqualTo(BatchStudentStatus.GRADUATED);
+        assertThat(batchStudent.getGraduatedAt()).isEqualTo(result.graduatedAt());
+        assertThat(batchStudent.getGraduatedBy()).isEqualTo(pm);
+        verify(batchRepository, times(1)).releaseSeat(100L);
+    }
+
+    @Test
+    void graduate_studentOnPip_throwsBusinessRuleViolation() {
+        authenticateAs(10L, List.of("TRAINER_PM"));
+        User student = new User();
+        student.setId(5L);
+        student.setUuid("student-uuid");
+        BatchStudent batchStudent = new BatchStudent();
+        batchStudent.setStatus(BatchStudentStatus.ON_PIP);
+        when(batchRepository.findById(100L)).thenReturn(Optional.of(batch));
+        when(userRepository.findByUuid("student-uuid")).thenReturn(Optional.of(student));
+        when(batchStudentRepository.findByBatchIdAndUserId(100L, 5L)).thenReturn(Optional.of(batchStudent));
+
+        assertThatThrownBy(() -> batchService.graduate(10L, 100L, "student-uuid"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.BUSINESS_RULE_VIOLATION);
+        verify(batchRepository, times(0)).releaseSeat(100L);
+    }
+
+    @Test
+    void graduate_alreadyGraduated_throwsBusinessRuleViolation() {
+        authenticateAs(10L, List.of("TRAINER_PM"));
+        User student = new User();
+        student.setId(5L);
+        student.setUuid("student-uuid");
+        BatchStudent batchStudent = new BatchStudent();
+        batchStudent.setStatus(BatchStudentStatus.GRADUATED);
+        when(batchRepository.findById(100L)).thenReturn(Optional.of(batch));
+        when(userRepository.findByUuid("student-uuid")).thenReturn(Optional.of(student));
+        when(batchStudentRepository.findByBatchIdAndUserId(100L, 5L)).thenReturn(Optional.of(batchStudent));
+
+        assertThatThrownBy(() -> batchService.graduate(10L, 100L, "student-uuid"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.BUSINESS_RULE_VIOLATION);
+    }
+
+    @Test
+    void graduate_studentNotEnrolled_throwsNotFound() {
+        authenticateAs(10L, List.of("TRAINER_PM"));
+        User student = new User();
+        student.setId(5L);
+        student.setUuid("student-uuid");
+        when(batchRepository.findById(100L)).thenReturn(Optional.of(batch));
+        when(userRepository.findByUuid("student-uuid")).thenReturn(Optional.of(student));
+        when(batchStudentRepository.findByBatchIdAndUserId(100L, 5L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> batchService.graduate(10L, 100L, "student-uuid"))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.BATCH_STUDENT_NOT_FOUND);
+    }
+
+    @Test
+    void graduate_callerNotOwnerNorAdmin_throwsForbidden() {
+        authenticateAs(77L, List.of("TRAINER_PM"));
+        when(batchRepository.findById(100L)).thenReturn(Optional.of(batch));
+
+        assertThatThrownBy(() -> batchService.graduate(77L, 100L, "student-uuid"))
+                .isInstanceOf(ForbiddenOperationException.class);
+    }
+
+    @Test
+    void hasGraduatedFromBatch_graduatedInThisBatch_returnsTrue() {
+        BatchStudent batchStudent = new BatchStudent();
+        batchStudent.setStatus(BatchStudentStatus.GRADUATED);
+        when(batchStudentRepository.findByBatchIdAndUserId(100L, 5L)).thenReturn(Optional.of(batchStudent));
+
+        assertThat(batchService.hasGraduatedFromBatch(100L, 5L)).isTrue();
+    }
+
+    @Test
+    void hasGraduatedFromBatch_activeInThisBatch_returnsFalse() {
+        BatchStudent batchStudent = new BatchStudent();
+        batchStudent.setStatus(BatchStudentStatus.ACTIVE);
+        when(batchStudentRepository.findByBatchIdAndUserId(100L, 5L)).thenReturn(Optional.of(batchStudent));
+
+        assertThat(batchService.hasGraduatedFromBatch(100L, 5L)).isFalse();
     }
 
     private void authenticateAs(long userId, List<String> roles) {
