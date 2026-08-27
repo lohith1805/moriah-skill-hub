@@ -1,5 +1,6 @@
 package com.moriah.skillhub.sprint.repository;
 
+import com.moriah.skillhub.sprint.dto.SprintProgressProjection;
 import com.moriah.skillhub.sprint.dto.VelocityProjection;
 import com.moriah.skillhub.sprint.entity.Sprint;
 import com.moriah.skillhub.sprint.entity.SprintStatus;
@@ -56,4 +57,18 @@ public interface SprintRepository extends JpaRepository<Sprint, Long> {
             WHERE s.batch.id = :batchId AND s.status = 'COMPLETED'
             """)
     List<VelocityProjection> findVelocity(@Param("batchId") Long batchId);
+
+    /** feature 21 (BA and Client Portal): {@code SprintService#progressForBatch}'s backing
+     * query — every sprint for a batch, not just {@code COMPLETED} ones (unlike {@link
+     * #findVelocity}), since {@code ClientProjectService#progress} needs both the per-sprint
+     * burndown and the batch-wide milestone-completion fraction from one call. Same
+     * derived-record-projection style. */
+    @Query("""
+            SELECT new com.moriah.skillhub.sprint.dto.SprintProgressProjection(
+                s.id, s.sprintNumber, s.status, s.plannedPoints, s.completedPoints)
+            FROM Sprint s
+            WHERE s.batch.id = :batchId
+            ORDER BY s.sprintNumber ASC
+            """)
+    List<SprintProgressProjection> findProgressForBatch(@Param("batchId") Long batchId);
 }

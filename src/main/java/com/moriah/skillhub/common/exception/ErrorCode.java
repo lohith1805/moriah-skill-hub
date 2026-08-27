@@ -68,6 +68,9 @@ public enum ErrorCode {
     HR_DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "This document does not exist."),
     LEAVE_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "This leave request does not exist."),
     CERTIFICATE_NOT_FOUND(HttpStatus.NOT_FOUND, "This certificate does not exist."),
+    CLIENT_NOT_FOUND(HttpStatus.NOT_FOUND, "No client record is linked to your account."),
+    CLIENT_PROJECT_NOT_FOUND(HttpStatus.NOT_FOUND, "This client project does not exist."),
+    REQUIREMENT_DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "This requirement document does not exist."),
 
     // 409 — a business rule was violated
     BUSINESS_RULE_VIOLATION(HttpStatus.CONFLICT, "The request could not be completed."),

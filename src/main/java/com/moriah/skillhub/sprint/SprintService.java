@@ -8,6 +8,7 @@ import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
 import com.moriah.skillhub.sprint.dto.CreateSprintRequest;
+import com.moriah.skillhub.sprint.dto.SprintProgressProjection;
 import com.moriah.skillhub.sprint.dto.SprintResponse;
 import com.moriah.skillhub.sprint.dto.UpdateSprintRequest;
 import com.moriah.skillhub.sprint.dto.VelocityProjection;
@@ -18,6 +19,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 /**
  * code-standards.md's own canonical {@code SprintService} example, verbatim in shape — this is
@@ -132,6 +135,18 @@ public class SprintService {
     @Transactional(readOnly = true)
     public boolean allSprintsClosed(Long batchId) {
         return !sprintRepository.existsByBatchIdAndStatusNot(batchId, SprintStatus.COMPLETED);
+    }
+
+    /** {@code ClientProjectService#progress}'s data source (build-plan.md feature 21: "GET
+     * /clients/projects/{id}/progress returns burndown and milestone completion") — a
+     * cross-module service-interface call, never {@code SprintRepository}/{@code TaskRepository}
+     * directly from {@code client/} (the same boundary {@code CertificateService}'s own three
+     * eligibility checks already establish). Empty for a batch with no sprints yet — {@code
+     * ClientProjectService} treats that the same way it treats a {@code null} target batch (a
+     * zeroed progress shape, not an error). */
+    @Transactional(readOnly = true)
+    public List<SprintProgressProjection> progressForBatch(Long batchId) {
+        return sprintRepository.findProgressForBatch(batchId);
     }
 
     /**

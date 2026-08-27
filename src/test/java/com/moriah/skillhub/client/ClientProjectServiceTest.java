@@ -1,0 +1,194 @@
+package com.moriah.skillhub.client;
+
+import com.moriah.skillhub.batch.entity.Batch;
+import com.moriah.skillhub.client.dto.ClientProjectProgressResponse;
+import com.moriah.skillhub.client.dto.ClientProjectResponse;
+import com.moriah.skillhub.client.dto.CreateClientProjectRequest;
+import com.moriah.skillhub.client.entity.Client;
+import com.moriah.skillhub.client.entity.ClientProject;
+import com.moriah.skillhub.client.repository.ClientProjectRepository;
+import com.moriah.skillhub.client.repository.ClientRepository;
+import com.moriah.skillhub.common.exception.ErrorCode;
+import com.moriah.skillhub.common.exception.ForbiddenOperationException;
+import com.moriah.skillhub.common.exception.ResourceNotFoundException;
+import com.moriah.skillhub.common.security.AuthenticatedPrincipal;
+import com.moriah.skillhub.sprint.SprintService;
+import com.moriah.skillhub.sprint.dto.SprintProgressProjection;
+import com.moriah.skillhub.sprint.entity.SprintStatus;
+import com.moriah.skillhub.user.entity.User;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.TestingAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+
+import java.util.List;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.when;
+
+/** build-plan.md feature 21: "Clients submit scope" and "GET /clients/projects/{id}/progress
+ * returns burndown and milestone completion for that client's project only... A client
+ * requesting another client's project gets 403." {@link ClientProjectService} reads {@code
+ * SecurityUtils.currentUserRoles()} off the real {@code SecurityContextHolder} (no abstraction
+ * to mock) — same pattern {@code BatchServiceTest} already established for {@code
+ * BatchService#requireOwnerOrAdmin}. */
+@ExtendWith(MockitoExtension.class)
+class ClientProjectServiceTest {
+
+    @Mock
+    private ClientProjectRepository clientProjectRepository;
+    @Mock
+    private ClientRepository clientRepository;
+    @Mock
+    private SprintService sprintService;
+
+    @InjectMocks
+    private ClientProjectService clientProjectService;
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
+    private Client client(long id, Long ownerUserId) {
+        Client client = new Client();
+        client.setId(id);
+        client.setCompanyName("Acme Corp " + id);
+        if (ownerUserId != null) {
+            User user = new User();
+            user.setId(ownerUserId);
+            user.setUuid("client-user-" + ownerUserId);
+            client.setUser(user);
+        }
+        return client;
+    }
+
+    private ClientProject project(long id, Client client, Batch targetBatch) {
+        ClientProject project = new ClientProject();
+        project.setId(id);
+        project.setClient(client);
+        project.setTitle("Storefront Revamp");
+        project.setTargetBatch(targetBatch);
+        return project;
+    }
+
+    private void authenticateAs(long userId, List<String> roles) {
+        AuthenticatedPrincipal principal = new AuthenticatedPrincipal(userId, "uuid-" + userId, roles);
+        SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken(principal, null));
+    }
+
+    @Test
+    void create_resolvesCallersOwnClientAndSaves() {
+        Client client = client(1L, 50L);
+        when(clientRepository.findByUserId(50L)).thenReturn(Optional.of(client));
+        when(clientProjectRepository.save(org.mockito.ArgumentMatchers.any(ClientProject.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        CreateClientProjectRequest request = new CreateClientProjectRequest(
+                "New Storefront", "Build a storefront.", "10k-20k");
+
+        ClientProjectResponse response = clientProjectService.create(request, 50L);
+
+        assertThat(response.title()).isEqualTo("New Storefront");
+        assertThat(response.clientId()).isEqualTo(1L);
+    }
+
+    @Test
+    void create_callerHasNoLinkedClientRow_throwsClientNotFound() {
+        when(clientRepository.findByUserId(50L)).thenReturn(Optional.empty());
+
+        CreateClientProjectRequest request = new CreateClientProjectRequest("T", "S", null);
+
+        assertThatThrownBy(() -> clientProjectService.create(request, 50L))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.CLIENT_NOT_FOUND);
+    }
+
+    @Test
+    void progress_notFound_throwsClientProjectNotFound() {
+        when(clientProjectRepository.findWithClientById(404L)).thenReturn(Optional.empty());
+        authenticateAs(50L, List.of("CLIENT"));
+
+        assertThatThrownBy(() -> clientProjectService.progress(404L, 50L))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.CLIENT_PROJECT_NOT_FOUND);
+    }
+
+    @Test
+    void progress_noTargetBatch_returnsZeroedShape() {
+        Client client = client(1L, 50L);
+        ClientProject project = project(10L, client, null);
+        when(clientProjectRepository.findWithClientById(10L)).thenReturn(Optional.of(project));
+        authenticateAs(50L, List.of("CLIENT"));
+
+        ClientProjectProgressResponse response = clientProjectService.progress(10L, 50L);
+
+        assertThat(response.targetBatchId()).isNull();
+        assertThat(response.milestoneCompletionFraction()).isZero();
+        assertThat(response.burndown()).isEmpty();
+    }
+
+    @Test
+    void progress_ownerClient_returnsBurndownAndMilestoneFraction() {
+        Client client = client(1L, 50L);
+        Batch batch = new Batch();
+        batch.setId(200L);
+        ClientProject project = project(10L, client, batch);
+        when(clientProjectRepository.findWithClientById(10L)).thenReturn(Optional.of(project));
+        when(sprintService.progressForBatch(200L)).thenReturn(List.of(
+                new SprintProgressProjection(1L, 1, SprintStatus.COMPLETED, 10, 10),
+                new SprintProgressProjection(2L, 2, SprintStatus.ACTIVE, 8, 3)));
+        authenticateAs(50L, List.of("CLIENT"));
+
+        ClientProjectProgressResponse response = clientProjectService.progress(10L, 50L);
+
+        assertThat(response.targetBatchId()).isEqualTo(200L);
+        assertThat(response.milestoneCompletionFraction()).isEqualTo(0.5);
+        assertThat(response.burndown()).hasSize(2);
+        assertThat(response.burndown().get(0).sprintStatus()).isEqualTo("COMPLETED");
+        assertThat(response.burndown().get(0).completedPoints()).isEqualTo(10);
+        assertThat(response.burndown().get(1).completedPoints()).isEqualTo(3);
+    }
+
+    @Test
+    void progress_nonOwningClient_throwsForbidden() {
+        Client client = client(1L, 50L);
+        ClientProject project = project(10L, client, null);
+        when(clientProjectRepository.findWithClientById(10L)).thenReturn(Optional.of(project));
+        authenticateAs(99L, List.of("CLIENT"));
+
+        assertThatThrownBy(() -> clientProjectService.progress(10L, 99L))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.NOT_RESOURCE_OWNER);
+    }
+
+    @Test
+    void progress_businessAnalyst_bypassesOwnershipCheck() {
+        Client client = client(1L, 50L);
+        ClientProject project = project(10L, client, null);
+        when(clientProjectRepository.findWithClientById(10L)).thenReturn(Optional.of(project));
+        authenticateAs(999L, List.of("BUSINESS_ANALYST"));
+
+        ClientProjectProgressResponse response = clientProjectService.progress(10L, 999L);
+
+        assertThat(response.clientProjectId()).isEqualTo(10L);
+    }
+
+    @Test
+    void progress_admin_bypassesOwnershipCheck() {
+        Client client = client(1L, 50L);
+        ClientProject project = project(10L, client, null);
+        when(clientProjectRepository.findWithClientById(10L)).thenReturn(Optional.of(project));
+        authenticateAs(999L, List.of("ADMIN"));
+
+        ClientProjectProgressResponse response = clientProjectService.progress(10L, 999L);
+
+        assertThat(response.clientProjectId()).isEqualTo(10L);
+    }
+}
