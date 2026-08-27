@@ -1,0 +1,349 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.16</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.moriah</groupId>
+    <artifactId>skillhub</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <name>skillhub</name>
+    <description>Moriah Skill Hub — backend and database</description>
+
+    <properties>
+        <java.version>21</java.version>
+        <testcontainers.version>1.20.4</testcontainers.version>
+        <!--
+            Testcontainers is pinned to the 1.20.x line, not the current 2.0.x release.
+            Testcontainers 2.0 renamed every module artifact (mysql -> testcontainers-mysql)
+            and relocated container classes into module-specific packages. library-docs.md's
+            Testcontainers pattern (org.testcontainers.containers.MySQLContainer, artifact ids
+            "mysql" / "junit-jupiter") is written against the 1.x API. Pinning here keeps every
+            feature's integration test consistent with that documented pattern.
+        -->
+        <rest-assured.version>6.0.1</rest-assured.version>
+        <springdoc.version>2.8.17</springdoc.version>
+        <jjwt.version>0.13.0</jjwt.version>
+        <mapstruct.version>1.6.3</mapstruct.version>
+        <shedlock.version>6.3.0</shedlock.version>
+        <razorpay.version>1.4.7</razorpay.version>
+        <stripe.version>28.3.0</stripe.version>
+        <openpdf.version>2.0.3</openpdf.version>
+        <awssdk.version>2.29.52</awssdk.version>
+        <sendgrid.version>4.10.3</sendgrid.version>
+        <!--
+            This dev/CI host has ~6GB total RAM shared with Docker Desktop's WSL2 VM (MySQL +
+            Redis + MinIO Testcontainers) and everything else running on the machine. The forked
+            test JVM's default (unset) -Xmx sizing left too little native-memory headroom for
+            Spring context startup under that contention — two consecutive `mvn verify` runs
+            (feature 11) crashed identically at the very first @SpringBootTest IT class
+            (unrelated to any feature-11 code — it never got past Spring's own bootstrap) with
+            "Native memory allocation (malloc) failed ... Out of Memory Error (arena.cpp:168)",
+            confirmed via the surefire dump/hs_err files. SerialGC over the default G1 trades
+            throughput for a much smaller fixed memory overhead, appropriate for a small,
+            single-threaded-enough test fork rather than a production server. Not tied to any
+            one feature — future features' IT suites hit the same host constraint identically.
+
+            Adding an explicit argLine here removed whatever the plugin's unset-argLine default
+            was silently providing — every Mockito-using test (every *Test, and any *IT using
+            @MockBean) started failing with "Could not initialize inline Byte Buddy mock maker
+            ... your JDK does not supply a working agent attachment mechanism" the moment the
+            memory flags above were added: JDK 21's dynamic-agent-loading restriction (the same
+            warning already visible on every plain surefire run — "Dynamic loading of agents
+            will be disallowed by default in a future release") biting for real once the default
+            argLine no longer papered over it. -XX:+EnableDynamicAgentLoading opts back in.
+
+            Still crashing after that: the failure is a native `malloc` failing to allocate as
+            little as ~1.3MB — not a Java heap/metaspace ceiling (those throw a catchable
+            OutOfMemoryError with a stack trace; this is a JVM-crashing native allocation
+            failure), meaning the OS had no free pages to give the process at that instant,
+            regardless of -Xmx. The very first crash's current thread was a C2 JIT compiler
+            thread — C2 compilation keeps multiple background threads and sizeable native data
+            structures alive independent of heap/metaspace sizing. -XX:TieredStopAtLevel=1 keeps
+            only the interpreter and C1 (never promotes to C2), and -XX:CICompilerCount=1 caps it
+            to a single compiler thread — both meaningfully cut this test fork's native memory
+            footprint on a host this constrained, at the cost of JIT-optimized throughput this
+            short-lived fork never benefits from anyway.
+        -->
+        <!-- -Djdk.attach.allowAttachSelf=true: the actual fix for Mockito's inline mock maker
+             failing intermittently under mvn verify with "Could not self-attach to current VM
+             using external process" -> MockitoInitializationException. JDK 9+ blocks a JVM from
+             self-attaching the dynamic agent Byte Buddy needs unless this is set; without it,
+             Byte Buddy falls back to spawning a whole separate helper JVM process to do the
+             attach externally, which is what was actually failing (not a memory problem) —
+             EnableDynamicAgentLoading alone silences the *warning* about dynamic agent loading,
+             it doesn't grant the self-attach permission itself.
+
+             ReservedCodeCacheSize raised 32m -> 96m (feature 12): 32m was sized for feature 11's
+             suite and filled up completely under the larger one feature 12 added ("CodeCache is
+             full. Compiler has been disabled" -> the fork's JVM then crashed outright with "Out
+             of space in CodeCache for adapters", corrupting the Surefire/Failsafe fork channel
+             and turning into unrelated-looking 500s across every other IT class sharing that
+             fork, not just this feature's own tests). TieredStopAtLevel=1/CICompilerCount=1 stay
+             — C1-only compilation still needs *some* code cache, just less than C1+C2 would; 32m
+             was simply too little even for that, not evidence the whole approach was wrong. -->
+        <test.jvm.argLine>-Xms128m -Xmx512m -XX:MaxMetaspaceSize=320m -XX:ReservedCodeCacheSize=96m -XX:+UseSerialGC -XX:+EnableDynamicAgentLoading -XX:TieredStopAtLevel=1 -XX:CICompilerCount=1 -Djdk.attach.allowAttachSelf=true</test.jvm.argLine>
+    </properties>
+
+    <dependencies>
+        <!-- Web -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- Persistence -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
+        </dependency>
+
+        <!-- Security -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>${jjwt.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Cache, rate limiting, token revocation, notification queue -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <!-- Validation -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- Actuator -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- API docs -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>${springdoc.version}</version>
+        </dependency>
+
+        <!-- Boilerplate reduction -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- DTO mapping -->
+        <dependency>
+            <groupId>org.mapstruct</groupId>
+            <artifactId>mapstruct</artifactId>
+            <version>${mapstruct.version}</version>
+        </dependency>
+
+        <!-- Scheduler locking (feature 07: SubscriptionExpiryJob) -->
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-spring</artifactId>
+            <version>${shedlock.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-provider-jdbc-template</artifactId>
+            <version>${shedlock.version}</version>
+        </dependency>
+
+        <!-- Payments -->
+        <dependency>
+            <groupId>com.razorpay</groupId>
+            <artifactId>razorpay-java</artifactId>
+            <version>${razorpay.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.stripe</groupId>
+            <artifactId>stripe-java</artifactId>
+            <version>${stripe.version}</version>
+        </dependency>
+
+        <!-- Invoice PDF rendering -->
+        <dependency>
+            <groupId>com.github.librepdf</groupId>
+            <artifactId>openpdf</artifactId>
+            <version>${openpdf.version}</version>
+        </dependency>
+
+        <!-- Object storage (S3 / R2 via endpointOverride) and notification dispatch -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>${awssdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.sendgrid</groupId>
+            <artifactId>sendgrid-java</artifactId>
+            <version>${sendgrid.version}</version>
+        </dependency>
+
+        <!-- Test -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>mysql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.rest-assured</groupId>
+            <artifactId>rest-assured</artifactId>
+            <version>${rest-assured.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <finalName>skillhub</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <!--
+                        library-docs.md "MapStruct": Lombok must come before MapStruct in this
+                        list or Lombok-generated getters/setters aren't visible to the mapper
+                        processor yet when it runs. lombok-mapstruct-binding is the standard
+                        compatibility shim for the two processors running together.
+                    -->
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </path>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok-mapstruct-binding</artifactId>
+                            <version>0.2.0</version>
+                        </path>
+                        <path>
+                            <groupId>org.mapstruct</groupId>
+                            <artifactId>mapstruct-processor</artifactId>
+                            <version>${mapstruct.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <!--
+                Surefire (test phase) runs *Test/*Tests classes — plain unit tests.
+                Failsafe (integration-test + verify phases) runs *IT classes — the
+                @SpringBootTest + Testcontainers integration suite. Per code-standards.md's
+                naming table: {Class}Test for Surefire, {Class}IT for Failsafe.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>${test.jvm.argLine}</argLine>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <argLine>${test.jvm.argLine}</argLine>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -1,0 +1,22 @@
+# Production — every value below either comes from an env var or is a deliberately hardened
+# default. Swagger UI is disabled entirely; the OpenAPI spec (feature 23 hardening aside) stays
+# reachable only where an operator explicitly needs it.
+springdoc:
+  swagger-ui:
+    enabled: false
+  api-docs:
+    enabled: false
+
+moriah:
+  security:
+    cors:
+      allowed-origins: ${CORS_ALLOWED_ORIGINS}
+    # Comma-separated list of the load balancer's / reverse proxy's IP(s) — set once a real
+    # deployment target is chosen (progress-tracker.md). Until then this stays unset and every
+    # request's client IP falls back to getRemoteAddr(), the same as in dev.
+    trusted-proxies: ${TRUSTED_PROXIES:}
+
+logging:
+  level:
+    root: WARN
+    com.moriah.skillhub: INFO

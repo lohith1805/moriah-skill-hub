@@ -1,0 +1,103 @@
+# No datasource/Flyway overrides needed here. @ServiceConnection (see IntegrationTestBase) wires
+# spring.datasource.* and Flyway's connection together, from the container's default user —
+# which is set to moriah_migrate specifically so afterMigrate.sql's GRANT OPTION requirement is
+# met. See IntegrationTestBase's Javadoc for the full reasoning.
+
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          # No real OAuth round trip is exercised in this test suite (`/architect feature 05`
+          # decision — no real provider credentials exist in CI); these only need to be non-blank
+          # so OAuth2ClientPropertiesRegistrationAdapter can build a ClientRegistration bean at
+          # context startup. OAuth2Service is tested directly against a constructed OAuth2User
+          # instead (OAuth2ServiceTest).
+          google:
+            client-id: test-google-client-id
+            client-secret: test-google-client-secret
+          github:
+            client-id: test-github-client-id
+            client-secret: test-github-client-secret
+
+moriah:
+  security:
+    rate-limit:
+      # Generous on purpose: a handful of auth-flow IT classes make several requests each within
+      # the same 60-second window (they run fast). The real, low limits are proven correct in
+      # isolation (RateLimitFilterIT, which constructs its own RateLimitProperties directly)
+      # rather than by relying on this shared value not being tripped by unrelated tests.
+      auth-requests-per-minute: 1000
+      global-requests-per-minute: 1000
+  jwt:
+    secret: test-only-secret-not-used-outside-testcontainers-do-not-reuse-anywhere-else-ok
+    key-id: test
+    access-token-minutes: 60
+    refresh-token-days: 30
+  totp:
+    # Valid, test-only 32-byte AES key (base64) — never reused anywhere else. Must actually
+    # decode correctly since TotpSecretCipher really encrypts/decrypts with it in TwoFactorFlowIT.
+    encryption-key: +4Rt+MeOE3/BlHaFQVB9ZCQK9mjzBr6hdrFvVQFT0ps=
+  github:
+    # Never exercised for real — SubmissionFlowIT replaces GithubPrFetcher with a Mockito mock
+    # (`/architect feature 12` decision, no real GitHub PAT exists in CI, and GitHub itself isn't
+    # a Testcontainers-able dependency the way MySQL/Redis/MinIO are). Non-blank so
+    # GithubClientConfig's RestClient bean still constructs cleanly at context startup.
+    api-token: test-github-api-token
+    api-base-url: http://localhost:1
+  submission:
+    # Deliberately unreachable in the test window — SubmissionVerificationRetryJobTest calls
+    # run() directly rather than waiting on a real 15-minute cron trigger, same reasoning as
+    # subscription.expiry-cron below.
+    verification-retry-cron: 0 0 3 * * *
+  razorpay:
+    # key-id/key-secret are never exercised — CheckoutService's tests mock RazorpayService
+    # entirely (`/architect feature 07` decision, no real sandbox credentials exist). The
+    # webhook secret IS real, in the sense that PaymentWebhookFlowIT computes an actual HMAC
+    # signature with this exact value and the controller verifies it for real — HMAC
+    # verification is symmetric, so this needs to be consistent between test and controller,
+    # not "real" in the sense of being Razorpay-issued.
+    key-id: test-razorpay-key-id
+    key-secret: test-razorpay-key-secret
+    webhook-secret: test-razorpay-webhook-secret-never-reused-anywhere-else
+  stripe:
+    secret-key: test-stripe-secret-key
+    webhook-secret: test-stripe-webhook-secret-never-reused-anywhere-else
+    success-url: http://localhost:3000/checkout/success
+    cancel-url: http://localhost:3000/checkout/cancelled
+  storage:
+    # bucket/endpoint/access-key/secret-key are overridden per-run by IntegrationTestBase's
+    # @DynamicPropertySource, from the real MinIO Testcontainers instance — these are just
+    # non-blank fallbacks so property binding never fails for a context that boots without it.
+    bucket: test-bucket
+    endpoint: http://localhost:9000
+    region: us-east-1
+    access-key: test-access-key
+    secret-key: test-secret-key
+  notification:
+    # Unreachable in the test window — NotificationWorkerIT drives the worker/reaper directly
+    # rather than waiting on a real 60s cron trigger, same reasoning as subscription.expiry-cron
+    # below.
+    reaper-cron: 0 0 3 * * *
+    email:
+      # Never exercised — EmailDispatcherTest mocks the SendGrid client entirely (`/architect
+      # feature 08` decision, no real SendGrid account exists). Non-blank so property binding
+      # doesn't fail at context startup.
+      api-key: test-sendgrid-api-key
+      from-address: no-reply@test.moriahskillhub.example
+      from-name: Moriah Skill Hub Test
+    whatsapp:
+      # Never exercised — WhatsAppDispatcherTest mocks the RestClient entirely.
+      api-base-url: http://localhost:1
+      phone-number-id: test-phone-number-id
+      access-token: test-whatsapp-access-token
+      app-secret: test-whatsapp-app-secret
+  auth-links:
+    email-verification-url-template: http://localhost:3000/verify-email?token={token}
+    password-reset-url-template: http://localhost:3000/reset-password?token={token}
+  subscription:
+    # Deliberately unreachable in the test window — SubscriptionExpiryJobTest calls runExpiry()
+    # directly rather than waiting on a real cron trigger.
+    expiry-cron: 0 0 3 * * *
+  jobs:
+    zone: Asia/Kolkata

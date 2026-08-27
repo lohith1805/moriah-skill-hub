@@ -1,0 +1,104 @@
+name: moriah-skillhub
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: skillhub-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_dev_only}
+      MYSQL_DATABASE: ${DB_NAME:-moriah_skillhub}
+    # log-bin/binlog-format/sync-binlog: the precondition for point-in-time recovery — see
+    # architecture.md "Backup, PITR and Disaster Recovery" and docs/runbook-dr.md.
+    # gtid-mode/enforce-gtid-consistency: makes replica setup (mysql-replica, below) a matter of
+    # pointing at the source, not tracking binlog file+position by hand.
+    command:
+      - --server-id=1
+      - --log-bin=mysql-bin
+      - --binlog-format=ROW
+      - --binlog-expire-logs-seconds=604800
+      - --sync-binlog=1
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - skillhub-mysql-data:/var/lib/mysql
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-root_dev_only}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Local stand-in for the "one async read replica in a second AZ" in architecture.md. Same
+  # image, same binlog config, a different server-id — real MySQL async replication, not a
+  # simulation. Not wired to the application (admin/export reads targeting a replica is a
+  # feature 22 concern) — this exists so the replication *mechanism* is provable locally.
+  # Setup is manual (see docs/runbook-dr.md "Setting up the local replica") since docker-compose
+  # has no native "wait for primary, then CHANGE REPLICATION SOURCE" step.
+  mysql-replica:
+    image: mysql:8.0
+    container_name: skillhub-mysql-replica
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_dev_only}
+    command:
+      - --server-id=2
+      - --log-bin=mysql-bin
+      - --binlog-format=ROW
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
+      - --read-only=ON
+      - --super-read-only=ON
+    ports:
+      - "${DB_REPLICA_PORT:-3307}:3306"
+    volumes:
+      - skillhub-mysql-replica-data:/var/lib/mysql
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-root_dev_only}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: skillhub-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # S3-compatible object storage for local dev, standing in for AWS S3 / Cloudflare R2.
+  # Not consumed by the application until feature 08 (Storage and Notification Infrastructure) —
+  # provisioned now only so the local environment doesn't need revisiting then.
+  minio:
+    image: minio/minio:latest
+    container_name: skillhub-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-skillhub_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_dev_only}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - skillhub-minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  skillhub-mysql-data:
+  skillhub-mysql-replica-data:
+  skillhub-minio-data:

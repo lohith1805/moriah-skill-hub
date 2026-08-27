@@ -1,0 +1,31 @@
+# Build
+target/
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# Env / secrets — never committed
+.env
+*.env.local
+
+# Logs
+*.log
+logs/
+
+# Backup/restore-drill output — scripts/backup/*.sh write here locally when BACKUP_S3_BUCKET
+# isn't set; never committed
+backups/
+backups.zip
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Maven wrapper cache (if added later)
+.mvn/wrapper/maven-wrapper.jar

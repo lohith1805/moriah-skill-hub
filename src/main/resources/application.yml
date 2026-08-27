@@ -1,0 +1,202 @@
+spring:
+  application:
+    name: skillhub
+  profiles:
+    default: dev
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useSSL=true&serverTimezone=UTC
+    username: ${DB_USERNAME}          # moriah_app — no DDL rights
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX:50}
+      minimum-idle: 10
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate.jdbc.batch_size: 50
+      hibernate.order_inserts: true
+
+  flyway:
+    enabled: true
+    user: ${MIGRATE_DB_USERNAME}      # moriah_migrate — DDL, Flyway only
+    password: ${MIGRATE_DB_PASSWORD}
+    baseline-on-migrate: false
+
+  threads:
+    virtual:
+      enabled: true
+
+  # Matches Constants.MAX_UPLOAD_BYTES (10MB) — without this, Spring's own multipart resolver
+  # default (1MB) rejects a resume upload with a bare MaxUploadSizeExceededException before
+  # StorageService.upload's own magic-byte/size check ever runs (build-plan.md feature 09).
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+
+  security:
+    oauth2:
+      client:
+        registration:
+          # "google"/"github" are Spring Boot's recognized CommonOAuth2Provider ids — only
+          # client-id/secret/scope need setting; authorization-uri/token-uri/user-info-uri/
+          # jwk-set-uri all come from the built-in provider defaults. redirect-uri is left at
+          # Spring's own default ({baseUrl}/login/oauth2/code/{registrationId}) internally, but
+          # SecurityConfig's .redirectionEndpoint().baseUri(...) overrides the path the filter
+          # actually matches to build-plan.md feature 05's custom one.
+          google:
+            client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+            scope: openid, profile, email
+          github:
+            client-id: ${GITHUB_CLIENT_ID}
+            client-secret: ${GITHUB_CLIENT_SECRET}
+            # user:email is required to read GithubOAuth2UserService's /user/emails call —
+            # GitHub's default profile response omits email when it's set private.
+            scope: read:user, user:email
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+moriah:
+  security:
+    cors:
+      allowed-origins: []
+    rate-limit:
+      auth-requests-per-minute: 10
+      global-requests-per-minute: 60
+    # IPs allowed to set X-Forwarded-For and be believed (the load balancer / reverse proxy
+    # fronting this service). Empty by default — no deployment target is chosen yet, so every
+    # request's client IP falls back to getRemoteAddr() until a real proxy's IP is set here
+    # per-environment. See ClientIpResolver / TrustedProxyProperties.
+    trusted-proxies: []
+    two-factor:
+      # How long a 2FA login-challenge token (ChallengeTokenService, Redis-backed) stays valid.
+      challenge-ttl-minutes: 5
+    oauth2:
+      # How long HttpCookieOAuth2AuthorizationRequestRepository's cookie survives — the whole
+      # authorize -> provider -> callback round trip should take seconds, not minutes.
+      authorization-cookie-max-age-seconds: 180
+  jwt:
+    secret: ${JWT_SECRET}
+    key-id: ${JWT_KEY_ID:v1}
+    access-token-minutes: 60
+    refresh-token-days: 30
+  totp:
+    # Base64-encoded 256-bit AES key — bare env var for now, same treatment as JWT_SECRET
+    # (`/architect feature 05` decision; see TotpProperties).
+    encryption-key: ${TOTP_ENCRYPTION_KEY}
+  cache:
+    # EntitlementGuard's active-subscription read (build-plan.md feature 04) — an upgrade must
+    # take effect within a minute, not stay stale for the longer default TTL below.
+    entitlements-ttl-seconds: 60
+    # Fallback TTL for any future cache that doesn't declare its own per-cache entry in
+    # RedisConfig. GET /plans (feature 07) uses this default — rarely-changing reference data.
+    default-ttl-minutes: 10
+    # build-plan.md feature 12: "Cache verification results in Redis 5 min keyed owner/repo/pr."
+    github-pr-ttl-minutes: 5
+  razorpay:
+    key-id: ${RAZORPAY_KEY_ID}
+    key-secret: ${RAZORPAY_KEY_SECRET}
+    webhook-secret: ${RAZORPAY_WEBHOOK_SECRET}
+  stripe:
+    secret-key: ${STRIPE_SECRET_KEY}
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET}
+    success-url: ${STRIPE_SUCCESS_URL}
+    cancel-url: ${STRIPE_CANCEL_URL}
+  storage:
+    # library-docs.md "AWS SDK v2 (S3 / R2)" / architecture.md's sample application.yml. endpoint
+    # blank in a real AWS deployment; set to the MinIO/R2 endpoint everywhere else (local dev,
+    # this project's own IntegrationTestBase, and any environment not using AWS directly).
+    bucket: ${S3_BUCKET:moriah-skillhub}
+    endpoint: ${S3_ENDPOINT:}
+    region: ${S3_REGION:us-east-1}
+    access-key: ${S3_ACCESS_KEY}
+    secret-key: ${S3_SECRET_KEY}
+  notification:
+    # `/architect feature 08` decision: every 60s — frequent enough that a dead worker's messages
+    # are redelivered promptly, cheap enough not to matter. The 5-minute staleness threshold
+    # itself is Constants.NOTIFICATION_PROCESSING_STALE_MINUTES, not a config value (library-docs.md
+    # "Reliable Queue" fixes it in the code sample; no per-environment reason to change it).
+    reaper-cron: ${NOTIFICATION_REAPER_CRON:0 * * * * *}
+    email:
+      api-key: ${SENDGRID_API_KEY}
+      from-address: ${SENDGRID_FROM_ADDRESS:no-reply@moriahskillhub.example}
+      from-name: ${SENDGRID_FROM_NAME:Moriah Skill Hub}
+    whatsapp:
+      api-base-url: ${WHATSAPP_API_BASE_URL:https://graph.facebook.com/v18.0}
+      phone-number-id: ${WHATSAPP_PHONE_NUMBER_ID}
+      access-token: ${WHATSAPP_ACCESS_TOKEN}
+      app-secret: ${WHATSAPP_APP_SECRET}
+  auth-links:
+    # {token} is substituted with the raw (unhashed) verification/reset token. Same per-purpose
+    # full-URL treatment as STRIPE_SUCCESS_URL/CANCEL_URL (feature 07) — no shared frontend-base-
+    # URL config exists (`/architect feature 08` decision).
+    email-verification-url-template: ${EMAIL_VERIFICATION_URL_TEMPLATE:http://localhost:3000/verify-email?token={token}}
+    password-reset-url-template: ${PASSWORD_RESET_URL_TEMPLATE:http://localhost:3000/reset-password?token={token}}
+  subscription:
+    # `/architect feature 07` decision: 03:00 IST, after the 01:30->02:00 PIP pipeline finishes.
+    expiry-cron: ${SUBSCRIPTION_EXPIRY_CRON:0 0 3 * * *}
+  github:
+    # A server-side personal access token — separate from GITHUB_CLIENT_ID/SECRET above, which
+    # only ever drives the interactive OAuth2 login flow (`/architect feature 12` decision).
+    api-token: ${GITHUB_API_TOKEN}
+    api-base-url: ${GITHUB_API_BASE_URL:https://api.github.com}
+  submission:
+    # `/architect feature 12` decision: every 15 minutes — frequent enough that a GitHub outage
+    # (typically resolved within minutes to a couple of hours) doesn't leave a submission
+    # unverified for long, cheap enough to run indefinitely with no attempt cap.
+    verification-retry-cron: ${SUBMISSION_VERIFICATION_RETRY_CRON:0 */15 * * * *}
+  attendance:
+    # build-plan.md feature 13 / architecture.md: the nightly chain's first slot — attendance
+    # finalisation (01:30) -> metrics refresh (01:45, feature 16) -> PIP evaluation (02:00,
+    # feature 17). Reordering silently corrupts the attendance denominator (AGENTS.md).
+    finalisation-cron: ${ATTENDANCE_FINALISATION_CRON:0 30 1 * * *}
+  metrics:
+    # build-plan.md feature 16 / architecture.md nightly chain: 01:45 IST, strictly between
+    # attendance finalisation (01:30) and PIP evaluation (02:00, feature 17).
+    refresh-cron: ${METRICS_REFRESH_CRON:0 45 1 * * *}
+  pip:
+    # build-plan.md feature 17 / architecture.md nightly chain: 02:00 IST, strictly after metrics
+    # refresh (01:45) — reading student_metrics before it's refreshed for the night is worse than
+    # not running at all (AGENTS.md).
+    evaluation-cron: ${PIP_EVALUATION_CRON:0 0 2 * * *}
+    clearance:
+      # build-plan.md feature 17: "clearance requires task completion >= 85%." Not a pip_rules row
+      # (no seventh "clearance" rule code exists) — see PipClearanceProperties' own Javadoc.
+      min-task-completion-percent: ${PIP_CLEARANCE_MIN_TASK_COMPLETION_PERCENT:85}
+  assessment:
+    # build-plan.md feature 14: not part of the nightly 01:30->02:00 chain — a quiz attempt's own
+    # duration_minutes is what bounds staleness, not a fixed daily slot, so this runs frequently
+    # (same 15-minute cadence/reasoning as moriah.submission.verification-retry-cron).
+    attempt-expiry-cron: ${QUIZ_ATTEMPT_EXPIRY_CRON:0 */15 * * * *}
+  jobs:
+    # Shared by every scheduled job's cron zone (SubscriptionExpiryJob, AttendanceFinalisationJob
+    # today; MetricsRefreshJob/PipEvaluationJob at features 16/17 read the same property).
+    zone: ${JOBS_ZONE:Asia/Kolkata}
