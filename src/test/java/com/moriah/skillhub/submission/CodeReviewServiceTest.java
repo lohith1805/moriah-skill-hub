@@ -1,6 +1,7 @@
 package com.moriah.skillhub.submission;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.moriah.skillhub.common.audit.AuditLogService;
 import com.moriah.skillhub.sprint.TaskService;
 import com.moriah.skillhub.sprint.entity.TaskStatus;
 import com.moriah.skillhub.submission.dto.CreateReviewRequest;
@@ -42,6 +43,8 @@ class CodeReviewServiceTest {
     private SubmissionService submissionService;
     @Mock
     private TaskService taskService;
+    @Mock
+    private AuditLogService auditLogService;
 
     private CodeReviewService codeReviewService;
 
@@ -54,7 +57,7 @@ class CodeReviewServiceTest {
     @BeforeEach
     void setUp() {
         codeReviewService = new CodeReviewService(
-                codeReviewRepository, userRepository, submissionService, taskService, new ObjectMapper());
+                codeReviewRepository, userRepository, submissionService, taskService, new ObjectMapper(), auditLogService);
 
         reviewer = new User();
         reviewer.setId(2L);

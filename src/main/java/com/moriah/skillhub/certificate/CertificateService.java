@@ -84,11 +84,31 @@ public class CertificateService {
      * <p>
      * Numbering and code generation: the row is saved once with no {@code certificateNumber} set
      * (assigning its {@code IDENTITY} id), then {@code certificateNumber} is computed from that id
-     * and saved again in the same transaction — two writes, deliberately, since the number can't
-     * be known before the id exists (Constants#CERTIFICATE_PREFIX's own Javadoc). Low-frequency
-     * admin action, not a hot path, so the extra round trip is a non-issue.
+     * and saved again — two writes, deliberately, since the number can't be known before the id
+     * exists (Constants#CERTIFICATE_PREFIX's own Javadoc). Low-frequency admin action, not a hot
+     * path, so the extra round trip is a non-issue.
+     * <p>
+     * Feature 23 hardening: deliberately <b>not</b> {@code @Transactional} any more — {@code
+     * qrCodeService.png}/{@code storageService.uploadTrusted} below are outbound calls (S3, and
+     * QR rendering that itself calls out), and AGENTS.md is explicit ("never make an outbound
+     * HTTP call inside a transaction"). This was a genuine, pre-existing violation (a `/review`
+     * finding deferred from feature 20, tracked in progress-tracker.md, resolved here alongside
+     * its three siblings — {@code InvoiceService.renderAndUpload}, {@code
+     * PayrollService.generate}, and {@code HrLetterService.issue}, the last of which turned out to
+     * already be correct — see its own Javadoc). Each repository call below now runs in its own
+     * short transaction via Spring Data's per-call proxy default, same precedent {@code
+     * SubmissionVerificationRetryJob.retry()}'s own Javadoc documents for this exact "reads/writes,
+     * then an external call, then a final write" shape. The one accepted, narrow trade-off: the
+     * two-step numbering ({@code save} with no number, then {@code save} again with the computed
+     * one) is no longer atomic against a mid-request crash — a process death in the few CPU
+     * instructions between those two calls (no I/O in between) would leave a certificate row with
+     * a permanently {@code NULL certificate_number}, recoverable by an ops backfill, never a
+     * security or financial-correctness issue. Judged an acceptable cost for a purely
+     * theoretical, no-I/O crash window, not worth a dedicated companion "Writer" bean (the pattern
+     * {@code QuizAttemptWriter}/{@code TaskSubmissionWriter} established elsewhere in this
+     * codebase for a genuinely concurrent race, which this is not) for this hardening pass's
+     * budget.
      */
-    @Transactional
     public CertificateResponse issue(IssueCertificateRequest request, Long callerUserId, String callerUuid) {
         Batch batch = requireBatch(request.batchId());
         batchService.requireOwnerOrAdmin(callerUserId, batch);

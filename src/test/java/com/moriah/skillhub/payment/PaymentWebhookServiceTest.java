@@ -1,6 +1,7 @@
 package com.moriah.skillhub.payment;
 
 import com.moriah.skillhub.batch.BatchAllocationService;
+import com.moriah.skillhub.common.audit.AuditLogService;
 import com.moriah.skillhub.payment.entity.Payment;
 import com.moriah.skillhub.payment.entity.PaymentStatus;
 import com.moriah.skillhub.payment.repository.InvoiceRepository;
@@ -59,6 +60,8 @@ class PaymentWebhookServiceTest {
     private ApplicationEventPublisher eventPublisher;
     @Mock
     private BatchAllocationService batchAllocationService;
+    @Mock
+    private AuditLogService auditLogService;
 
     @InjectMocks
     private PaymentWebhookService paymentWebhookService;

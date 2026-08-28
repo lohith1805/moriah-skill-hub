@@ -4,6 +4,17 @@
 # met. See IntegrationTestBase's Javadoc for the full reasoning.
 
 spring:
+  jpa:
+    properties:
+      # Feature 23 hardening — AGENTS.md's own "Silent N+1" recovery note: "enable
+      # hibernate.generate_statistics and count the queries before guessing." Test-profile only
+      # (never application.yml/application-prod.yml) — this is a per-query-logging diagnostic
+      # aid, real per-request overhead in production for no runtime benefit. Used directly via
+      # SessionFactory.getStatistics() during this feature's own N+1 audit pass (see
+      # progress-tracker.md's decision log for what was walked and confirmed clean, and the one
+      # real N+1 this caught and fixed — TaskSubmissionRepository.search missing an
+      # @EntityGraph).
+      hibernate.generate_statistics: true
   security:
     oauth2:
       client:
@@ -19,6 +30,17 @@ spring:
           github:
             client-id: test-github-client-id
             client-secret: test-github-client-secret
+
+# Enabling hibernate.generate_statistics above turns on Hibernate's own per-session
+# StatisticalLoggingSessionEventListener, which logs a multi-line metrics block at INFO on every
+# single session close — harmless in isolation, but this suite opens thousands of sessions across
+# a full `mvn verify` run, and the resulting log volume was enough to noticeably slow the run down
+# (confirmed the hard way running this feature's own full suite). Statistics collection itself
+# stays on (IndexHardeningIT/TaskSubmissionListNPlusOneIT both read SessionFactory.getStatistics()
+# directly); only the automatic per-session log line is silenced.
+logging:
+  level:
+    org.hibernate.engine.internal.StatisticalLoggingSessionEventListener: WARN
 
 moriah:
   security:

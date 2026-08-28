@@ -3,6 +3,7 @@ package com.moriah.skillhub.payment;
 import com.lowagie.text.Document;
 import com.lowagie.text.Paragraph;
 import com.lowagie.text.pdf.PdfWriter;
+import com.moriah.skillhub.common.audit.AuditLogService;
 import com.moriah.skillhub.common.storage.StorageService;
 import com.moriah.skillhub.payment.entity.Invoice;
 import com.moriah.skillhub.payment.entity.InvoiceStatus;
@@ -14,7 +15,6 @@ import com.moriah.skillhub.subscription.repository.SubscriptionPlanRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayOutputStream;
 import java.time.Instant;
@@ -38,8 +38,18 @@ public class InvoiceService {
     private final PaymentRepository paymentRepository;
     private final SubscriptionPlanRepository subscriptionPlanRepository;
     private final StorageService storageService;
+    private final AuditLogService auditLogService;
 
-    @Transactional
+    /** Feature 23 hardening: deliberately <b>not</b> {@code @Transactional} any more — {@code
+     * storageService.uploadTrusted} is an outbound S3 call, and AGENTS.md is explicit ("never make
+     * an outbound HTTP call inside a transaction"). Every repository call below still runs inside
+     * its own short transaction via Spring Data's per-call proxy default (same precedent {@code
+     * SubmissionVerificationRetryJob.retry()}'s own Javadoc already documents for this exact
+     * "reads, then an external call, then a final write" shape) — nothing needs a single shared
+     * transaction spanning the whole method: the reads are independent lookups, and {@code
+     * invoiceRepository.save(invoice)} at the end persists a plain, by-then-detached Java object
+     * (its mutated fields, not a still-open persistence-context flush) exactly like every other
+     * caller of a Spring Data {@code save()} on a previously-loaded entity. */
     public void renderAndUpload(Long paymentId) {
         Invoice invoice = invoiceRepository.findByPaymentId(paymentId).orElse(null);
         if (invoice == null) {
@@ -64,6 +74,13 @@ public class InvoiceService {
         invoice.setStatus(InvoiceStatus.ISSUED);
         invoice.setIssuedAt(Instant.now());
         invoiceRepository.save(invoice);
+
+        // Feature 23 hardening: AGENTS.md "AuditLogService wired into every financial ...
+        // mutation" — invoice issuance moves this from PENDING to ISSUED and was previously
+        // unaudited. No human caller (InvoiceGenerationJob, an @Async AFTER_COMMIT listener), same
+        // null-actor precedent PipEvaluationService.fire()/PaymentWebhookService's own capture/
+        // refund audit calls already establish for a system-triggered write.
+        auditLogService.record(null, "INVOICE_ISSUED", "Invoice", invoice.getId(), InvoiceStatus.PENDING, InvoiceStatus.ISSUED);
 
         log.info("[invoice] rendered and uploaded {} to {}", invoice.getInvoiceNumber(), key);
     }

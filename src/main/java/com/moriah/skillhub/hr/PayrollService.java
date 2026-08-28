@@ -61,7 +61,21 @@ public class PayrollService {
     private final StorageService storageService;
     private final AuditLogService auditLogService;
 
-    @Transactional
+    /** Feature 23 hardening: deliberately <b>not</b> {@code @Transactional} any more — {@link
+     * #generateOne} calls {@code storageService.uploadTrusted} (an outbound S3 call) once per
+     * line, and this method previously wrapped the <i>entire batch's</i> loop, including every
+     * one of those calls, in one open transaction (AGENTS.md: "never make an outbound HTTP call
+     * inside a transaction" — a batch of N employees held one DB transaction/connection open
+     * across N sequential HTTP round-trips). {@code generateOne} is a private method called via
+     * plain {@code this.generateOne(...)} self-invocation, so it was never separately proxied
+     * anyway — each of its repository calls (the lookups in {@link #generate} itself, and {@code
+     * payrollRecordRepository.save(record)} inside {@code generateOne}) already runs in its own
+     * short transaction via Spring Data's per-call proxy default, same precedent {@code
+     * SubmissionVerificationRetryJob.retry()}'s own Javadoc documents. One employee's payslip
+     * failing no longer rolls back an already-persisted-and-uploaded sibling line's record either
+     * — an improvement, not a regression: a partial batch failure previously took down every
+     * already-processed line with it.
+     */
     public List<PayrollRecordResponse> generate(GeneratePayrollRequest request, String callerUuid, Long callerUserId) {
         List<Long> employeeIds = request.lines().stream().map(PayrollLineRequest::employeeId).toList();
         Map<Long, Employee> employeesById = employeeRepository.findAllWithUserByIdIn(employeeIds).stream()

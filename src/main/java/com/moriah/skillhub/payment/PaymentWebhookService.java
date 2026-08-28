@@ -2,6 +2,7 @@ package com.moriah.skillhub.payment;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.moriah.skillhub.batch.BatchAllocationService;
+import com.moriah.skillhub.common.audit.AuditLogService;
 import com.moriah.skillhub.common.util.Constants;
 import com.moriah.skillhub.payment.entity.Invoice;
 import com.moriah.skillhub.payment.entity.InvoiceStatus;
@@ -50,6 +51,7 @@ public class PaymentWebhookService {
     private final InvoiceRepository invoiceRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final BatchAllocationService batchAllocationService;
+    private final AuditLogService auditLogService;
 
     @Transactional
     public void handleRazorpayEvent(JsonNode payload) {
@@ -122,12 +124,20 @@ public class PaymentWebhookService {
                     payment.getId(), payment.getStatus());
             return;
         }
+        PaymentStatus previousStatus = payment.getStatus();
         if (payment.getAmount().compareTo(capturedAmount) != 0) {
             log.error("[webhook] amount mismatch for payment {}: expected {}, gateway reported {}",
                     payment.getId(), payment.getAmount(), capturedAmount);
             payment.setStatus(PaymentStatus.FAILED);
             payment.setFailureReason("Gateway-reported amount did not match the server-computed amount.");
             paymentRepository.save(payment);
+            // Feature 23 hardening: AGENTS.md "AuditLogService wired into every financial ...
+            // mutation" — a failed-capture-due-to-amount-mismatch is exactly the kind of financial
+            // event that must leave a trail, not just a log line. No human caller (a gateway
+            // webhook), same null-actor precedent PipEvaluationService.fire() already established
+            // for a system-triggered write.
+            auditLogService.record(null, "PAYMENT_CAPTURE_FAILED", "Payment", payment.getId(),
+                    previousStatus, PaymentStatus.FAILED);
             return;
         }
 
@@ -135,6 +145,8 @@ public class PaymentWebhookService {
         payment.setGatewayPaymentId(gatewayPaymentId);
         payment.setCapturedAt(Instant.now());
         paymentRepository.save(payment);
+        auditLogService.record(null, "PAYMENT_CAPTURED", "Payment", payment.getId(),
+                previousStatus, PaymentStatus.CAPTURED);
 
         activateSubscription(payment);
         createPendingInvoice(payment);
@@ -194,8 +206,11 @@ public class PaymentWebhookService {
             return;
         }
 
+        PaymentStatus previousStatus = payment.getStatus();
         payment.setStatus(PaymentStatus.REFUNDED);
         paymentRepository.save(payment);
+        auditLogService.record(null, "PAYMENT_REFUNDED", "Payment", payment.getId(),
+                previousStatus, PaymentStatus.REFUNDED);
 
         userSubscriptionRepository.findByUserIdAndStatus(payment.getUser().getId(), SubscriptionStatus.ACTIVE)
                 .filter(sub -> payment.getId().equals(sub.getPaymentId()))

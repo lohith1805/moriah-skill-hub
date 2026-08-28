@@ -4,6 +4,7 @@ import com.moriah.skillhub.submission.entity.SubmissionStatus;
 import com.moriah.skillhub.submission.entity.TaskSubmission;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -30,6 +31,15 @@ public interface TaskSubmissionRepository extends JpaRepository<TaskSubmission, 
     @Query("SELECT MAX(ts.attemptNumber) FROM TaskSubmission ts WHERE ts.taskId = :taskId AND ts.user.id = :userId")
     Integer findMaxAttemptNumber(@Param("taskId") Long taskId, @Param("userId") Long userId);
 
+    /** Feature 23 `/review`-equivalent finding: {@code SubmissionResponse.studentUuid}/{@code
+     * studentName} (via {@code SubmissionService#toResponse}) read {@code
+     * submission.getUser().getUuid()}/{@code .getFullName()} — a real field access, not the
+     * cheap {@code .getId()}-on-a-lazy-proxy pattern this codebase otherwise relies on to skip an
+     * {@code @EntityGraph}. Without one here, {@code GET /api/v1/submissions?taskId=&status=} was
+     * one query for the page plus one lazy {@code user} load per row — a genuine N+1 on this
+     * feature's own list endpoint. {@code @EntityGraph}, not {@code JOIN FETCH}, because this is
+     * paginated (same reasoning as every other paginated repository method in this codebase). */
+    @EntityGraph(attributePaths = "user")
     @Query("""
             SELECT ts FROM TaskSubmission ts
              WHERE (:taskId IS NULL OR ts.taskId = :taskId)

@@ -24,6 +24,7 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.AnyRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -97,6 +98,36 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .cors(Customizer.withDefaults())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // Feature 23 hardening: this codebase never relied on Spring Security's implicit
+                // header defaults (explicit beats implicit, matching every other config choice in
+                // this file) — every header below is spelled out on purpose. HSTS: a full year,
+                // includeSubDomains. Its default HeaderWriter only fires on a request where
+                // `HttpServletRequest.isSecure()` is true — real in a topology where the app
+                // terminates its own TLS, but this project has no `server.ssl.*`/
+                // `server.forward-headers-strategy` configured anywhere (`application.yml`'s
+                // `server:` block is empty besides the port), meaning the only realistic deployment
+                // shape is TLS terminated upstream (a load balancer/reverse proxy) with plain HTTP
+                // to this app — `isSecure()` would then be false on every single request forever,
+                // silently making the default HSTS config a no-op in the one place it matters.
+                // `requestMatcher(AnyRequestMatcher.INSTANCE)` makes the header unconditional
+                // instead — harmless over a genuinely plain HTTP connection (browsers ignore HSTS
+                // unless it arrives over HTTPS, per the header's own spec) and actually effective
+                // once this app sits behind real TLS termination. X-Content-Type-Options: nosniff
+                // and X-Frame-Options: DENY — this is a JSON API with no frames anywhere. CSP: a
+                // single `default-src 'self'` policy is enough for the whole app, not two separate
+                // policies for "the API" vs. "Swagger UI" — `application-prod.yml` already disables
+                // Swagger UI entirely in production (springdoc.swagger-ui.enabled: false), so the
+                // one real HTML surface this policy would ever need to special-case doesn't exist
+                // where this header is actually served to a browser; dev-only Swagger UI is served
+                // from this same origin, so `'self'` doesn't break it either.
+                .headers(headers -> headers
+                        .contentTypeOptions(Customizer.withDefaults())
+                        .frameOptions(frame -> frame.deny())
+                        .httpStrictTransportSecurity(hsts -> hsts
+                                .requestMatcher(AnyRequestMatcher.INSTANCE)
+                                .includeSubDomains(true)
+                                .maxAgeInSeconds(31536000L))
+                        .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'; frame-ancestors 'none'")))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_PATHS).permitAll()
                         .anyRequest().authenticated())

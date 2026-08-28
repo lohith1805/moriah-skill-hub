@@ -3,6 +3,7 @@ package com.moriah.skillhub.submission;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.moriah.skillhub.common.audit.AuditLogService;
 import com.moriah.skillhub.sprint.TaskService;
 import com.moriah.skillhub.sprint.entity.TaskStatus;
 import com.moriah.skillhub.submission.dto.CreateReviewRequest;
@@ -46,6 +47,7 @@ public class CodeReviewService {
     private final SubmissionService submissionService;
     private final TaskService taskService;
     private final ObjectMapper objectMapper;
+    private final AuditLogService auditLogService;
 
     @Transactional
     public ReviewResponse create(Long callerUserId, CreateReviewRequest request) {
@@ -66,6 +68,13 @@ public class CodeReviewService {
         review.setInlineComments(toJson(request.inlineComments()));
         review.setReviewedAt(Instant.now());
         codeReviewRepository.save(review);
+
+        // Feature 23 hardening: AGENTS.md "AuditLogService wired into every ... grade ...
+        // mutation" — a code review's score/verdict is exactly that, the same category
+        // QuizService.submit's own QUIZ_ATTEMPT_SUBMITTED audit entry already covers for quiz
+        // grading. This was previously unaudited.
+        auditLogService.record(callerUserId, "CODE_REVIEW_CREATED", "CodeReview", review.getId(),
+                null, review.getVerdict());
 
         return toResponse(review);
     }
