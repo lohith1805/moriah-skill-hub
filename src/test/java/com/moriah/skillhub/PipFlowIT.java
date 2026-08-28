@@ -19,6 +19,7 @@ import java.util.UUID;
 import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 
 /**
  * build-plan.md feature 17 verify line, exercised end to end over real HTTP: "A fixture per rule
@@ -246,6 +247,69 @@ class PipFlowIT extends IntegrationTestBase {
                 .body(Map.of("thresholdValue", 80.00, "windowDays", 14, "severity", "HIGH", "active", true))
             .when()
                 .put("/api/v1/pip/rules/ATTENDANCE_LOW")
+            .then()
+                .statusCode(403);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // PipController.list / rules — feature 24 coverage-audit gap: neither GET endpoint had any
+    // test coverage at all before this (not even a happy path), and the {TRAINER_PM, HR_MANAGER,
+    // ADMIN} role group they share had no 403 test anywhere in the suite.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    void list_asTrainerPm_returnsPipRecordsForBatch() {
+        String pmToken = registerVerifyGrantRoleAndLogin("Pip List Pm", "TRAINER_PM");
+        long pmId = currentUserId(pmToken);
+        long batchId = insertBatch(pmId);
+        String studentToken = registerVerifyAndLogin("Pip List Student");
+        long studentId = currentUserId(studentToken);
+        insertBatchStudent(batchId, studentId, "ON_PIP");
+        insertPipRecord(studentId, batchId, "ATTENDANCE_LOW", "TRIGGERED", false);
+
+        given()
+                .header("Authorization", "Bearer " + pmToken)
+            .when()
+                .get("/api/v1/pip?batchId=" + batchId)
+            .then()
+                .statusCode(200)
+                .body("data.content.size()", greaterThanOrEqualTo(1))
+                .body("data.content[0].ruleCode", equalTo("ATTENDANCE_LOW"));
+    }
+
+    @Test
+    void list_asStudent_returns403() {
+        String studentToken = registerVerifyAndLogin("Pip List Wrong Role");
+
+        given()
+                .header("Authorization", "Bearer " + studentToken)
+            .when()
+                .get("/api/v1/pip")
+            .then()
+                .statusCode(403);
+    }
+
+    @Test
+    void rules_asHrManager_returnsAllSixRules() {
+        String hrToken = registerVerifyGrantRoleAndLogin("Pip Rules Hr", "HR_MANAGER");
+
+        given()
+                .header("Authorization", "Bearer " + hrToken)
+            .when()
+                .get("/api/v1/pip/rules")
+            .then()
+                .statusCode(200)
+                .body("data.size()", equalTo(6));
+    }
+
+    @Test
+    void rules_asStudent_returns403() {
+        String studentToken = registerVerifyAndLogin("Pip Rules Wrong Role");
+
+        given()
+                .header("Authorization", "Bearer " + studentToken)
+            .when()
+                .get("/api/v1/pip/rules")
             .then()
                 .statusCode(403);
     }

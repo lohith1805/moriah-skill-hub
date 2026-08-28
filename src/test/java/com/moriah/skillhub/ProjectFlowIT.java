@@ -164,6 +164,32 @@ class ProjectFlowIT extends IntegrationTestBase {
         assertThat(ids).contains(publishedId).doesNotContain(draftId);
     }
 
+    /** {@code GET /api/v1/projects} is open to {DEVELOPER, ADMIN, TRAINER_PM, STUDENT} — the
+     * widest read group in the codebase. Feature 24's role-group coverage audit found no 403 test
+     * anywhere in the suite proving a role genuinely outside that set (CLIENT, HR_MANAGER,
+     * BUSINESS_ANALYST, LEAD_GEN) is still rejected — every existing project-list test only ever
+     * exercised roles already inside the allowed set.
+     * <p>
+     * {@code registerVerifyGrantRoleAndLogin} alone isn't enough here — every self-registered
+     * account also carries the default {@code STUDENT} role (feature 03's {@code
+     * AuthService.register}), and STUDENT is itself inside the allowed set, so a plain
+     * grant-on-top-of-register caller would still get 200, not 403 (confirmed the hard way: this
+     * test originally did exactly that and failed). {@code registerAndLoginWithOnlyRole} removes
+     * the default STUDENT row via JDBC before granting CLIENT, then logs in *after* the swap so
+     * the issued JWT's {@code roles} claim reflects only CLIENT — roles are baked into the token
+     * at login time, not re-read from the DB per request. */
+    @Test
+    void list_asClient_returns403() {
+        String clientOnlyToken = registerAndLoginWithOnlyRole("List Wrong Role Client", "CLIENT");
+
+        given()
+                .header("Authorization", "Bearer " + clientOnlyToken)
+            .when()
+                .get("/api/v1/projects")
+            .then()
+                .statusCode(403);
+    }
+
     @Test
     void list_admin_seesDraftProjectsToo() {
         String devToken = registerVerifyGrantRoleAndLogin("Admin List Dev", "DEVELOPER");
@@ -491,6 +517,27 @@ class ProjectFlowIT extends IntegrationTestBase {
             .then()
                 .statusCode(201);
         verifyEmailDirectly(email);
+        return login(email);
+    }
+
+    /** See {@code list_asClient_returns403}'s own Javadoc for why this exists instead of a plain
+     * grant-on-top-of-register: every self-registered account defaults to STUDENT, which is
+     * itself inside the role group under test here, so a caller needs STUDENT actively removed,
+     * not just another role added. */
+    private String registerAndLoginWithOnlyRole(String fullName, String roleCode) {
+        String email = uniqueEmail(fullName);
+        given()
+                .contentType("application/json")
+                .body(Map.of("fullName", fullName, "email", email, "password", "correct horse battery"))
+            .when()
+                .post("/api/v1/auth/register")
+            .then()
+                .statusCode(201);
+        verifyEmailDirectly(email);
+        Long userId = jdbcTemplate.queryForObject("SELECT id FROM users WHERE email = ?", Long.class, email);
+        jdbcTemplate.update("DELETE FROM user_roles WHERE user_id = ?", userId);
+        Long roleId = jdbcTemplate.queryForObject("SELECT id FROM roles WHERE code = ?", Long.class, roleCode);
+        jdbcTemplate.update("INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)", userId, roleId);
         return login(email);
     }
 

@@ -192,8 +192,21 @@ class NotificationQueueIT extends IntegrationTestBase {
         return notification.getId();
     }
 
+    /** Feature 24 (Integration Testing and UAT) — real failure caught running the FULL suite,
+     * not visible running this class alone: at feature-24 scale (267 IT methods, several new this
+     * feature enqueuing real EMAIL notifications on top of this file's own IN_APP-only traffic —
+     * {@code CheckoutFlowIT}'s invoice job, {@code MetricsAndPipChainProfilingIT}'s 300 triggered
+     * PIP records each firing notification enqueues, etc.) the single shared {@code
+     * NotificationWorker}/Redis queue this whole suite runs against genuinely has more real
+     * traffic queued ahead of this test's own row than a 10-second poll reliably drains within,
+     * even though the worker itself is healthy and this class passes every time run alone (5/5,
+     * confirmed). Not a queue-mechanism bug — {@code EmailDispatcher} failing against the
+     * test-only fake SendGrid key is expected and harmless (this file deliberately never uses
+     * {@code EMAIL} itself, per its own class Javadoc), it just means the worker thread spends
+     * real wall-clock time on other classes' failed dispatch attempts before reaching this test's
+     * entry. 30 seconds is a generous, still-bounded budget for that realistic backlog. */
     private Notification waitForStatus(Long id, NotificationStatus expected) {
-        long deadline = System.currentTimeMillis() + 10_000;
+        long deadline = System.currentTimeMillis() + 30_000;
         Notification notification = null;
         while (System.currentTimeMillis() < deadline) {
             notification = notificationRepository.findById(id).orElseThrow();

@@ -120,6 +120,42 @@ class AttendanceFlowIT extends IntegrationTestBase {
     }
 
     // ---------------------------------------------------------------------------------------
+    // StandupController.list — feature 24 coverage-audit gap: GET /api/v1/standups had zero test
+    // coverage anywhere in the suite (not even a happy path), and the {TRAINER_PM, ADMIN, STUDENT}
+    // role group it shares with several other list endpoints (AssessmentController.list,
+    // SprintController.list, TaskController.list) had no 403 test proving a genuinely excluded
+    // role (e.g. CLIENT, HR_MANAGER, BUSINESS_ANALYST, LEAD_GEN, DEVELOPER) is rejected.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    void list_asTrainerPm_returnsStandupsForBatch() {
+        String pmToken = registerVerifyGrantPmRoleAndLogin("Standup List PM");
+        long pmUserId = currentUserId(pmToken);
+        long batchId = insertBatch("LIST_TRACK", pmUserId);
+        insertStandup(batchId, Instant.now(), 15);
+
+        given()
+                .header("Authorization", "Bearer " + pmToken)
+            .when()
+                .get("/api/v1/standups?batchId=" + batchId)
+            .then()
+                .statusCode(200)
+                .body("data.content.size()", org.hamcrest.Matchers.greaterThanOrEqualTo(1));
+    }
+
+    @Test
+    void list_asClient_returns403() {
+        String clientOnlyToken = registerAndLoginWithOnlyRole("Standup List Client", "CLIENT");
+
+        given()
+                .header("Authorization", "Bearer " + clientOnlyToken)
+            .when()
+                .get("/api/v1/standups?batchId=1")
+            .then()
+                .statusCode(403);
+    }
+
+    // ---------------------------------------------------------------------------------------
     // Check-in
     // ---------------------------------------------------------------------------------------
 
@@ -471,6 +507,35 @@ class AttendanceFlowIT extends IntegrationTestBase {
         Long userId = jdbcTemplate.queryForObject("SELECT id FROM users WHERE email = ?", Long.class, email);
         Long roleId = jdbcTemplate.queryForObject("SELECT id FROM roles WHERE code = 'TRAINER_PM'", Long.class);
         jdbcTemplate.update("INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)", userId, roleId);
+    }
+
+    /** {@code POST /auth/register} always grants {@code STUDENT} (feature 03's {@code
+     * AuthService.register} — every self-registered account is a STUDENT by default; confirmed
+     * the hard way when {@code list_asClient_returns403} first tried a plain grant-on-top-of-
+     * register helper and got 200, not 403, because the caller's token carried STUDENT *and*
+     * CLIENT — and {@code StandupController.list}'s own {@code @PreAuthorize} already allows
+     * STUDENT). To build a caller that is genuinely outside {TRAINER_PM, ADMIN, STUDENT}, the
+     * default STUDENT row has to be removed, not just added to — done directly via JDBC (the
+     * real admin-driven path, {@code AdminUserController.updateRoles}, is the same "replace, not
+     * append" operation but needs an ADMIN caller and its own mandatory-2FA setup, more machinery
+     * than this fixture needs). Roles are baked into the JWT at login time (not re-read from the
+     * DB per request — {@code tier} is the one entitlement that works that way, roles don't), so
+     * the login has to happen *after* the role swap for the issued token to reflect it. */
+    private String registerAndLoginWithOnlyRole(String fullName, String roleCode) {
+        String email = uniqueEmail(fullName);
+        given()
+                .contentType("application/json")
+                .body(Map.of("fullName", fullName, "email", email, "password", "correct horse battery"))
+            .when()
+                .post("/api/v1/auth/register")
+            .then()
+                .statusCode(201);
+        verifyEmailDirectly(email);
+        Long userId = jdbcTemplate.queryForObject("SELECT id FROM users WHERE email = ?", Long.class, email);
+        jdbcTemplate.update("DELETE FROM user_roles WHERE user_id = ?", userId);
+        Long roleId = jdbcTemplate.queryForObject("SELECT id FROM roles WHERE code = ?", Long.class, roleCode);
+        jdbcTemplate.update("INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)", userId, roleId);
+        return login(email);
     }
 
     private void verifyEmailDirectly(String email) {

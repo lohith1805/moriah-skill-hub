@@ -50,6 +50,17 @@ class PipRuleEvaluatorsTest {
         assertThat(evaluator.evaluate(metrics, rule(PipRuleCode.ATTENDANCE_LOW, "75.00"))).isEmpty();
     }
 
+    /** Feature 24's per-rule boundary audit: {@code belowThreshold_triggers} above uses 62.00, an
+     * arbitrary distance below 75.00, not the adjacent boundary value. This pins the smallest step
+     * a {@code DECIMAL(5,2)} column can represent below the threshold. */
+    @Test
+    void attendanceRule_justBelowThreshold_triggers() {
+        var evaluator = new AttendanceRule();
+        var metrics = metrics(new BigDecimal("74.99"), null, null, null, null, null, null);
+
+        assertThat(evaluator.evaluate(metrics, rule(PipRuleCode.ATTENDANCE_LOW, "75.00"))).isPresent();
+    }
+
     @Test
     void attendanceRule_nullPercent_doesNotTrigger() {
         var evaluator = new AttendanceRule();
@@ -110,6 +121,27 @@ class PipRuleEvaluatorsTest {
         var metrics = metrics(null, null, null, null, null, null, null);
 
         assertThat(evaluator.evaluate(metrics, rule(PipRuleCode.QUIZ_FAILURE, "60.00"))).isEmpty();
+    }
+
+    /** Feature 24's per-rule boundary audit: the three tests above never actually exercised the
+     * exact threshold value (45.00 is arbitrarily below 60.00, not adjacent to it) — unlike every
+     * other rule in this file, which already pins the exact boundary. {@code QuizFailureRule}'s
+     * own comparison is {@code >= threshold -> no trigger}, so 60.00 itself must not trigger and
+     * 59.99 (the smallest step a {@code DECIMAL(5,2)} column can represent below it) must. */
+    @Test
+    void quizFailureRule_atThreshold_doesNotTrigger() {
+        var evaluator = new QuizFailureRule();
+        var metrics = metrics(null, null, null, null, new BigDecimal("60.00"), null, null);
+
+        assertThat(evaluator.evaluate(metrics, rule(PipRuleCode.QUIZ_FAILURE, "60.00"))).isEmpty();
+    }
+
+    @Test
+    void quizFailureRule_justBelowThreshold_triggers() {
+        var evaluator = new QuizFailureRule();
+        var metrics = metrics(null, null, null, null, new BigDecimal("59.99"), null, null);
+
+        assertThat(evaluator.evaluate(metrics, rule(PipRuleCode.QUIZ_FAILURE, "60.00"))).isPresent();
     }
 
     // --- ReviewFailedRule ---

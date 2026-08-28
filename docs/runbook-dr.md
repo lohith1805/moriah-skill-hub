@@ -97,6 +97,50 @@ The exact sequence above is reproducible with `docker-compose.yml`'s `mysql` ser
 `--gtid-mode=ON --enforce-gtid-consistency=ON`. Re-run monthly per architecture.md, and once
 during feature 24.
 
+### Restore drill — feature 24 re-run (2026-08-28)
+
+Genuinely repeated, not re-described — real commands run against fresh, throwaway containers, not
+`docker-compose.yml`'s own named services (ports 3306/3307 were already occupied on this machine
+by an unrelated local MySQL install and an unrelated project's containers, so this run used
+standalone `docker run` containers — `drill-primary`/`drill-scratch` — on ports 13306/13307
+instead; same images, same `--gtid-mode=ON --enforce-gtid-consistency=ON`/binlog config as
+`docker-compose.yml` specifies, so the mechanism proven is identical).
+
+1. Started a throwaway primary (`mysql:8.0`, `--server-id=1 --log-bin=mysql-bin
+   --binlog-format=ROW --sync-binlog=1 --gtid-mode=ON --enforce-gtid-consistency=ON`), created a
+   minimal `users` table (this run didn't replay the full V1-V16 migration set — a lighter,
+   faithful re-creation of the same table shape the original 2026-08-24 drill used, since the
+   restore mechanism being proven — dump + binlog position + replay to a chosen timestamp — is
+   schema-independent).
+2. Seeded 2 rows ("Drill User One/Two").
+3. Checkpoint dump: `mysqldump --single-transaction --source-data=2 moriah_skillhub` → captured
+   `mysql-bin.000003`, position `927`.
+4. Inserted "Post-Dump Batch A" (committed `2026-08-28 01:07:31.681231` UTC), then "Post-Dump
+   Batch B" (committed `2026-08-28 01:07:40.367616` UTC) — an 8.7-second gap, target restore point
+   `01:07:36` UTC (`06:37:36` IST — this machine's local timezone), between the two.
+5. `docker cp`'d `mysql-bin.000003` out of the primary container.
+6. Started a scratch instance (same GTID/binlog config, different `server-id`), restored the
+   checkpoint dump — confirmed 2 rows, exact match to the dump's snapshot.
+7. Replayed the binlog: `mysqlbinlog --start-position=927 --stop-datetime="2026-08-28 06:37:36"
+   mysql-bin.000003 | mysql moriah_skillhub` — inspecting the generated replay SQL before applying
+   it confirmed exactly one GTID transaction was selected (the Batch A `Write_rows` event, `end_log_pos`
+   timestamped `6:37:31` local), Batch B correctly outside the window.
+8. Result: **3 rows** — Drill User One, Drill User Two, Post-Dump Batch A. Batch B correctly
+   absent. **Exact match to the original 2026-08-24 drill's result.**
+9. Both throwaway containers and all temp files removed after the drill — nothing left running.
+
+**Gotcha #1 (mysqlbinlog absent from the server image) reconfirmed as still true**: `docker exec
+drill-primary mysqlbinlog --version` still fails with "executable file not found in $PATH" on this
+image. This run used a real MySQL 8.0.46 client install already present on the operator's own
+machine (`mysqlbinlog`/`mysql` at a standard MySQL Server install path) as the "host or sidecar
+with full client tools" the Prerequisites section calls for — confirms that requirement is a real,
+satisfiable one on a normal engineer's workstation, not just a theoretical one. Gotchas #2
+(`--stop-datetime` in the client's local timezone) and #3 (matching `gtid_mode`) were both applied
+correctly this run on the first attempt, precisely because the original drill had already
+documented them — the payoff of writing them down the first time.
+
+No new gotchas found this run. The procedure as documented is accurate and genuinely repeatable.
+
 ---
 
 ## Setting up the local replica
