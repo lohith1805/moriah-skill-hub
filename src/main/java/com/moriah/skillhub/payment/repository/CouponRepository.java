@@ -12,6 +12,10 @@ public interface CouponRepository extends JpaRepository<Coupon, Long> {
 
     Optional<Coupon> findByCode(String code);
 
+    /** Admin create (gap B1.12) rejects a duplicate {@code code} up front with a clean 409
+     * rather than letting the unique constraint surface as a raw {@code DataIntegrityViolation}. */
+    boolean existsByCode(String code);
+
     /**
      * Conditional atomic update — the same "no {@code @Version}, no retry loop" pattern
      * code-standards.md's "Transactions" section mandates for {@code batches.enrolled_count}

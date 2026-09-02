@@ -87,6 +87,7 @@ public enum ErrorCode {
     CLIENT_REQUEST_NOT_PENDING(HttpStatus.CONFLICT, "This client registration has already been decided."),
     TWO_FACTOR_ALREADY_ENABLED(HttpStatus.CONFLICT, "Two-factor authentication is already enabled on this account."),
     TWO_FACTOR_NOT_ENABLED(HttpStatus.CONFLICT, "Two-factor authentication is not enabled on this account."),
+    COUPON_CODE_TAKEN(HttpStatus.CONFLICT, "A coupon with this code already exists."),
     COUPON_EXPIRED(HttpStatus.CONFLICT, "This coupon is not valid right now."),
     COUPON_EXHAUSTED(HttpStatus.CONFLICT, "This coupon has reached its redemption limit."),
     COUPON_ALREADY_REDEEMED(HttpStatus.CONFLICT, "You have already redeemed this coupon."),
