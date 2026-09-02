@@ -64,6 +64,7 @@ public enum ErrorCode {
     QUIZ_NOT_FOUND(HttpStatus.NOT_FOUND, "This assessment does not exist."),
     QUIZ_ATTEMPT_NOT_FOUND(HttpStatus.NOT_FOUND, "This attempt does not exist."),
     PROJECT_NOT_FOUND(HttpStatus.NOT_FOUND, "This project does not exist."),
+    BUG_CHALLENGE_NOT_FOUND(HttpStatus.NOT_FOUND, "This bug-fix challenge does not exist."),
     PIP_RECORD_NOT_FOUND(HttpStatus.NOT_FOUND, "This PIP record does not exist."),
     PIP_MILESTONE_NOT_FOUND(HttpStatus.NOT_FOUND, "This PIP milestone does not exist."),
     PIP_RULE_NOT_FOUND(HttpStatus.NOT_FOUND, "This PIP rule code does not exist."),

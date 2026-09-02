@@ -274,6 +274,59 @@ public class ProjectService {
         return toChallengeResponse(challenge, caller.getUuid());
     }
 
+    /** {@code GET /api/v1/projects/{id}/challenges} (gap B1.15) — every challenge on a project.
+     * Per-key presign still runs through {@code OwnershipGuard} in {@link #toChallengeResponse}. */
+    @Transactional(readOnly = true)
+    public List<ChallengeResponse> listChallenges(Long callerUserId, Long projectId) {
+        requireProject(projectId);
+        User caller = requireUser(callerUserId);
+        return bugChallengeRepository.findByProjectId(projectId).stream()
+                .map(c -> toChallengeResponse(c, caller.getUuid()))
+                .toList();
+    }
+
+    /** {@code GET /api/v1/challenges/{id}} (gap B1.15). */
+    @Transactional(readOnly = true)
+    public ChallengeResponse getChallenge(Long callerUserId, Long challengeId) {
+        BugChallenge challenge = requireChallenge(challengeId);
+        User caller = requireUser(callerUserId);
+        return toChallengeResponse(challenge, caller.getUuid());
+    }
+
+    /** {@code PUT /api/v1/challenges/{id}} (gap B1.15) — text fields only; the code archives are
+     * immutable through this path (see {@code UpdateChallengeRequest}). Creator-or-ADMIN, and the
+     * owning project must not be archived — same guards as {@link #addChallenge}. */
+    @Transactional
+    public ChallengeResponse updateChallenge(Long callerUserId, Long challengeId, String title,
+            String expectedBehaviour, ProjectDifficulty difficulty) {
+        BugChallenge challenge = requireChallenge(challengeId);
+        User caller = requireCreatorOrAdmin(callerUserId, challenge.getProject());
+        requireNotArchived(challenge.getProject());
+
+        challenge.setTitle(title);
+        challenge.setExpectedBehaviour(expectedBehaviour);
+        challenge.setDifficulty(difficulty);
+
+        return toChallengeResponse(challenge, caller.getUuid());
+    }
+
+    /** {@code DELETE /api/v1/challenges/{id}} (gap B1.15). A row-delete, not a soft-delete —
+     * {@code bug_challenges} is leaf content with no {@code is_active} column and nothing FKs it.
+     * The uploaded S3 archives are left in place ({@code StorageService} exposes no delete);
+     * they become unreferenced, an accepted minor cost. */
+    @Transactional
+    public void deleteChallenge(Long callerUserId, Long challengeId) {
+        BugChallenge challenge = requireChallenge(challengeId);
+        requireCreatorOrAdmin(callerUserId, challenge.getProject());
+        requireNotArchived(challenge.getProject());
+        bugChallengeRepository.delete(challenge);
+    }
+
+    private BugChallenge requireChallenge(Long challengeId) {
+        return bugChallengeRepository.findById(challengeId)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.BUG_CHALLENGE_NOT_FOUND, challengeId));
+    }
+
     private String uploadTrustedCode(String key, MultipartFile file) {
         byte[] bytes = readBytes(file);
         if (bytes.length > Constants.MAX_UPLOAD_BYTES) {

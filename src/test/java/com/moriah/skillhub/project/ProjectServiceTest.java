@@ -420,6 +420,90 @@ class ProjectServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
+    private BugChallenge challenge(long id, Project project) {
+        BugChallenge c = new BugChallenge();
+        c.setId(id);
+        c.setProject(project);
+        c.setTitle("Off by one");
+        c.setExpectedBehaviour("Loop should stop at n");
+        c.setBrokenCodeKey("projects/10/challenges/abc-broken-app.zip");
+        c.setCreatedBy(developer);
+        return c;
+    }
+
+    @Test
+    void listChallenges_returnsEveryChallengeOnTheProject() throws Exception {
+        Project project = project(10L, ProjectStatus.PUBLISHED, "weather-app");
+        when(projectRepository.findById(10L)).thenReturn(Optional.of(project));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(developer));
+        when(bugChallengeRepository.findByProjectId(10L)).thenReturn(List.of(challenge(1L, project), challenge(2L, project)));
+        when(storageService.presignedGetUrl(eq("dev-uuid"), anyString(), any())).thenReturn(new URL("https://s3/x"));
+
+        List<ChallengeResponse> result = projectService.listChallenges(1L, 10L);
+
+        assertThat(result).hasSize(2);
+    }
+
+    @Test
+    void getChallenge_unknownId_throwsNotFound() {
+        when(bugChallengeRepository.findById(404L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> projectService.getChallenge(1L, 404L))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.BUG_CHALLENGE_NOT_FOUND);
+    }
+
+    @Test
+    void updateChallenge_byCreator_replacesTextFields() throws Exception {
+        Project project = project(10L, ProjectStatus.PUBLISHED, "weather-app");
+        BugChallenge c = challenge(5L, project);
+        when(bugChallengeRepository.findById(5L)).thenReturn(Optional.of(c));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(developer));
+        when(storageService.presignedGetUrl(eq("dev-uuid"), anyString(), any())).thenReturn(new URL("https://s3/x"));
+
+        projectService.updateChallenge(1L, 5L, "Fencepost bug",
+                "Loop must be < n, not <= n", com.moriah.skillhub.project.entity.ProjectDifficulty.ADVANCED);
+
+        assertThat(c.getTitle()).isEqualTo("Fencepost bug");
+        assertThat(c.getExpectedBehaviour()).isEqualTo("Loop must be < n, not <= n");
+        assertThat(c.getDifficulty()).isEqualTo(com.moriah.skillhub.project.entity.ProjectDifficulty.ADVANCED);
+    }
+
+    @Test
+    void updateChallenge_byBystander_isForbidden() {
+        Project project = project(10L, ProjectStatus.PUBLISHED, "weather-app");
+        BugChallenge c = challenge(5L, project);
+        when(bugChallengeRepository.findById(5L)).thenReturn(Optional.of(c));
+        when(userRepository.findById(3L)).thenReturn(Optional.of(bystander));
+
+        assertThatThrownBy(() -> projectService.updateChallenge(3L, 5L, "x", "y", null))
+                .isInstanceOf(ForbiddenOperationException.class);
+    }
+
+    @Test
+    void updateChallenge_onArchivedProject_throwsInvalidTransition() {
+        Project project = project(10L, ProjectStatus.ARCHIVED, "weather-app");
+        BugChallenge c = challenge(5L, project);
+        when(bugChallengeRepository.findById(5L)).thenReturn(Optional.of(c));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(developer));
+
+        assertThatThrownBy(() -> projectService.updateChallenge(1L, 5L, "x", "y", null))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_INVALID_TRANSITION);
+    }
+
+    @Test
+    void deleteChallenge_byCreator_rowDeletes() {
+        Project project = project(10L, ProjectStatus.PUBLISHED, "weather-app");
+        BugChallenge c = challenge(5L, project);
+        when(bugChallengeRepository.findById(5L)).thenReturn(Optional.of(c));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(developer));
+
+        projectService.deleteChallenge(1L, 5L);
+
+        verify(bugChallengeRepository).delete(c);
+    }
+
     private com.moriah.skillhub.project.dto.CreateProjectRequest createRequest(String title) {
         return new com.moriah.skillhub.project.dto.CreateProjectRequest(
                 title, "A weather app", List.of("React", "Node"), null, "web", null, null);
