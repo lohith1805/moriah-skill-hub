@@ -126,6 +126,7 @@ public enum ErrorCode {
     PAYROLL_ALREADY_GENERATED(HttpStatus.CONFLICT, "Payroll for this employee and month has already been generated."),
     LETTER_NOT_ELIGIBLE(HttpStatus.CONFLICT, "This person is not eligible for this letter (must be graduated or cleanly exited, never terminated)."),
     CERTIFICATE_ALREADY_REVOKED(HttpStatus.CONFLICT, "This certificate has already been revoked."),
+    PAYMENT_NOT_REFUNDABLE(HttpStatus.CONFLICT, "Only a captured payment can be refunded, and only once."),
 
     // 429
     RATE_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "Too many requests. Please try again shortly."),

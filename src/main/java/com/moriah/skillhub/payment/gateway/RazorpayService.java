@@ -50,6 +50,25 @@ public class RazorpayService {
         }
     }
 
+    /**
+     * Admin-initiated refund (gap B1.11) against Razorpay's {@code payment_id} — i.e. {@code
+     * payments.gateway_payment_id}, only ever populated by the capture webhook. Amount in rupees
+     * in, paise out, {@code intValueExact()} so a fractional-paise value fails loudly rather than
+     * silently truncating — the same discipline as {@link #createOrder}. Razorpay then emits a
+     * {@code refund.processed} webhook which {@code PaymentWebhookService} already handles; this
+     * call only asks for the refund, it does not itself flip {@code payments.status}.
+     */
+    public void refund(String gatewayPaymentId, BigDecimal amountInr) {
+        try {
+            JSONObject request = new JSONObject()
+                    .put("amount", amountInr.multiply(BigDecimal.valueOf(100)).intValueExact());
+            client().payments.refund(gatewayPaymentId, request);
+        } catch (RazorpayException e) {
+            log.error("[razorpay/refund] refund failed for payment {}", gatewayPaymentId, e);
+            throw new BusinessException(ErrorCode.PAYMENT_GATEWAY_ERROR);
+        }
+    }
+
     private RazorpayClient client() throws RazorpayException {
         RazorpayClient local = client;
         if (local == null) {

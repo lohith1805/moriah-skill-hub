@@ -6,8 +6,10 @@ import com.stripe.Stripe;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Event;
+import com.stripe.model.Refund;
 import com.stripe.model.checkout.Session;
 import com.stripe.net.Webhook;
+import com.stripe.param.RefundCreateParams;
 import com.stripe.param.checkout.SessionCreateParams;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -62,6 +64,28 @@ public class StripeService {
             return Session.create(params);
         } catch (StripeException e) {
             log.error("[stripe/checkout] session creation failed", e);
+            throw new BusinessException(ErrorCode.PAYMENT_GATEWAY_ERROR);
+        }
+    }
+
+    /**
+     * Admin-initiated refund (gap B1.11) against the Stripe {@code PaymentIntent} id — i.e.
+     * {@code payments.gateway_payment_id}, set only by the capture webhook. Rupees in, smallest
+     * unit out as a {@code Long}, {@code longValueExact()} so a fractional unit fails loudly —
+     * same discipline as {@link #createCheckoutSession}. Stripe then emits {@code charge.refunded},
+     * already handled by {@code PaymentWebhookService}; this call does not itself flip
+     * {@code payments.status}.
+     */
+    public void refund(String paymentIntentId, BigDecimal amountInr) {
+        try {
+            long unitAmount = amountInr.multiply(BigDecimal.valueOf(100)).longValueExact();
+            RefundCreateParams params = RefundCreateParams.builder()
+                    .setPaymentIntent(paymentIntentId)
+                    .setAmount(unitAmount)
+                    .build();
+            Refund.create(params);
+        } catch (StripeException e) {
+            log.error("[stripe/refund] refund failed for {}", paymentIntentId, e);
             throw new BusinessException(ErrorCode.PAYMENT_GATEWAY_ERROR);
         }
     }
