@@ -99,7 +99,11 @@ B1.16, B1.17 + `GET /hr/employees`). Each its own commit on `main`, all unit-tes
 
 ## Frontend (Part A) — STARTED. Frontend is now its OWN git repo:
 `C:\Users\ADMIN\Desktop\Moraih Backend\moriah-skill-hub-updated` (was untracked). Commits:
-`a86db27` baseline (mock prototype), `b0e4b21` **auth spike** — DONE + `npm run build` passes:
+Frontend commits: `a86db27` baseline, `b0e4b21` auth spike, `<hash>` notificationService +
+adminService. `npm install` done (node_modules gitignored). Every commit verified with
+`npm run build` (passes, 2795 modules). Node v24.
+
+`b0e4b21` **auth spike** — DONE:
 - `src/services/apiClient.js` — `USE_MOCKS=false`; real fetch; unwraps `{success,data,error}`
   envelope; `tokenStore` (access + rotating refresh + expiry in localStorage); transparent
   401→`POST /auth/refresh`→retry-once (single-flight); `requestMultipart()`.
@@ -117,11 +121,23 @@ B1.16, B1.17 + `GET /hr/employees`). Each its own commit on `main`, all unit-tes
   New pages/routes `/reset-password`, `/verify-email`, `/auth/oauth/callback`.
 - `vite.config.js` `/api`→`http://localhost:8080` proxy; `.env`/`.env.example` (`VITE_API_BASE_URL`).
 
+Also DONE: `src/services/notificationService.js` (→ `/notifications` feed) and
+`src/services/adminService.js` (→ `/admin/metrics/overview`, `/admin/users**` incl. B1.17 profile
+PUT + roles + status, `/plans` + `/admin/plans` B1.13, `/admin/payments` + refund B1.11,
+`/admin/audit`, `/admin/exports`, `/admin/coupons` B1.12). Backend enum codes translated via the
+new constants maps; `PageResponse.content` unwrapped.
+
 ### Frontend Part A — STILL TO DO (big):
-1. **The 13 `src/services/*Service.js`** (adminService, studentService, trainerService,
-   developerService, hrService, baService, clientService, crmService, notificationService) still
-   run against `mockData.js` + `localStorage`. Rewrite each to call `apiClient` with real paths
-   and unwrap `PageResponse.content`. This is the bulk of the work.
+1. **10 `src/services/*Service.js` left**: studentService (556 L), trainerService (599 L),
+   developerService (351 L), hrService (301 L), crmService (239 L), clientService (202 L),
+   baService (73 L), pipEngine (delete), mockData (delete), placementPipeline (delete). Most use
+   a `getX()` + `saveX(wholeList)` mock pattern that does NOT map to REST — migrating each means
+   also rewriting its consuming pages' state (load-page + per-item create/update/delete). The
+   backend gap-B pages that pair 1:1 with session-3 endpoints: `developer/AssessmentBank` (B1.15),
+   `developer/BugChallenges` (B1.15), `developer/ClientRequirements` (B1.16),
+   `developer/VideoLessons` (B1.4), `ba/Meetings` (B1.14), `hr/ExitManagement` +
+   `hr/Onboarding` (B1.10), `client/TalentPool` (B1.9), `leadgen/Campaigns` (B1.7),
+   `student/interviews` (B1.8), `*/Resources` (B1.6) — do these first, they're the cleanest.
 2. **Page data bindings** — every `src/pages/**` reads mock-shaped blobs (`user.batch` string,
    `user.subscription`, camelCase invented fields). Remap to real DTOs (`uuid`, ISO dates, enum
    strings). ~90 page files.
