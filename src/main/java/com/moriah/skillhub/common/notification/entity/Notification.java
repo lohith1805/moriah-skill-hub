@@ -56,6 +56,12 @@ public class Notification extends BaseEntity {
     @Column(name = "sent_at")
     private Instant sentAt;
 
+    /** Set when the recipient reads an {@code IN_APP} row through the notifications feed
+     * ({@code PUT /api/v1/notifications/{id}/read}). {@code null} = unread. Orthogonal to
+     * {@link #status}, which is the dispatch lifecycle owned by {@code NotificationWorker}. */
+    @Column(name = "read_at")
+    private Instant readAt;
+
     @Column(name = "error_message", length = 500)
     private String errorMessage;
 }
