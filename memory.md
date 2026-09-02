@@ -1,8 +1,40 @@
 # Memory — Moriah Skill Hub Backend
 
-Last updated: 2026-09-02 (post-build session: audit + hardening, doc pipeline, structured/file
-logging, frontend↔backend gap analysis, and the "staff invite + client self-registration
-approval" feature. All 24 features were already complete before this session.)
+Last updated: 2026-09-02 (session 3: filling frontend↔backend **Part B backend gaps**, 4-endpoint
+test cadence. Branch `fe-integration-invite-approval` was merged to `main` (`80c4884`, ff-only)
+at the start. 28 new endpoints across 7 gap items shipped and committed to `main`, each its own
+commit, `mvn verify` GREEN at two checkpoints — 444 unit + 267 integration, 0 failures.)
+
+## Session 3 — Part B gaps done (all on `main`, all with unit tests)
+
+- **B1.5 notifications feed** (`466ff3f`) — `GET/PUT /api/v1/notifications` (+`/unread-count`,
+  `/read-all`). `V20` adds `notifications.read_at`. Feed scoped to `IN_APP` channel.
+  `NotificationFeedService` in `common/notification/`.
+- **B1.12 admin coupons** (`765a7ec`) — `GET/POST/PUT/DELETE /api/v1/admin/coupons`. New
+  `payment/CouponAdminService` (separate from checkout-path `CouponService`). DELETE = deactivate.
+  New `ErrorCode.COUPON_CODE_TAKEN`.
+- **B1.13 plan create/delete** + **B1.17 admin user detail/edit** (`8e1afff`) —
+  `POST/DELETE /api/v1/admin/plans` (via `EntitlementService`, evicts `plans`/`planCodesById`
+  caches), `GET/PUT /api/v1/admin/users/{userUuid}` (`AdminUserDetailResponse`; profile fields
+  only, no token_version bump). New `ErrorCode.PLAN_CODE_TAKEN`.
+- **B1.11 admin transactions + refunds** (`fb2aa5f`) — `GET /api/v1/admin/payments` (+`/summary`,
+  `/{gatewayOrderId}`, `POST /{gatewayOrderId}/refund`). Added `RazorpayService.refund` /
+  `StripeService.refund`. `AdminPaymentService.refund` is **not `@Transactional`** (outbound call
+  rule), sets `REFUNDED` optimistically — the existing refund webhook no-ops on a already-REFUNDED
+  row. New `ErrorCode.PAYMENT_NOT_REFUNDABLE`.
+- **B1.6 Resource Library** (`f7c5250`) — new `resource/` module, `V21` `learning_resources`
+  (link-only). `GET/POST/PUT/DELETE /api/v1/resources`. Curator roles = TRAINER_PM/DEVELOPER/
+  BUSINESS_ANALYST/ADMIN; edit requires creator-or-ADMIN.
+- **B1.4 Video Lessons** (`541c072`) — new `learning/` module, `V22` `video_lessons` +
+  `lesson_progress`. 8 endpoints under `/api/v1/lessons` (CRUD + `/modules`, `/me/progress`,
+  `POST /{id}/progress`). Curator roles = DEVELOPER/TRAINER_PM/ADMIN. `watchedSeconds` never
+  rewinds; `completedAt` stamped once. Link-only; **per-lesson quiz still TODO**.
+
+**Migrations added this session: V20, V21, V22.** Next unused = **V23**.
+**Part B gaps still open:** B1.7 lead-gen campaigns, B1.8 student interviews, B1.9 client talent
+pool + recruitment requests, B1.10 HR exit/onboarding/disciplinary, B1.14 BA meetings, B1.15
+assessment question bank + bug-challenge list/update/delete, B1.16 developer client-requirements
+review, B1.18 installment plans (likely skip), B1.4 per-lesson quiz.
 
 ## What was built
 
