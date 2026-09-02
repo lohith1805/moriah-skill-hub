@@ -1,56 +1,150 @@
 # Memory — Moriah Skill Hub Backend
 
-Last updated: 2026-08-28 (Features 20–24 complete. **The full 24-feature build is done**, 8 days ahead of the Sep 11 target. Session ran fully autonomously per standing instruction and stopped after feature 24 as directed.)
+Last updated: 2026-09-02 (post-build session: audit + hardening, doc pipeline, structured/file
+logging, frontend↔backend gap analysis, and the "staff invite + client self-registration
+approval" feature. All 24 features were already complete before this session.)
 
 ## What was built
 
-**Features 01–19.** ✅ Complete. (See prior memory entries / `context/progress-tracker.md` decision log.)
+Backend = Spring Boot 3.5 / Java 21 / MySQL 8 / Redis 7, modular monolith at
+`C:\Users\ADMIN\Desktop\Moraih Backend\Moraih Backend` (**local-only git repo, no remote**).
+The parent folder `C:\Users\ADMIN\Desktop\Moraih Backend\` also contains
+`moriah-skill-hub-updated/…` (the React 19 + Vite frontend) and `frontend-backend-gap-report.md`
+— **those two live outside the repo**.
 
-**Feature 20 — Certificate Engine, Graduation and Public Verification (V14).** ✅ Complete, `/review`'d, committed `da141bc`. New `certificate/` package: `Certificate`/`CertificateType` entity, `CertificateService`, `GraduationService`, `QrCodeService`, `CertificateController`, `VerificationController` (public, unauthenticated verify endpoint). `BatchService.graduate`/`hasGraduatedFromBatch` added. Clears the long-standing portfolio Open Stub (`completedProjects`/`issuedCertificates` on `GET /portfolio/{slug}`).
+**On `main` (commits `27d5e50` then `77e1b70`, already merged):**
+- **2026-08-31 audit** — 4 parallel sub-agents; fixed every Critical + High + 13 Medium/Low.
+  Migrations `V17`/`V18` (indexes). Notable: OAuth2 authz cookie → signed JSON (not Java
+  serialization); webhook idempotency `claim()` gap-lock-free + reconciliation job; `JobChainGuard`
+  interlock for the nightly metrics/PIP chain; CIDR-aware `ClientIpResolver` + per-bearer-token
+  rate-limit buckets; bounded async executors + client timeouts; `JwtAuthFilter` reads a
+  lightweight `AuthUserView` projection; export streaming + CSV-injection sanitisation; expired-
+  token reaper; `application.yml` hardening. Full log in `docs/audit-2026-08-31.md`.
+- **Doc pipeline** — `docs/openapi.json` (exported from a running app's `/v3/api-docs`) is the
+  single source of truth for `scripts/gen-api-doc.py`, `gen-project-ref.py`, `gen-postman.py`;
+  `gen-callgraph.py` statically scans `src/`. Prose lives in `scripts/project-ref-narrative.md`
+  + `scripts/project-ref-audit-appendix.md`. Regen order + caveats in `scripts/README.md`.
+  Generated: `docs/API-Documentation.md`, `docs/PROJECT-REFERENCE.md`,
+  `docs/postman/moriah-skillhub-postman.zip` (role-aware: per-role login requests each storing a
+  `{{<role>AccessToken}}`, per-request auth pinned by `@PreAuthorize`, admin/HR 2FA sub-folders
+  with a CryptoJS TOTP pre-request script). Hand-written docs (no generator): `webhooks.md`,
+  `testing-flow.md`, `required-integrations.md`, `audit-2026-08-31.md`, `runbook-dr.md`.
+- **Observability** — `MdcLoggingFilter` (per-request `X-Request-Id` → MDC), `JwtAuthFilter` adds
+  `userId` to MDC. `application-prod.yml`: ECS-JSON console + rotating file `logs/skillhub.log`
+  (50 MB/daily, 30-day/3 GB cap). `application-dev.yml`: dropped `show-sql` (dup of the
+  `org.hibernate.SQL` logger), added bind-param TRACE. `SecurityConfig.PUBLIC_PATHS` also lists
+  the bare `/v3/api-docs` + `/swagger-ui`.
+- Context file `docs/context-2026-09-02-logging-and-postman.md` records all of the above.
 
-**Feature 21 — BA and Client Portal (V15).** ✅ Complete, `/review`'d (0 findings), committed `acf46dd`. New `client/` package: `Client`/`ClientProject`/`RequirementDocument`/`ResourceAllocation`, `ClientController` (`/clients/**`) + `BaController` (`/ba/**`). Client portal logins are ADMIN-provisioned only, reusing the existing password-reset flow (never a bespoke token/plaintext password).
-
-**Feature 22 — Admin Metrics and Exports.** ✅ Complete, `/review`'d (0 findings), committed `e9aa922`. New `admin/` package (metrics overview, revenue, user/role/status management, audit query, async XLSX exports via SXSSFWorkbook). New `ReplicaDataSourceConfig` wires the previously-unused `mysql-replica` docker service for real. No new migration — every underlying view/table already existed.
-
-**Feature 23 — Audit, Hardening and Performance (V16).** ✅ Complete, `/review`'d (0 findings), committed `0a17350`. Cross-cutting pass, not new functionality: V16 migration (1 CHECK gap + 8 real indexes), closed real audit-logging gaps in `payment/` (was fully unaudited) and `CodeReviewService.create`, fixed a real N+1 (`TaskSubmissionRepository.search`), added security headers (HSTS/nosniff/frame-deny/CSP — none existed before), resolved the deferred `@Transactional`-wraps-S3-upload issue across `CertificateService`/`InvoiceService`/`PayrollService`.
-
-**Feature 24 — Integration Testing and UAT.** ✅ Complete, `/review`'d (0 findings), committed `bd2b977`. Closed real test-coverage gaps (Checkout/Subscription/Pip/Standup controllers had zero HTTP coverage; 3 role-groups had no wrong-role 403 test; one PIP rule boundary untested). Added `NightlyChainUatFlowIT` (genuine end-to-end 01:30→01:45→02:00 chain) and `MetricsAndPipChainProfilingIT`. Actually re-ran the local restore drill (fresh containers, fresh dump/binlog replay — 3 rows, matched). Exported `docs/openapi.json`.
-
-**`mvn verify`: 385 unit tests + 269 integration tests, 0 failures, genuinely green** as of the end of this session.
+**On branch `fe-integration-invite-approval` (4 commits, `mvn clean verify` GREEN, NOT merged):**
+- `ced9ed0` **fix: restore `docker/mysql-init/01-users.sql`** — it was wrongly deleted in
+  `27d5e50` ("superseded"); it is still mounted by `docker-compose.yml:27` AND
+  `IntegrationTestBase` to create `moriah_app` and give `moriah_migrate` `GRANT OPTION`. Its
+  absence broke all 267 ITs (context load) and a fresh `docker compose up`.
+- `0b47bc5` **chore(dev): dev seed → Flyway repeatable migration** —
+  `db/testdata/R__dev_seed_data.sql` replaces `DevDataLoader.java` (an `ApplicationRunner` that
+  swallowed errors into one WARN). `application-dev.yml` adds `classpath:db/testdata` to
+  `spring.flyway.locations`; prod/test keep the default so sample data never reaches them. Seeds
+  10 accounts (`admin@ pm@ dev@ sales@ hr@ ba@ client@ student1@ student2@ student3@ moriah.test`,
+  password `Password123!`) + one batch/sprint/tasks/lead/employees, all idempotent.
+- `70dd6b5` **feat: staff invite + client self-registration approval** (FE gap B1.1–B1.3).
+  Migration `V19` adds `UserStatus` `INVITED` / `PENDING_APPROVAL` / `REJECTED` (extends
+  `chk_users_status`) + `staff_invite_tokens` table (mirrors `email_verification_tokens`).
+  7 new endpoints:
+  `POST /api/v1/admin/users` (invite staff → `INVITED`, emails link, 7-day TTL, rejects
+  STUDENT/CLIENT roles), `POST /api/v1/admin/users/{uuid}/resend-invite`,
+  `POST /api/v1/auth/accept-invite` (`{token,password}` → set password, `INVITED→ACTIVE`,
+  auto-login; a 2FA challenge for an invited ADMIN/HR_MANAGER),
+  `POST /api/v1/auth/register/client` (`→ PENDING_APPROVAL` + CLIENT role + `INACTIVE` clients
+  row), `GET /api/v1/admin/client-requests?status=PENDING_APPROVAL|REJECTED`,
+  `POST /api/v1/admin/client-requests/{uuid}/approve|reject`.
+  `AuthService.login` rejects the 3 new statuses with `ACCOUNT_INVITE_PENDING` /
+  `ACCOUNT_PENDING_APPROVAL` / `ACCOUNT_REGISTRATION_REJECTED`. New: `StaffInviteToken` + repo,
+  `ClientRegistrationService`, `ClientApprovalService` (in `admin/`), `ClientRequestController`,
+  5 DTOs. `STAFF_INVITE_URL_TEMPLATE` added (`AuthLinkProperties`, `application*.yml`,
+  `required-integrations.md`). 11 new unit tests. Docs regenerated (openapi.json now 107
+  endpoints).
+- `0ab563a` **test: relative dates in `BatchFlowIT` / `SprintTaskFlowIT`** — see Problems solved.
 
 ## Decisions made
 
-- **Standing instruction governing this entire session**: decide autonomously per `context/build-plan.md`/`context/AGENTS.md` without asking design questions; run `/review` after each feature; **build through feature 24, then stop.** This instruction is now fully discharged — a fresh session needs new explicit direction to do anything further on this project.
-- **Git repository initialized this session** (none existed before, at all). `.env` correctly excluded. `/review` now uses real `git diff` for every feature instead of the old parallel-agent-file-list workaround — that workaround is obsolete, don't reintroduce it.
-- **Workflow pattern**: the orchestrating session did all `/architect`-equivalent research/decision-making itself (reading build-plan.md/architecture.md/existing conventions, resolving every open design question up front), then delegated the actual implementation + `mvn verify` to a background general-purpose Agent per feature, with a long, fully-decided, self-contained prompt. After each feature: reviewed the real `git diff` directly, decided any fixes autonomously, committed. This worked well — every feature shipped with 0-1 findings on review, and several real bugs were caught by the delegated agents themselves before ever reaching review (see Problems solved).
-- **Honesty standard held throughout, deliberately, on every "can't fully test this locally" item** (load testing, production-scale migration dry run, staging deploy, restore drill scope) — never fabricated a passing number or a claim that couldn't be backed by a real local test. UAT Scenario row 9 (p95 ≤ 200ms) is explicitly left unchecked in `progress-tracker.md` because the real measured number (~6s under local load) doesn't meet it. This precedent should hold for any future work on this project too.
-- **`@Transactional` must never wrap an outbound call** (S3, HTTP) — this was violated 4 times independently across features 07/08/19/20 before feature 23 caught and fixed all of them at once. Watch for this in any new service that renders-then-uploads a file.
+- **Frontend↔backend integration — 3 decisions locked** (see `frontend-backend-gap-report.md`):
+  1. **Option A — build it in the backend.** Staff invite + client self-register + ADMIN-only
+     approval queue. Done (branch above). Deliberately re-opens `build-plan.md` feature 21's
+     "a client cannot self-register" — noted in `V19` header + Javadoc. `POST /api/v1/clients`
+     (ADMIN-provisioned client) is unchanged and still works.
+  2. **Hybrid (FE-only, no backend change).** Keep `register → verify-email → login`; the FE
+     adds a route guard forcing `/student/subscription` (checkout) before the dashboard unlocks.
+     Do NOT build a combined register-with-payment endpoint.
+  3. **Drop multi-role (FE-only).** Backend keeps emitting the JWT `roles` array; the FE
+     collapses to one primary role by priority
+     `ADMIN > TRAINER_PM > BUSINESS_ANALYST > HR_MANAGER > LEAD_GEN > DEVELOPER > CLIENT > STUDENT`.
+     No backend endpoint requires two roles at once; multi-role is admin-assign-only.
+- **The frontend is a 100% mock prototype.** `src/services/apiClient.js` has `USE_MOCKS = true`;
+  all ~13 `*Service.js` use `mockRequest()` against `mockData.js` + ~40 `localStorage` keys.
+  Zero backend endpoints wired. The FE `LoginResponse` has NO user object — must call
+  `GET /users/me` after login. Role codes differ (`trainer`↔`TRAINER_PM`,
+  `lead_generator`↔`LEAD_GEN`, `hr`↔`HR_MANAGER`); plan `corporate`↔`CORPORATE_PROGRAM`.
+- **Dev seed is a Flyway repeatable migration, never a versioned one and never a runner.** The
+  `test`/`prod` profiles must keep `spring.flyway.locations` at the default so they never load it.
+- **`@Transactional` must never wrap an outbound call** (S3, HTTP) — held from prior sessions.
+- **Honesty standard**: never fabricate a passing test number or a claim not backed by a real
+  local run (held throughout; e.g. UAT p95 row stays honestly unchecked).
 
 ## Problems solved
 
-- **Two real Spring auto-configuration traps (feature 22)**: (1) a second `DataSource`/`JdbcTemplate` `@Bean` silently suppresses the primary connection pool — `@ConditionalOnMissingBean` matches by type, not qualifier. Fixed by never registering the replica pool as its own bean, and explicitly re-declaring `@Primary` on the default `JdbcTemplate`. (2) `@Async` self-invocation within the same class silently runs synchronously (proxy bypass) — fixed by splitting into a separate bean (`ExportGenerationService`). Both documented in that code's own Javadoc — read it before adding a third connection pool or another `@Async` method to this codebase.
-- **A subtle HSTS bug (feature 23)**: Spring Security's default HSTS header writer only fires when `HttpServletRequest.isSecure()` is true, but this project has no `server.ssl.*` configured anywhere — meaning the realistic deployment shape is TLS terminated upstream, so the default would have silently never sent the header. Fixed with an unconditional `requestMatcher(AnyRequestMatcher.INSTANCE)`.
-- **A real cross-test-class pollution bug (feature 20)**: two `CertificateFlowIT` fixtures left permanently-`ACTIVE` `batch_students` rows that corrupted `MetricsRefreshFlowIT`'s deliberately-unscoped whole-platform cohort scan, since Testcontainers MySQL is a single static-singleton shared across the whole `mvn verify` run. Fixed by not inserting the row when the test doesn't actually need a specific status. Any future `*FlowIT` fixture that sets `batch_students` to `ACTIVE`/`ON_PIP` and doesn't transition it away by test end will reproduce this.
-- **A genuine test-timing flake (feature 24)**: `NotificationQueueIT`'s 10-second poll budget wasn't always enough once feature 24's own new tests (300 PIP-triggered notification enqueues in `MetricsAndPipChainProfilingIT`) added real extra traffic to the shared Redis queue. Confirmed via isolated re-runs it wasn't a logic bug; fixed by widening the poll budget to 30s.
-- **Recurring build-agent friction**: background agents kept ending their turn while `mvn verify` was still running in a background shell (or a self-imposed wait-loop), producing incomplete reports — happened at least once on every one of features 20-24. Fix was always the same manual resume message: tell the agent explicitly to call Bash for `mvn verify` with `run_in_background` omitted/false and an explicit `timeout` ≥ 480000ms. Twice this also coincided with a genuine session usage-limit interrupt mid-build; in both cases work-in-progress survived on disk and resuming the same agent picked up cleanly.
+- **`docker/mysql-init/01-users.sql` deletion broke every integration test.** Restored from the
+  initial commit. If ITs ever fail suite-wide with `GRANT command denied to 'moriah_migrate'` in
+  `afterMigrate.sql`, this file is missing again.
+- **`@FutureOrPresent` date time-bomb.** `BatchFlowIT` / `SprintTaskFlowIT` hardcoded
+  `startDate: "2026-09-01"`; `CreateBatchRequest` / `CreateSprintRequest` mark `startDate`
+  `@FutureOrPresent`, so every batch/sprint create returned 400 (before the role check) once the
+  clock passed that date — 18 failures on 2026-09-02. Fixed: dates now `LocalDate.now().plusDays(…)`
+  as consecutive relative weeks. Watch for other hardcoded future-dates elsewhere in the ITs.
+- **`GET /v3/api-docs` → 401** — no handler (prod disables springdoc, or the path wasn't in
+  `PUBLIC_PATHS`) → servlet ERROR-dispatch to `/error` → not public → the `UNAUTHENTICATED`
+  envelope (charset ISO-8859-1). Real 404s come from `GlobalExceptionHandler` (charset UTF-8).
+- **`mvn spring-boot:run` failed on `${DB_HOST}`** — nothing loads `.env` for a host-run JVM.
+  Fixed with `spring.config.import: "optional:file:./.env[.properties]"` in `application-dev.yml`
+  (dev only; `test` uses Testcontainers, `prod` uses real env).
+- **`POST /api/v1/auth/2fa/verify` 500** — request sent as `Content-Type: text/plain`. Not a 2FA
+  bug; the body was never read. Postman: Body → raw → JSON.
+- **springdoc path matching** — `/v3/api-docs/**` did not reliably cover the bare `/v3/api-docs`;
+  `PUBLIC_PATHS` now lists both forms + `.yaml` + bare `/swagger-ui`.
+- **Machine is heavily load-sensitive** — running 2+ `mvn verify` concurrently makes perf-budget
+  ITs (`PipEvaluationProfilingIT`) flake and slows every IT ~5×. Run one build at a time.
 
 ## Current state
 
-**All 24 features complete, committed, and `/review`'d clean.** `context/progress-tracker.md` is fully up to date — Current Status, full Progress checklist, Migration Ledger through V16, Open Stubs table (all 5 rows cleared), UAT Scenarios table (9/10 rows checked with real proof pointers, row 9 honestly unchecked), Database Resilience Checklist, and a complete decision log for every feature this session touched.
-
-Git log: `bfa045b` (01-19 snapshot) → `da141bc` (20) → `acf46dd` (21) → `e9aa922` (22) → `0a17350` (23) → `bd2b977` (24). Nothing uncommitted. No PR/push happened — everything is local commits on `main`.
+- **`main` = `77e1b70`** — audit + doc pipeline + logging. Green.
+- **Branch `fe-integration-invite-approval`** (4 commits above) — Option A + the two fixes.
+  **`mvn clean verify` = BUILD SUCCESS, 399 unit + 267 integration, 0 failures.** NOT merged.
+- Working tree: only `memory.md` (this file) is uncommitted.
+- `openapi.json` / `API-Documentation.md` / `PROJECT-REFERENCE.md` / Postman collection are all
+  regenerated and include the 7 new endpoints.
 
 ## Next session starts with
 
-**Nothing is queued.** The build is complete. If the user wants to continue working on this project, likely directions:
-1. A genuinely new feature beyond the original 24-feature plan.
-2. Addressing one of the honestly-flagged gaps: real load testing against the p95 target, a production-scale migration dry run, or an actual staging deployment — all three need infrastructure that doesn't exist yet in this project.
-3. A bug fix or refinement to something already shipped.
-
-In any of these cases: run `/remember restore` first, then read `context/progress-tracker.md`'s Current Status and (for gap-related work) its UAT Scenarios table and feature 23/24 decision-log entries before doing anything.
+1. **Merge the branch:** `git checkout main && git merge --ff-only fe-integration-invite-approval`
+   (then optionally `git branch -d fe-integration-invite-approval`).
+2. Then the actual **frontend↔backend integration**, driven by
+   `C:\Users\ADMIN\Desktop\Moraih Backend\frontend-backend-gap-report.md`:
+   - **Part A (frontend):** flip `USE_MOCKS=false`, add `VITE_API_BASE_URL`, rewrite every
+     `*Service.js` to call `apiClient.request`; unwrap the `ApiResponse`/`PageResponse` envelope;
+     real auth (access+refresh + 401-refresh interceptor, email-only login, `GET /users/me` after
+     login, real 2FA challenge flow, OAuth redirect); role/status/plan enum mapping; multipart
+     uploads; Vite dev proxy.
+   - **Part B (backend gaps still open):** in-app notifications feed, resource library, video
+     lessons / self-paced learning, lead-gen campaigns, student interviews, client talent pool +
+     recruitment requests, HR exit/onboarding/disciplinary, admin transactions+refunds list,
+     admin coupon CRUD (`CouponService` exists, no controller), plan create/delete, BA meetings,
+     assessment question bank + bug-challenge list/update/delete.
 
 ## Open questions
 
-- `docs/openapi.json` (feature 24) is a one-time static export — it will drift from the live `/v3/api-docs` the moment any endpoint changes, and nothing regenerates it automatically. Worth wiring into a build step if this project ever gets real CI.
-- `project-overview.md` still says `/api/v1/webhooks/*` includes `github` — build-plan.md's real spec never built one. Noted across several prior sessions, still open, not blocking.
-- No staging environment or deployment target has ever been chosen for this project. Every "verified locally, not against production scale" caveat (V16 migration, load test, restore drill) traces back to this one root fact.
+- Merge the branch now, or keep iterating on it first?
+- Part B priority order — which missing endpoints does the frontend need for its first
+  shippable screens? (gap report suggests notifications → resource library → video lessons →
+  transactions list, then the rest.)
+- `frontend-backend-gap-report.md` lives outside the repo (workspace parent). Should it (and the
+  frontend) be brought under version control?
