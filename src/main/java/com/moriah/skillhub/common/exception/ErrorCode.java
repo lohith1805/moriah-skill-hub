@@ -74,6 +74,7 @@ public enum ErrorCode {
     RECRUITMENT_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "This recruitment request does not exist."),
     SALES_TARGET_NOT_FOUND(HttpStatus.NOT_FOUND, "No sales target has been set for you this month."),
     EMPLOYEE_NOT_FOUND(HttpStatus.NOT_FOUND, "This employee record does not exist."),
+    EMPLOYEE_EXIT_NOT_FOUND(HttpStatus.NOT_FOUND, "This exit record does not exist."),
     HR_DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "This document does not exist."),
     LEAVE_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "This leave request does not exist."),
     CERTIFICATE_NOT_FOUND(HttpStatus.NOT_FOUND, "This certificate does not exist."),
