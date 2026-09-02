@@ -55,20 +55,31 @@ commit, `mvn verify` GREEN at two checkpoints — 444 unit + 267 integration, 0 
   (CLIENT own / ADMIN+HR all — privilege from JWT roles), `PUT /{id}/status` (ADMIN/HR
   approve/reject). New `talent/` module. Resume access deliberately NOT wired (needs an
   OwnershipGuard branch). `ErrorCode.RECRUITMENT_REQUEST_NOT_FOUND`.
-- **B1.10 slice 1 — HR Exit Management** (`64a5257`) — `V28` `employee_exits`.
-  `POST /api/v1/hr/exits` + `GET` + `PUT /{id}` + `POST /{id}/complete` (HR_MANAGER/ADMIN).
-  `complete` flips `employees.status` (EXITED / TERMINATED for `ExitType.TERMINATION`) + stamps
-  `date_of_exit`. **Onboarding + disciplinary (rest of B1.10) NOT done.**
-  `ErrorCode.EMPLOYEE_EXIT_NOT_FOUND`.
+- **B1.10 — HR Exit + Onboarding + Disciplinary — COMPLETE.**
+  - Exit (`64a5257`, `V28` `employee_exits`): `POST /api/v1/hr/exits` + `GET` + `PUT /{id}` +
+    `POST /{id}/complete`. `complete` flips `employees.status` (EXITED / TERMINATED for
+    `ExitType.TERMINATION`) + stamps `date_of_exit`. `ErrorCode.EMPLOYEE_EXIT_NOT_FOUND`.
+  - Onboarding (`2193010`, `V29` `employee_onboardings`): `POST /api/v1/hr/onboardings` + `GET`
+    + `GET /{id}` + `PUT /{id}`. No employee-row side effect. `EMPLOYEE_ONBOARDING_NOT_FOUND`.
+  - Disciplinary (`37f6902`, `V30` `disciplinary_actions`): `POST /api/v1/hr/disciplinary` +
+    `GET` + `GET /{id}` + `PUT /{id}`. Never touches `employees.status`.
+    `DISCIPLINARY_ACTION_NOT_FOUND`.
+- **`GET /api/v1/hr/employees` list + `/{id}` detail** (`c293d0b`) — feature 19 had only POST.
+- **B1.15 — COMPLETE** (bug-challenge CRUD earlier + question bank now). Question bank
+  (`56e2b3b`, `V31` `question_banks` + `question_bank_items`): `POST/GET /api/v1/assessments/banks`
+  + `POST/GET /api/v1/assessments/banks/{id}/questions`. TRAINER_PM/ADMIN. `correctAnswer` never
+  serialized. `QUESTION_BANK_NOT_FOUND`, new `assessment.entity.QuestionDifficulty`.
 
-**Migrations added this session: V20–V28.** Next unused = **V29**.
-**Verify status:** last FULL green `mvn clean verify` was at **B1.14** (`ef5c437` state): 465 unit
-+ 267 integration, 0 failures. B1.8/B1.9/B1.10 (V26/V27/V28) are unit-tested only (488 unit
-tests green) — a full verify was attempted but the **integration phase hung ~22 min with no
-output and had to be killed** (host resource exhaustion — orphan JVMs, thrashing; NOT a code
-defect). The three new migrations are plain additive `CREATE TABLE` in the exact shape of
-V21/V24/V25 which passed. **A clean `mvn clean verify` still needs to be run for B1.8–B1.10 when
-the machine is quiet** (close the VS Code Java language server + other JVMs first).
+**Migrations added this session: V20–V31.** Next unused = **V32**.
+**Verify status:** last FULL green `mvn clean verify` = **B1.14** state (`ef5c437`): 465 unit +
+267 integration, 0. Then for **V26–V28** a verify ran **488 unit + 14 IT classes (through
+EntitlementGuardIT, incl. BaClientFlowIT/CrmFlowIT/AssessmentFlowIT/AdminMetricsFlowIT/
+CheckoutFlowIT) all GREEN** before being killed (host too slow — ITs taking 2-6× normal). Every
+IT that ran passed; Flyway `validate()` + `ddl-auto:validate` + context load all succeed for the
+new migrations (any IT booting at all proves that). **507 unit tests green** after B1.15/B1.10.
+A final `mvn clean verify` (task `bv9aog97x` / `/tmp/vfull.txt`) was launched covering V20–V31 —
+check it if this session resumed. The machine is HEAVILY loaded; a verify currently takes 60-90+
+min. Close VS Code's redhat.java JVM + other Java processes before running one.
 
 ## `taskkill //F //IM java.exe` is TOO BROAD — it also kills the user's VS Code redhat.java
 language server (it auto-restarts, but rude). Kill maven JVMs by PID / by `CommandLine -like
@@ -81,14 +92,14 @@ its log with `grep --line-buffered`, never unbounded `tee`.)
 **`README.md` has UNCOMMITTED local edits (not from this session's commits) that paste Razorpay
 TEST api keys + seeded-user rows.** Left untouched. Should be moved out of the tracked file.
 
-**Part B gaps still open:** B1.10 onboarding + disciplinary (exit done), B1.15-part1 assessment
-question bank (needs new tables), B1.18 installment plans (likely skip), B1.4 per-lesson quiz.
-Also noticed in passing: `GET /api/v1/hr/employees` (list) does not exist — `EmployeeController`
-has only `POST`. Small gap worth a follow-up.
+**Part B gaps still open:** B1.18 installment/EMI plans at checkout (deferred — "if the product
+needs it"), B1.4 per-lesson quiz (needs assessment-module integration; the lessons module itself
+is done). **Everything else in Part B is done.**
 
-**Session-3 endpoint tally: ~53 across 14 gap items** (B1.4, B1.5, B1.6, B1.7, B1.8, B1.9,
-B1.10-exit, B1.11, B1.12, B1.13, B1.14, B1.15-part2, B1.16, B1.17), each its own commit on
-`main`, all unit-tested (488 green). Frontend integration (Part A) still not started.
+**Session-3 endpoint tally: ~70 across all of B1.1–B1.17** (B1.1–B1.3 were prior session; this
+session: B1.4, B1.5, B1.6, B1.7, B1.8, B1.9, B1.10 full, B1.11, B1.12, B1.13, B1.14, B1.15 full,
+B1.16, B1.17 + `GET /hr/employees`). Each its own commit on `main`, all unit-tested (507 green).
+Frontend integration (Part A) still not started — that is the next major body of work.
 
 ## What was built
 
