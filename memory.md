@@ -30,11 +30,32 @@ commit, `mvn verify` GREEN at two checkpoints — 444 unit + 267 integration, 0 
   `POST /{id}/progress`). Curator roles = DEVELOPER/TRAINER_PM/ADMIN. `watchedSeconds` never
   rewinds; `completedAt` stamped once. Link-only; **per-lesson quiz still TODO**.
 
-**Migrations added this session: V20, V21, V22.** Next unused = **V23**.
-**Part B gaps still open:** B1.7 lead-gen campaigns, B1.8 student interviews, B1.9 client talent
-pool + recruitment requests, B1.10 HR exit/onboarding/disciplinary, B1.14 BA meetings, B1.15
-assessment question bank + bug-challenge list/update/delete, B1.16 developer client-requirements
-review, B1.18 installment plans (likely skip), B1.4 per-lesson quiz.
+- **B1.15 part 2 — bug-challenge list/detail/update/delete** (`c25465f`'s predecessor, actually
+  its own commit) — `GET /api/v1/projects/{id}/challenges`, `GET/PUT/DELETE /api/v1/challenges/{id}`
+  on `ChallengeController`. DEVELOPER/ADMIN; edit/delete need creator-or-ADMIN + non-archived
+  project. New `ErrorCode.BUG_CHALLENGE_NOT_FOUND`. **Question-bank half of B1.15 NOT done** (new
+  tables, deferred).
+- **B1.16 — developer client-requirements review** (`c25465f`) — `V23` adds
+  `requirement_documents.dev_reviewed_at`/`dev_reviewed_by`. `GET /api/v1/ba/documents` (BA list,
+  new), `GET /api/v1/dev/requirement-documents` + `/{id}` + `POST /{id}/acknowledge`
+  (`DevRequirementController`). New `RequirementDocumentDetailResponse` (adds `content`).
+- **B1.7 — Lead-Gen Campaigns** (committed after clean-verify recovery) — `V24` `lead_campaigns`.
+  `GET/POST/PUT/DELETE /api/v1/leads/campaigns` (`LeadCampaignController`, LEAD_GEN/ADMIN). DELETE
+  → status CANCELLED. New `ErrorCode.LEAD_CAMPAIGN_NOT_FOUND`.
+
+**Migrations added this session: V20–V24.** Next unused = **V25**.
+**Clean `mvn clean verify` GREEN after B1.7: 460 unit + 267 integration, 0 failures.**
+(One scare mid-session: a background `verify` collapsed with a flood of "connection closed" +
+`bash fork: Resource temporarily unavailable` + my log file hitting a size cap — purely host
+resource exhaustion, NOT a code bug. Re-run clean = green. Lesson: run `verify` ALONE, filter
+its log with `grep --line-buffered`, never unbounded `tee`.)
+
+**`README.md` has UNCOMMITTED local edits (not from this session's commits) that paste Razorpay
+TEST api keys + seeded-user rows.** Left untouched. Should be moved out of the tracked file.
+
+**Part B gaps still open:** B1.8 student interviews, B1.9 client talent pool + recruitment
+requests, B1.10 HR exit/onboarding/disciplinary, B1.14 BA meetings, B1.15-part1 assessment
+question bank, B1.18 installment plans (likely skip), B1.4 per-lesson quiz.
 
 ## What was built
 
