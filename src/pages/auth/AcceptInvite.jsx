@@ -53,9 +53,23 @@ export default function AcceptInvite() {
     if (Object.keys(validation).length) return;
 
     try {
-      const user = await acceptInvite(token, values.password);
-      notify(`Welcome to Moriah Skill Hub, ${user.name.split(" ")[0]}.`, { type: "success", title: "Account activated" });
-      navigate(ROLE_HOME[user.role] || "/login", { replace: true });
+      const result = await acceptInvite(token, values.password);
+      if (result.twoFactorRequired) {
+        // Invited ADMIN / HR_MANAGER: password is set and the account is ACTIVE,
+        // but 2FA is mandatory. Send them to sign in, where the mandatory-2FA
+        // setup flow runs.
+        notify("Account activated. Sign in to set up two-factor authentication.", {
+          type: "success",
+          title: "Account activated",
+        });
+        navigate("/login", { replace: true });
+        return;
+      }
+      notify(`Welcome to Moriah Skill Hub, ${result.user.name.split(" ")[0]}.`, {
+        type: "success",
+        title: "Account activated",
+      });
+      navigate(ROLE_HOME[result.user.role] || "/login", { replace: true });
     } catch (err) {
       setFailed(true);
       notify(err.message || "This invite link is no longer valid.", { type: "error", title: "Could not activate account" });

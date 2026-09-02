@@ -1,7 +1,18 @@
-import { createContext, useContext, useMemo, useState, useEffect } from "react";
+import { createContext, useContext, useMemo, useState, useEffect, useCallback } from "react";
 import { useDispatch } from "react-redux";
 import { setCredentials, logout as logoutAction } from "../app/authSlice";
-import { login as loginRequest, registerStudent, registerClient, acceptInvite as acceptInviteRequest, persistSession, clearSession, getPersistedUser } from "../services/authService";
+import {
+  login as loginRequest,
+  acceptInvite as acceptInviteRequest,
+  verifyTwoFactor as verifyTwoFactorRequest,
+  registerStudent,
+  registerClient,
+  getMe,
+  logout as logoutRequest,
+  clearSession,
+  getPersistedUser,
+} from "../services/authService";
+import { tokenStore } from "../services/apiClient";
 
 const AuthContext = createContext(null);
 
@@ -9,87 +20,138 @@ export function AuthProvider({ children }) {
   const dispatch = useDispatch();
   const [user, setUser] = useState(getPersistedUser());
   const [loading, setLoading] = useState(false);
+  const [hydrating, setHydrating] = useState(tokenStore.hasSession && !getPersistedUser());
 
+  const applyUser = useCallback(
+    (u) => {
+      setUser(u);
+      if (u) dispatch(setCredentials(u));
+      else dispatch(logoutAction());
+    },
+    [dispatch]
+  );
+
+  // On load: if there's a token but no cached user (or to refresh a stale one),
+  // hydrate from GET /users/me. No more localStorage polling.
   useEffect(() => {
-    const interval = setInterval(() => {
-      const latest = getPersistedUser();
-      if (latest) {
-        if (latest.batch !== user?.batch || latest.accountStatus !== user?.accountStatus || latest.name !== user?.name) {
-          setUser(latest);
-          dispatch(setCredentials(latest));
+    let cancelled = false;
+    if (!tokenStore.hasSession) {
+      if (user) applyUser(null);
+      setHydrating(false);
+      return;
+    }
+    (async () => {
+      try {
+        const fresh = await getMe();
+        if (!cancelled) applyUser(fresh);
+      } catch {
+        if (!cancelled) {
+          clearSession();
+          applyUser(null);
         }
-      } else if (user) {
-        setUser(null);
-        dispatch(logoutAction());
+      } finally {
+        if (!cancelled) setHydrating(false);
       }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [user, dispatch]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  // Returns { user } on success, or { twoFactorRequired, twoFactorSetupRequired,
+  // challengeToken } when the caller must complete a 2FA step first.
   const login = async (credentials) => {
     setLoading(true);
     try {
-      const { user: loggedInUser, token } = await loginRequest(credentials);
-      persistSession(loggedInUser, token);
-      setUser(loggedInUser);
-      dispatch(setCredentials(loggedInUser));
-      return loggedInUser;
+      const result = await loginRequest(credentials);
+      if (result.user) applyUser(result.user);
+      return result;
     } finally {
       setLoading(false);
     }
   };
 
-  // Student flow: payment already succeeded in the wizard, so the account is
-  // active immediately — log them straight in.
+  const completeTwoFactor = async ({ challengeToken, totpCode }) => {
+    setLoading(true);
+    try {
+      const fresh = await verifyTwoFactorRequest({ challengeToken, totpCode });
+      applyUser(fresh);
+      return fresh;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Decision D2 (Hybrid): student register -> verify email -> login -> checkout.
+  // No session is created here; the wizard shows a "verify your email" step next.
   const register = async (payload) => {
     setLoading(true);
     try {
-      const { user: newUser, token } = await registerStudent(payload);
-      persistSession(newUser, token);
-      setUser(newUser);
-      dispatch(setCredentials(newUser));
-      return newUser;
+      return await registerStudent(payload);
     } finally {
       setLoading(false);
     }
   };
 
-  // Client flow: account is created but locked pending Admin/BA approval —
-  // do NOT log them in or persist a session.
+  // Corporate client: PENDING_APPROVAL, cannot log in until an ADMIN approves.
   const registerClientAccount = async (payload) => {
     setLoading(true);
     try {
-      const { user: newUser } = await registerClient(payload);
-      return newUser;
+      return await registerClient(payload);
     } finally {
       setLoading(false);
     }
   };
 
-  // Invited-staff flow: they finish setting a password on /accept-invite,
-  // which activates their account and logs them straight in.
+  // Invited staff finish setting a password. Like login, this may bounce into a
+  // 2FA step (mandatory for ADMIN / HR_MANAGER).
   const acceptInvite = async (token, password) => {
     setLoading(true);
     try {
-      const { user: activatedUser, token: sessionToken } = await acceptInviteRequest(token, password);
-      persistSession(activatedUser, sessionToken);
-      setUser(activatedUser);
-      dispatch(setCredentials(activatedUser));
-      return activatedUser;
+      const result = await acceptInviteRequest(token, password);
+      if (result.user) applyUser(result.user);
+      return result;
     } finally {
       setLoading(false);
     }
   };
 
-  const logout = () => {
-    clearSession();
-    setUser(null);
-    dispatch(logoutAction());
+  const refreshUser = useCallback(async () => {
+    try {
+      const fresh = await getMe();
+      applyUser(fresh);
+      return fresh;
+    } catch {
+      return null;
+    }
+  }, [applyUser]);
+
+  const logout = async () => {
+    try {
+      await logoutRequest();
+    } finally {
+      applyUser(null);
+    }
   };
 
   const value = useMemo(
-    () => ({ user, isAuthenticated: !!user, loading, login, register, registerClientAccount, acceptInvite, logout }),
-    [user, loading]
+    () => ({
+      user,
+      isAuthenticated: !!user,
+      loading,
+      hydrating,
+      login,
+      completeTwoFactor,
+      register,
+      registerClientAccount,
+      acceptInvite,
+      refreshUser,
+      logout,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [user, loading, hydrating]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

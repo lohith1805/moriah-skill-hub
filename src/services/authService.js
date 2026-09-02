@@ -1,432 +1,246 @@
-import { mockRequest } from "./apiClient";
-import { USERS, BATCHES } from "./mockData";
-import { ROLES, ACCOUNT_STATUS } from "../utils/constants";
+// Auth against the Spring Boot backend (/api/v1/auth/**, /api/v1/users/me,
+// /api/v1/admin/client-requests, /api/v1/admin/users).
+//
+// The FE `user` object the app's components expect is composed from:
+//   - GET /users/me         -> profile fields (name, email, phone, ...)
+//   - the access-token JWT   -> `roles` (claim) + `sub` (uuid)
+// The token carries the authoritative role list; /users/me does not return it.
 
-const REGISTERED_USERS_KEY = "mORIAH_REGISTERED_USERS";
+import { apiClient, tokenStore } from "./apiClient";
+import {
+  primaryFeRole,
+  FE_ROLE_TO_BACKEND,
+  ACCOUNT_STATUS,
+} from "../utils/constants";
 
-function readRegisteredUsers() {
+const USER_KEY = "msh_user";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api/v1";
+
+// ---- JWT (decode only — verification is the backend's job) ----------------
+
+function decodeJwt(token) {
   try {
-    const raw = localStorage.getItem(REGISTERED_USERS_KEY);
-    let list = [];
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          list = parsed;
-        }
-      } catch (e) {
-        list = [];
-      }
-    }
-
-    // Clean up duplicate users (keep only the latest one per email)
-    const uniqueMap = new Map();
-    list.forEach((u) => {
-      if (u && u.email) {
-        uniqueMap.set(u.email.toLowerCase(), u);
-      } else if (u && u.id) {
-        uniqueMap.set(`no-email-${u.id}`, u);
-      }
-    });
-    list = Array.from(uniqueMap.values());
-
-    // Default Admin configuration
-    const defaultAdminEmail = "admin@moriah.io";
-    const hasAdmin = list.some((u) => u.email && u.email.toLowerCase() === defaultAdminEmail.toLowerCase());
-
-    if (!hasAdmin) {
-      const defaultAdmin = {
-        id: "admin-default",
-        name: "Admin User",
-        email: defaultAdminEmail,
-        phone: "+919999999999",
-        role: ROLES.ADMIN,
-        password: "Password123",
-        accountStatus: ACCOUNT_STATUS.ACTIVE,
-        avatarColor: "#0D2845",
-      };
-      list.push(defaultAdmin);
-    }
-
-    localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(list));
-    return list;
-  } catch (err) {
-    console.warn("[authService] Failed to read custom registered users:", err);
-    return [];
+    const part = token.split(".")[1];
+    const json = atob(part.replace(/-/g, "+").replace(/_/g, "/"));
+    return JSON.parse(decodeURIComponent(escape(json)));
+  } catch {
+    return {};
   }
 }
 
-function writeRegisteredUsers(list) {
-  try {
-    localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(list));
-  } catch (err) {
-    console.warn("[authService] Failed to save custom registered users:", err);
-  }
-}
+// ---- FE user shape ------------------------------------------------------
 
-// In production this posts to POST /auth/login and receives a JWT + refresh token (SRS §5.1).
-export async function login({ identifier, password }) {
-  if (!identifier || !password) throw new Error("Identifier and password are required");
-
-  const cleanIdentifier = identifier.trim().toLowerCase();
-  const list = readRegisteredUsers();
-
-  const userMatches = (u) => {
-    // Match email
-    if (u.email && u.email.toLowerCase() === cleanIdentifier) return true;
-    // Match phone
-    if (u.phone) {
-      const cleanPhone = u.phone.replace(/[\s\-\+\(\)]/g, "");
-      const cleanInputPhone = cleanIdentifier.replace(/[\s\-\+\(\)]/g, "");
-      if (cleanPhone === cleanInputPhone && cleanPhone.length > 0) return true;
-    }
-    // Match name (username) case-insensitively
-    if (u.name && u.name.toLowerCase() === cleanIdentifier) return true;
-    // Match email prefix as a fallback for username (e.g. "ananya.student" for "ananya.student@moriah.io")
-    if (u.email) {
-      const prefix = u.email.split("@")[0].toLowerCase();
-      if (prefix === cleanIdentifier) return true;
-    }
-    return false;
-  };
-
-  // 1. Look in registered users first
-  let user = list.find(userMatches);
-
-  // 2. If not found, check if they match a pre-seeded user (none by default)
-  if (!user) {
-    const mockUser = USERS.find(userMatches);
-    if (mockUser) {
-      // Create a registered user on the fly from the mock user
-      user = {
-        ...mockUser,
-        password: password, // accept whatever password they typed to register/log in
-        accountStatus: ACCOUNT_STATUS.ACTIVE,
-      };
-      list.push(user);
-      writeRegisteredUsers(list);
-    }
-  }
-
-  // 3. Verify password
-  if (user) {
-    if (user.password && user.password !== password) {
-      throw new Error("Invalid password. Please try again.");
-    }
-    // No password on file yet — either a brand-new mock-user login (handled
-    // above) or an account that just went through requestPasswordReset().
-    // Lock in whatever was typed just now as the new password, same rule as
-    // first-time login, so a reset account doesn't stay wide-open forever.
-    if (!user.password) {
-      user = { ...user, password };
-      const idx = list.findIndex((u) => u.id === user.id);
-      if (idx > -1) {
-        list[idx] = user;
-        writeRegisteredUsers(list);
-      }
-    }
-  } else {
-    throw new Error("Invalid login details. Please register first.");
-  }
-
-  // 4. Gate login on account lifecycle state (mirrors backend's account_status check)
-  if (user.accountStatus === ACCOUNT_STATUS.PENDING_APPROVAL) {
-    throw new Error("Your account is still awaiting Admin approval. We'll notify you once it's reviewed.");
-  }
-  if (user.accountStatus === ACCOUNT_STATUS.REJECTED) {
-    throw new Error("This registration request was not approved. Contact support for details.");
-  }
-  if (user.accountStatus === ACCOUNT_STATUS.INVITED) {
-    throw new Error("Please finish setting your password from the invite link before signing in.");
-  }
-
-  const token = `mock.${btoa(user.id)}.${Date.now()}`;
-  await mockRequest(null, { delay: 600 });
-  return { user, token };
-}
-
-// Student self-registration — Option A: subscription + payment happen inside
-// the registration wizard itself, so a student account is only ever created
-// once payment has succeeded. `subscription` is the plan/payment summary
-// gathered by the Register wizard's plan + payment steps.
-export async function registerStudent(payload) {
-  const { subscription, ...rest } = payload;
-
-  const track = rest.track || "Full-Stack Development";
-  // Prefer a batch matching the student's track. If none exists (e.g. no
-  // batch has been created for that track yet), fall back to the most
-  // recently created batch of ANY track — BATCHES is unshift-ordered, so
-  // BATCHES[0] is the newest — rather than inventing a batch name that
-  // doesn't exist. A student must always land on a real batch object (or
-  // none at all) so their enrollment is never silently lost from every
-  // batch's roster/count.
-  // Automatic batch allocation is disabled. Student must be assigned by a trainer.
-  const assignedBatchName = null;
-
-  // NOTE: batch student counts are no longer tracked via a manual counter
-  // here — trainerService.getBatches() computes each batch's student count
-  // live from the registered-user roster, so it can never drift out of
-  // sync with who's actually assigned to that batch (same fix as health).
-
-  const newUser = {
-    ...USERS[0],
-    ...rest,
-    id: `u${Date.now()}`,
-    role: ROLES.STUDENT,
+function toFeUser(me, accessToken) {
+  const claims = decodeJwt(accessToken || tokenStore.access);
+  const backendRoles = Array.isArray(claims.roles) ? claims.roles : [];
+  return {
+    id: me.uuid,
+    uuid: me.uuid,
+    name: me.fullName,
+    email: me.email,
+    phone: me.phone || "",
+    githubUsername: me.githubUsername || "",
+    linkedinUrl: me.linkedinUrl || "",
+    // Decision D3: one primary role for routing/nav/guards.
+    role: primaryFeRole(backendRoles),
+    roles: backendRoles, // raw backend codes — kept for a future role switcher
+    // If we are holding a valid token the account is ACTIVE; the backend login
+    // gate rejects every other status before issuing tokens. A mid-session
+    // suspension surfaces as the next request 401-ing.
     accountStatus: ACCOUNT_STATUS.ACTIVE,
-    track,
-    batch: assignedBatchName,
-    subscription: subscription || null,
+    bio: me.bio,
+    location: me.location,
+    currentTitle: me.currentTitle,
+    experienceLevel: me.experienceLevel,
+    yearsExperience: me.yearsExperience,
+    skills: me.skills || [],
+    education: me.education || [],
+    workExperience: me.workExperience || [],
+    hasResume: !!me.hasResume,
+    portfolioSlug: me.portfolioSlug,
+    profileComplete: !!me.isComplete,
+    completionPercent: me.completionPercent ?? 0,
   };
-
-  const list = readRegisteredUsers();
-  const existingIdx = list.findIndex((u) => u.email && u.email.toLowerCase() === newUser.email.toLowerCase());
-  if (existingIdx > -1) {
-    list[existingIdx] = newUser;
-  } else {
-    list.push(newUser);
-  }
-  writeRegisteredUsers(list);
-
-  // Record the payment so it shows up for Admin's Transactions dashboard —
-  // mirrors what a real payment-gateway webhook would write.
-  if (subscription) {
-    try {
-      const rawTx = localStorage.getItem("msh_transactions");
-      const txList = rawTx ? JSON.parse(rawTx) : [];
-      const txId = `tx${Date.now()}`;
-      txList.unshift({
-        id: txId,
-        student: newUser.name,
-        plan: subscription.planName || subscription.planCode || "Subscription",
-        amount: subscription.price || subscription.amount || 0,
-        gateway: subscription.gateway || "Razorpay",
-        status: "Success",
-        date: new Date().toISOString().slice(0, 10),
-      });
-      localStorage.setItem("msh_transactions", JSON.stringify(txList));
-
-      // Record welcome and receipt confirmation notification
-      const rawNotif = localStorage.getItem("msh_notifications");
-      const notifList = rawNotif ? JSON.parse(rawNotif) : [];
-      notifList.unshift({
-        id: `notif-${Date.now()}`,
-        title: "Welcome & Payment Confirmed",
-        body: `Hi ${newUser.name.split(" ")[0]}! Your registration payment of ₹${subscription.price || subscription.amount || 0} for the ${subscription.planName} plan has been processed successfully. Invoice: ${txId.replace("tx", "INV-")}.`,
-        time: new Date().toISOString(),
-        read: false,
-      });
-      localStorage.setItem("msh_notifications", JSON.stringify(notifList));
-    } catch (err) {
-      console.warn("[authService] Could not record transaction:", err.message);
-    }
-  }
-
-  await mockRequest(null, { delay: 700 });
-  return { user: newUser, token: `mock.${Date.now()}` };
 }
 
-// Corporate Client self-registration — account is created but locked in
-// "pending_approval" until an Admin/BA reviews it (see registerAppRoutes §3).
-// No token is returned: the client cannot log in yet.
-export async function registerClient(payload) {
-  const newUser = {
-    ...USERS[0],
-    ...payload,
-    id: `u${Date.now()}`,
-    role: ROLES.CLIENT,
-    accountStatus: ACCOUNT_STATUS.PENDING_APPROVAL,
-  };
+// ---- session persistence ---------------------------------------------------
 
-  const list = readRegisteredUsers();
-  const existingIdx = list.findIndex((u) => u.email && u.email.toLowerCase() === newUser.email.toLowerCase());
-  if (existingIdx > -1) {
-    list[existingIdx] = newUser;
-  } else {
-    list.push(newUser);
-  }
-  writeRegisteredUsers(list);
-
-  await mockRequest(null, { delay: 700 });
-  return { user: newUser };
+export function persistSession(user /*, token (legacy, unused) */) {
+  persistUser(user);
 }
 
-// ---- Admin-side: Client approval queue ----
-
-export async function getPendingClients() {
-  const list = readRegisteredUsers();
-  await mockRequest(null, { delay: 300 });
-  return list.filter((u) => u.role === ROLES.CLIENT && u.accountStatus === ACCOUNT_STATUS.PENDING_APPROVAL);
-}
-
-export async function setClientApproval(userId, approve) {
-  const list = readRegisteredUsers();
-  const updated = list.map((u) =>
-    u.id === userId ? { ...u, accountStatus: approve ? ACCOUNT_STATUS.ACTIVE : ACCOUNT_STATUS.REJECTED } : u
-  );
-  writeRegisteredUsers(updated);
-  await mockRequest(null, { delay: 400 });
-  return { userId, accountStatus: approve ? ACCOUNT_STATUS.ACTIVE : ACCOUNT_STATUS.REJECTED };
-}
-
-// ---- Admin-side: internal staff invites (Trainer, Developer, Lead Gen, HR, BA, Admin) ----
-// These roles are never self-registered. Admin creates an "invited" account here;
-// in a real backend this sends an emailed, single-use, expiring signup link.
-
-export async function inviteStaffMember({ name, email, role }) {
-  const newUser = {
-    id: `u${Date.now()}`,
-    name,
-    email,
-    role,
-    accountStatus: ACCOUNT_STATUS.INVITED,
-    avatarColor: "#0D2845",
-    invitedAt: new Date().toISOString(),
-  };
-
-  const list = readRegisteredUsers();
-  list.push(newUser);
-  writeRegisteredUsers(list);
-
-  await mockRequest(null, { delay: 500 });
-  // Mock invite link — a real backend would email this instead of returning it
-  // to the Admin UI. It's a same-origin, relative link so it actually resolves
-  // to the /accept-invite screen in this app (no fake external domain).
-  const inviteLink = `${window.location.origin}/accept-invite?token=mock.${newUser.id}`;
-  return { user: newUser, inviteLink };
-}
-
-// Called from the /accept-invite screen. Looks up the invited account by the
-// id embedded in the mock token, sets their chosen password, activates the
-// account, and (mirroring HR's onboarding step) adds them to the Employees
-// roster so HR sees every activated staff member automatically.
-export async function acceptInvite(token, password) {
-  if (!token || !password) throw new Error("Invalid invite link or missing password.");
-  const match = /mock\.(.+)$/.exec(token);
-  const userId = match ? match[1] : null;
-  if (!userId) throw new Error("This invite link looks invalid.");
-
-  const list = readRegisteredUsers();
-  const idx = list.findIndex((u) => u.id === userId);
-  if (idx === -1) throw new Error("This invite link is no longer valid.");
-
-  const invitedUser = list[idx];
-  if (invitedUser.accountStatus !== ACCOUNT_STATUS.INVITED) {
-    throw new Error("This invite has already been used or is no longer pending.");
-  }
-
-  const activatedUser = { ...invitedUser, accountStatus: ACCOUNT_STATUS.ACTIVE, password };
-  list[idx] = activatedUser;
-  writeRegisteredUsers(list);
-
-  // Sync into HR's employee roster so this person shows up there without
-  // HR having to do anything manually.
+function persistUser(user) {
   try {
-    const rawEmployees = localStorage.getItem("msh_employees");
-    const employees = rawEmployees ? JSON.parse(rawEmployees) : [];
-    const roleLabel = {
-      [ROLES.TRAINER]: "Trainer / PM",
-      [ROLES.DEVELOPER]: "Developer",
-      [ROLES.LEAD_GENERATOR]: "Lead Generator",
-      [ROLES.HR]: "HR Specialist",
-      [ROLES.BUSINESS_ANALYST]: "Business Analyst",
-      [ROLES.ADMIN]: "System Admin",
-    }[activatedUser.role] || activatedUser.role;
-
-    if (!employees.some((e) => e.id === activatedUser.id)) {
-      employees.push({
-        id: activatedUser.id,
-        name: activatedUser.name,
-        role: roleLabel,
-        type: "Internal Staff",
-        status: "Active",
-        joinDate: new Date().toISOString().slice(0, 10),
-        leaveBalance: 12,
-        attendance: 100,
-      });
-      localStorage.setItem("msh_employees", JSON.stringify(employees));
-    }
-  } catch (err) {
-    console.warn("[authService] Could not sync invited staff into Employees:", err.message);
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+  } catch {
+    /* private mode / quota */
   }
-
-  const token2 = `mock.${btoa(activatedUser.id)}.${Date.now()}`;
-  await mockRequest(null, { delay: 600 });
-  return { user: activatedUser, token: token2 };
-}
-
-// NOTE: there is no real email service wired into this frontend — a genuine
-// "reset link" can't be sent. Previously this just showed a fake "check
-// your inbox" success screen while leaving the stored password completely
-// untouched, which meant a locked-out account (wrong password typed after
-// the first login set it) had NO way to recover — "Forgot Password" was a
-// dead end dressed up as working. Now it actually clears that one account's
-// stored password (never the admin default), so the very next login attempt
-// for that email is treated as a first login again and whatever password is
-// typed then becomes the new one — same "first login sets the password"
-// rule used everywhere else in this mock, just re-triggered on purpose.
-export async function requestPasswordReset(email) {
-  try {
-    const clean = (email || "").trim().toLowerCase();
-    if (clean && clean !== "admin@moriah.io") {
-      const list = readRegisteredUsers();
-      const idx = list.findIndex((u) => u.email && u.email.toLowerCase() === clean);
-      if (idx > -1) {
-        list[idx] = { ...list[idx], password: null };
-        writeRegisteredUsers(list);
-      }
-    }
-  } catch (err) {
-    console.warn("[authService] Could not reset password for demo account:", err.message);
-  }
-  await mockRequest(null, { delay: 600 });
-  return { message: `If an account exists for ${email}, a reset link has been sent.` };
-}
-
-// Wraps localStorage writes so a full/blocked storage quota (e.g. leftover
-// data from other apps that used this same origin/port) never crashes the
-// login/register flow. Worst case: the session just won't persist on refresh.
-function safeSetItem(key, value) {
-  try {
-    localStorage.setItem(key, value);
-    return true;
-  } catch (err) {
-    console.warn(`[authService] Could not persist "${key}" to localStorage:`, err.message);
-    return false;
-  }
-}
-
-export function persistSession(user, token) {
-  safeSetItem("msh_token", token);
-  safeSetItem("msh_user", JSON.stringify(user));
 }
 
 export function clearSession() {
   try {
-    localStorage.removeItem("msh_token");
-    localStorage.removeItem("msh_user");
-  } catch (err) {
-    console.warn("[authService] Could not clear session from localStorage:", err.message);
+    localStorage.removeItem(USER_KEY);
+  } catch {
+    /* noop */
   }
+  tokenStore.clear();
 }
 
 export function getPersistedUser() {
   try {
-    const raw = localStorage.getItem("msh_user");
-    if (!raw) return null;
-    const sessionUser = JSON.parse(raw);
-
-    if (sessionUser && sessionUser.email) {
-      const list = readRegisteredUsers();
-      const dbUser = list.find((u) => u.email.toLowerCase() === sessionUser.email.toLowerCase());
-      if (dbUser) {
-        const syncedUser = { ...sessionUser, ...dbUser };
-        localStorage.setItem("msh_user", JSON.stringify(syncedUser));
-        return syncedUser;
-      }
-    }
-    return sessionUser;
+    const raw = localStorage.getItem(USER_KEY);
+    if (!raw || !tokenStore.hasSession) return null;
+    return JSON.parse(raw);
   } catch {
     return null;
   }
+}
+
+// ---- core auth flows -----------------------------------------------------
+
+export async function getMe() {
+  const me = await apiClient.get("/users/me");
+  const user = toFeUser(me);
+  persistUser(user);
+  return user;
+}
+
+// Returns either { user } (logged in) or { twoFactorRequired, twoFactorSetupRequired,
+// challengeToken } (caller must complete 2FA before a session exists).
+export async function login({ email, identifier, password }) {
+  const res = await apiClient.post("/auth/login", {
+    email: (email || identifier || "").trim(),
+    password,
+  });
+  return finishAuth(res);
+}
+
+export async function acceptInvite(token, password) {
+  const res = await apiClient.post("/auth/accept-invite", { token, password });
+  return finishAuth(res);
+}
+
+async function finishAuth(loginResponse) {
+  if (loginResponse && loginResponse.tokens) {
+    tokenStore.set(loginResponse.tokens);
+    const user = await getMe();
+    return { user, twoFactorRequired: false };
+  }
+  return {
+    user: null,
+    twoFactorRequired: true,
+    twoFactorSetupRequired: !!(loginResponse && loginResponse.twoFactorSetupRequired),
+    challengeToken: loginResponse ? loginResponse.challengeToken : null,
+  };
+}
+
+// Complete a 2FA-gated login: exchange the challenge token + TOTP code for a session.
+export async function verifyTwoFactor({ challengeToken, totpCode }) {
+  const res = await apiClient.post("/auth/2fa/verify", { challengeToken, totpCode });
+  const tokens = res && res.tokens ? res.tokens : res;
+  tokenStore.set(tokens);
+  return getMe();
+}
+
+// Start mandatory-2FA setup (LoginResponse.twoFactorSetupRequired). Returns
+// { secret, provisioningUri } to render a QR; confirm with verifyTwoFactor().
+export async function beginTwoFactorSetup(challengeToken) {
+  return apiClient.post("/auth/2fa/enable", challengeToken ? { challengeToken } : {});
+}
+
+export async function refreshSession() {
+  await apiClient.refresh();
+  return getMe();
+}
+
+export async function logout() {
+  const refreshToken = tokenStore.refresh;
+  try {
+    if (refreshToken) await apiClient.post("/auth/logout", { refreshToken });
+  } catch {
+    /* best effort — clear locally regardless */
+  }
+  clearSession();
+}
+
+// OAuth: the app does a full-page redirect here; the backend's success handler
+// redirects back with the same LoginResponse JSON envelope, which the callback
+// route reads.
+export function oauthAuthorizeUrl(provider) {
+  const base = API_BASE.startsWith("http") ? API_BASE : window.location.origin + API_BASE;
+  return `${base.replace(/\/$/, "")}/auth/oauth2/authorize/${provider}`;
+}
+
+// ---- registration (Decision D2 "Hybrid": register -> verify email -> login -> checkout) ----
+
+export async function registerStudent(payload) {
+  const res = await apiClient.post("/auth/register", {
+    fullName: payload.name || payload.fullName,
+    email: payload.email,
+    phone: payload.phone || undefined,
+    password: payload.password,
+    githubUsername: payload.githubUsername || undefined,
+  });
+  return { registered: true, uuid: res.uuid, email: res.email, needsEmailVerification: true };
+}
+
+export async function verifyEmail(token) {
+  await apiClient.post("/auth/verify-email", { token });
+  return { verified: true };
+}
+
+export async function registerClient(payload) {
+  const res = await apiClient.post("/auth/register/client", {
+    fullName: payload.name || payload.fullName,
+    email: payload.email,
+    phone: payload.phone,
+    password: payload.password,
+    companyName: payload.companyName || payload.company || payload.name,
+    industry: payload.industry || undefined,
+  });
+  return { registered: true, uuid: res.uuid, pendingApproval: true };
+}
+
+// ---- password reset ---------------------------------------------------
+
+export async function requestPasswordReset(email) {
+  await apiClient.post("/auth/password/forgot", { email });
+  return { message: `If an account exists for ${email}, a reset link has been sent.` };
+}
+
+export async function resetPassword(token, newPassword) {
+  await apiClient.post("/auth/password/reset", { token, newPassword });
+  return { reset: true };
+}
+
+// ---- admin: client approval queue -----------------------------------
+
+export async function getPendingClients(status = "PENDING_APPROVAL") {
+  const page = await apiClient.get("/admin/client-requests", { status });
+  return page && page.content ? page.content : [];
+}
+
+export async function setClientApproval(uuid, approve, reason) {
+  const path = `/admin/client-requests/${uuid}/${approve ? "approve" : "reject"}`;
+  return apiClient.post(path, approve ? undefined : { reason: reason || "Not approved" });
+}
+
+// ---- admin: staff invite ------------------------------------------------
+
+export async function inviteStaffMember({ name, fullName, email, phone, role, roles }) {
+  const backendRoles =
+    roles && roles.length
+      ? roles
+      : [FE_ROLE_TO_BACKEND[role]].filter(Boolean);
+  const created = await apiClient.post("/admin/users", {
+    fullName: fullName || name,
+    email,
+    phone: phone || undefined,
+    roles: backendRoles,
+  });
+  return { user: created };
+}
+
+export async function resendStaffInvite(userUuid) {
+  return apiClient.post(`/admin/users/${userUuid}/resend-invite`);
 }

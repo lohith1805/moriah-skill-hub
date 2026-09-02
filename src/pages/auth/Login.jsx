@@ -6,6 +6,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required } from "../../utils/validators";
 import { ROLE_HOME } from "../../utils/roleAccess";
+import { beginTwoFactorSetup, oauthAuthorizeUrl } from "../../services/authService";
 
 /* --------------------------------- Google icon -------------------------------- */
 /* Inline so this page has no extra file dependency. lucide-react has no brand
@@ -83,7 +84,7 @@ function IconInput({ icon, error, trailing, active, ...props }) {
 /* ---------------------------------- Page ------------------------------------ */
 
 export default function Login() {
-  const { login, loading } = useAuth();
+  const { login, completeTwoFactor, loading } = useAuth();
   const { notify } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
@@ -93,13 +94,20 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(false);
 
-  // MFA states
+  // Real 2FA: after login the backend may return a challenge token instead of a
+  // session. `setup` holds { secret, provisioningUri } when the account has 2FA
+  // mandated but not yet configured (ADMIN / HR_MANAGER first login).
   const [mfaStep, setMfaStep] = useState(false);
+  const [challengeToken, setChallengeToken] = useState(null);
+  const [setup, setSetup] = useState(null);
   const [otp, setOtp] = useState("");
-  const [tempUser, setTempUser] = useState(null);
   const [mfaError, setMfaError] = useState("");
+  const [mfaBusy, setMfaBusy] = useState(false);
 
   const set = (field) => (e) => setValues((v) => ({ ...v, [field]: e.target.value }));
+
+  const goHome = (user) =>
+    navigate(location.state?.from?.pathname || ROLE_HOME[user.role] || "/", { replace: true });
 
   const submit = async (e) => {
     e.preventDefault();
@@ -108,86 +116,100 @@ export default function Login() {
     if (Object.keys(validation).length) return;
 
     try {
-      const user = await login({ identifier: values.identifier, password: values.password });
-      
-      if (user.mfaEnabled || localStorage.getItem("msh_mfa_enabled") === "true") {
-        setTempUser(user);
+      const result = await login({ email: values.identifier, password: values.password });
+
+      if (result.twoFactorRequired) {
+        setChallengeToken(result.challengeToken);
         setMfaStep(true);
-        notify("Verification code required to authenticate your identity.", { type: "info", title: "MFA Required" });
-      } else {
-        notify(`Welcome back, ${user.name.split(" ")[0]}.`, { type: "success", title: "Signed in" });
-        navigate(location.state?.from?.pathname || ROLE_HOME[user.role], { replace: true });
+        setOtp("");
+        setMfaError("");
+        if (result.twoFactorSetupRequired) {
+          try {
+            const s = await beginTwoFactorSetup(result.challengeToken);
+            setSetup(s);
+            notify("Set up two-factor authentication to continue.", { type: "info", title: "2FA setup required" });
+          } catch {
+            notify("Could not start 2FA setup. Please try again.", { type: "error" });
+          }
+        } else {
+          notify("Enter the 6-digit code from your authenticator app.", { type: "info", title: "2FA required" });
+        }
+        return;
       }
+
+      notify(`Welcome back, ${result.user.name.split(" ")[0]}.`, { type: "success", title: "Signed in" });
+      goHome(result.user);
     } catch (err) {
       notify(err.message || "Unable to sign in. Please try again.", { type: "error", title: "Sign in failed" });
     }
   };
 
-  const handleMfaVerify = (e) => {
+  const handleMfaVerify = async (e) => {
     e.preventDefault();
-    if (otp === "123456" || otp === "000000") {
-      notify(`Welcome back, ${tempUser.name.split(" ")[0]}.`, { type: "success", title: "Signed in" });
-      navigate(location.state?.from?.pathname || ROLE_HOME[tempUser.role], { replace: true });
-    } else {
-      setMfaError("Invalid 6-digit code. Try 123456 for testing.");
-      notify("Verification failed. Please enter the correct code.", { type: "error" });
+    if (!/^\d{6}$/.test(otp)) {
+      setMfaError("Enter the 6-digit code from your authenticator app.");
+      return;
+    }
+    setMfaBusy(true);
+    setMfaError("");
+    try {
+      const user = await completeTwoFactor({ challengeToken, totpCode: otp });
+      notify(`Welcome back, ${user.name.split(" ")[0]}.`, { type: "success", title: "Signed in" });
+      goHome(user);
+    } catch (err) {
+      setMfaError(err.message || "That code was not accepted. Try again.");
+    } finally {
+      setMfaBusy(false);
     }
   };
 
-  const handleOAuth = async (provider) => {
-    notify(`Connecting with ${provider} OAuth...`, { type: "info" });
-    await new Promise((r) => setTimeout(r, 900));
-
-    const rawList = localStorage.getItem("mORIAH_REGISTERED_USERS");
-    const list = rawList ? JSON.parse(rawList) : [];
-    
-    let oauthUser = list.find((u) => u.email === `oauth.${provider.toLowerCase()}@moriah.io`);
-    if (!oauthUser) {
-      oauthUser = {
-        id: `usr_${Date.now()}`,
-        name: `OAuth ${provider} Learner`,
-        email: `oauth.${provider.toLowerCase()}@moriah.io`,
-        phone: "+91 88888 88888",
-        role: "student",
-        password: "OAuthPassword123",
-        track: "Full-Stack Development",
-        batch: "FS-Batch-14",
-        avatarColor: "primary",
-        subscription: {
-          planCode: "project_based",
-          planName: "Project-Based Learning Plan",
-          price: 14999,
-          model: "Standard App",
-          paidAt: new Date().toISOString(),
-          paymentId: `oauth_${provider.toLowerCase()}_pi_${Math.random().toString(36).substring(2, 9)}`,
-          gateway: provider,
-        }
-      };
-      list.push(oauthUser);
-      localStorage.setItem("mORIAH_REGISTERED_USERS", JSON.stringify(list));
-    }
-    
-    localStorage.setItem("msh_user", JSON.stringify(oauthUser));
-    notify(`Signed in via ${provider} successfully.`, { type: "success", title: "OAuth Connected" });
-    navigate(ROLE_HOME.student, { replace: true });
+  const handleOAuth = (provider) => {
+    // Full-page redirect to the backend's OAuth2 authorize endpoint. The
+    // backend's success handler completes the sign-in and redirects back.
+    window.location.href = oauthAuthorizeUrl(provider.toLowerCase());
   };
 
   if (mfaStep) {
     return (
       <div className="text-left">
-        <h2 className="font-display text-2xl font-bold text-ink-900">MFA Verification</h2>
+        <h2 className="font-display text-2xl font-bold text-ink-900">
+          {setup ? "Set up two-factor authentication" : "Two-factor verification"}
+        </h2>
         <span className="block h-0.5 w-10 bg-gold-400 mt-3" />
-        <p className="text-sm text-ink-500 mt-3">
-          Please enter the 6-digit authenticator code. Use <code className="bg-cream-100 font-mono text-xs px-1 py-0.5 rounded">123456</code> to verify.
-        </p>
+
+        {setup ? (
+          <div className="mt-3 text-sm text-ink-500">
+            <p>
+              Your role requires 2FA. Add this account to an authenticator app (Google
+              Authenticator, Authy, 1Password…), then enter the current 6-digit code.
+            </p>
+            <div className="mt-3 rounded-lg border border-border bg-cream-50 p-3">
+              <p className="text-xs uppercase tracking-wide text-ink-400">Secret key</p>
+              <code className="block font-mono text-sm text-ink-900 break-all mt-1">{setup.secret}</code>
+              {setup.provisioningUri && (
+                <a
+                  href={setup.provisioningUri}
+                  className="mt-2 inline-block text-xs font-medium text-primary-600 hover:underline break-all"
+                >
+                  Open in authenticator app
+                </a>
+              )}
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-ink-500 mt-3">
+            Enter the 6-digit code from your authenticator app.
+          </p>
+        )}
 
         <form onSubmit={handleMfaVerify} className="mt-6 flex flex-col gap-4">
           <div>
-            <FieldLabel required>MFA Verification Code</FieldLabel>
+            <FieldLabel required>Authentication code</FieldLabel>
             <div className="mt-1.5 relative">
               <IconBox icon={Lock} active={!!otp} />
               <input
                 type="text"
+                inputMode="numeric"
                 maxLength={6}
                 required
                 placeholder="123456"
@@ -199,13 +221,19 @@ export default function Login() {
             <FieldError>{mfaError}</FieldError>
           </div>
 
-          <Button type="submit" fullWidth>
-            Verify Code &amp; Sign In
+          <Button type="submit" fullWidth disabled={mfaBusy}>
+            {mfaBusy ? "Verifying…" : "Verify & sign in"}
           </Button>
 
           <button
             type="button"
-            onClick={() => { setMfaStep(false); setOtp(""); setMfaError(""); }}
+            onClick={() => {
+              setMfaStep(false);
+              setSetup(null);
+              setChallengeToken(null);
+              setOtp("");
+              setMfaError("");
+            }}
             className="text-sm font-medium text-ink-500 hover:text-ink-700 transition-colors w-full text-center mt-2"
           >
             Go back to credentials
@@ -223,18 +251,18 @@ export default function Login() {
 
       <form onSubmit={submit} className="mt-6 flex flex-col gap-4 text-left" noValidate>
         <div>
-          <FieldLabel required>Email, phone number or username</FieldLabel>
+          <FieldLabel required>Email address</FieldLabel>
           <div className="mt-1.5">
             <IconInput
               name="identifier"
               icon={User}
-              type="text"
+              type="email"
               required
-              placeholder="Username, email or phone"
+              placeholder="you@example.com"
               value={values.identifier}
               onChange={set("identifier")}
               error={errors.identifier}
-              autoComplete="username"
+              autoComplete="email"
             />
           </div>
           <FieldError>{errors.identifier}</FieldError>
