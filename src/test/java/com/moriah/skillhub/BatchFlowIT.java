@@ -43,6 +43,12 @@ class BatchFlowIT extends IntegrationTestBase {
 
     private static final String RAZORPAY_WEBHOOK_SECRET = "test-razorpay-webhook-secret-never-reused-anywhere-else";
 
+    // Relative to "now" so CreateBatchRequest.startDate's @FutureOrPresent never trips as the
+    // calendar moves past a hardcoded literal (this suite failed suite-wide on 2026-09-02 when a
+    // formerly-future BATCH_START became yesterday).
+    private static final String BATCH_START = java.time.LocalDate.now().plusDays(1).toString();
+    private static final String BATCH_END = java.time.LocalDate.now().plusMonths(3).toString();
+
     @LocalServerPort
     private int port;
 
@@ -118,8 +124,8 @@ class BatchFlowIT extends IntegrationTestBase {
                 .body(Map.of(
                         "name", "Should Fail",
                         "trackCode", "FULL_STACK",
-                        "startDate", "2026-09-01",
-                        "endDate", "2026-12-01",
+                        "startDate", BATCH_START,
+                        "endDate", BATCH_END,
                         "capacity", 10))
         .when()
                 .post("/api/v1/batches")
@@ -385,8 +391,8 @@ class BatchFlowIT extends IntegrationTestBase {
                 .body(Map.of(
                         "name", "Batch " + UUID.randomUUID(),
                         "trackCode", trackCode,
-                        "startDate", "2026-09-01",
-                        "endDate", "2026-12-01",
+                        "startDate", BATCH_START,
+                        "endDate", BATCH_END,
                         "capacity", capacity))
             .when()
                 .post("/api/v1/batches");
@@ -411,8 +417,8 @@ class BatchFlowIT extends IntegrationTestBase {
     private Map<String, Object> updateBody(String name, int capacity, String status) {
         Map<String, Object> body = new java.util.HashMap<>();
         body.put("name", name);
-        body.put("startDate", "2026-09-01");
-        body.put("endDate", "2026-12-01");
+        body.put("startDate", BATCH_START);
+        body.put("endDate", BATCH_END);
         body.put("capacity", capacity);
         body.put("status", status);
         return body;

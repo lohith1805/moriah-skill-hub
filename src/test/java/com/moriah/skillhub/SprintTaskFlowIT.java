@@ -39,6 +39,18 @@ class SprintTaskFlowIT extends IntegrationTestBase {
 
     private final List<Long> insertedBatchIds = new ArrayList<>();
 
+    // Sprint / batch / assignment-window dates are relative to "now" so @FutureOrPresent on
+    // CreateSprintRequest / CreateBatchRequest.startDate never trips as the calendar advances
+    // past a hardcoded literal (this suite failed suite-wide on 2026-09-02 when a formerly-future
+    // W1_START became yesterday). W1 and W2 are consecutive 7-day weeks; W1_OVERLAP straddles
+    // W1's second half.
+    private static final String W1_START = java.time.LocalDate.now().plusDays(1).toString();
+    private static final String W1_END = java.time.LocalDate.now().plusDays(7).toString();
+    private static final String W2_START = java.time.LocalDate.now().plusDays(8).toString();
+    private static final String W2_END = java.time.LocalDate.now().plusDays(14).toString();
+    private static final String W1_OVERLAP_START = java.time.LocalDate.now().plusDays(5).toString();
+    private static final String W1_OVERLAP_END = java.time.LocalDate.now().plusDays(11).toString();
+
     @BeforeEach
     void setUp() {
         RestAssured.port = port;
@@ -76,7 +88,7 @@ class SprintTaskFlowIT extends IntegrationTestBase {
         given()
                 .contentType("application/json")
                 .header("Authorization", "Bearer " + studentToken)
-                .body(sprintBody(batchId, 1, "2026-09-01", "2026-09-07", 20))
+                .body(sprintBody(batchId, 1, W1_START, W1_END, 20))
         .when()
                 .post("/api/v1/sprints")
         .then()
@@ -87,7 +99,7 @@ class SprintTaskFlowIT extends IntegrationTestBase {
     void pullTask_asTrainerPm_returns403() {
         String pmToken = registerVerifyGrantRoleAndLogin("Pull PM", "TRAINER_PM");
         long batchId = createBatch(pmToken, "PULL_ROLE_TRACK", 10);
-        long sprintId = createSprint(pmToken, batchId, 1, "2026-09-01", "2026-09-07", 20)
+        long sprintId = createSprint(pmToken, batchId, 1, W1_START, W1_END, 20)
                 .then().statusCode(201).extract().jsonPath().getLong("data.id");
         long taskId = createTask(pmToken, sprintId, "Role-gated task").then().statusCode(201)
                 .extract().jsonPath().getLong("data.id");
@@ -108,12 +120,12 @@ class SprintTaskFlowIT extends IntegrationTestBase {
     void createSprint_overlappingDates_returns409() {
         String pmToken = registerVerifyGrantRoleAndLogin("Overlap PM", "TRAINER_PM");
         long batchId = createBatch(pmToken, "OVERLAP_TRACK", 10);
-        createSprint(pmToken, batchId, 1, "2026-09-01", "2026-09-07", 20).then().statusCode(201);
+        createSprint(pmToken, batchId, 1, W1_START, W1_END, 20).then().statusCode(201);
 
         given()
                 .contentType("application/json")
                 .header("Authorization", "Bearer " + pmToken)
-                .body(sprintBody(batchId, 2, "2026-09-05", "2026-09-11", 20))
+                .body(sprintBody(batchId, 2, W1_OVERLAP_START, W1_OVERLAP_END, 20))
         .when()
                 .post("/api/v1/sprints")
         .then()
@@ -125,9 +137,9 @@ class SprintTaskFlowIT extends IntegrationTestBase {
     void activateSprint_secondSprintBeforeFirstCompleted_returns409() {
         String pmToken = registerVerifyGrantRoleAndLogin("Sequence PM", "TRAINER_PM");
         long batchId = createBatch(pmToken, "SEQUENCE_TRACK", 10);
-        long sprint1 = createSprint(pmToken, batchId, 1, "2026-09-01", "2026-09-07", 20)
+        long sprint1 = createSprint(pmToken, batchId, 1, W1_START, W1_END, 20)
                 .then().statusCode(201).extract().jsonPath().getLong("data.id");
-        long sprint2 = createSprint(pmToken, batchId, 2, "2026-09-08", "2026-09-14", 20)
+        long sprint2 = createSprint(pmToken, batchId, 2, W2_START, W2_END, 20)
                 .then().statusCode(201).extract().jsonPath().getLong("data.id");
 
         activateSprint(pmToken, sprint1).then().statusCode(200).body("data.status", equalTo("ACTIVE"));
@@ -153,7 +165,7 @@ class SprintTaskFlowIT extends IntegrationTestBase {
         String pmToken = registerVerifyGrantRoleAndLogin("Membership PM", "TRAINER_PM");
         String outsiderToken = registerVerifyAndLogin("Outsider Student");
         long batchId = createBatch(pmToken, "MEMBERSHIP_TRACK", 10);
-        long sprintId = createSprint(pmToken, batchId, 1, "2026-09-01", "2026-09-07", 20)
+        long sprintId = createSprint(pmToken, batchId, 1, W1_START, W1_END, 20)
                 .then().statusCode(201).extract().jsonPath().getLong("data.id");
         long taskId = createTask(pmToken, sprintId, "Members only").then().statusCode(201)
                 .extract().jsonPath().getLong("data.id");
@@ -175,7 +187,7 @@ class SprintTaskFlowIT extends IntegrationTestBase {
         long batchId = createBatch(pmToken, "DOUBLE_PULL_TRACK", 10);
         addStudent(pmToken, batchId, uuidFromToken(studentAToken));
         addStudent(pmToken, batchId, uuidFromToken(studentBToken));
-        long sprintId = createSprint(pmToken, batchId, 1, "2026-09-01", "2026-09-07", 20)
+        long sprintId = createSprint(pmToken, batchId, 1, W1_START, W1_END, 20)
                 .then().statusCode(201).extract().jsonPath().getLong("data.id");
         long taskId = createTask(pmToken, sprintId, "One puller wins").then().statusCode(201)
                 .extract().jsonPath().getLong("data.id");
@@ -197,7 +209,7 @@ class SprintTaskFlowIT extends IntegrationTestBase {
         String pmToken = registerVerifyGrantRoleAndLogin("Assign PM", "TRAINER_PM");
         String outsiderUuid = registerAndGetUuid("Assign Outsider");
         long batchId = createBatch(pmToken, "ASSIGN_MEMBERSHIP_TRACK", 10);
-        long sprintId = createSprint(pmToken, batchId, 1, "2026-09-01", "2026-09-07", 20)
+        long sprintId = createSprint(pmToken, batchId, 1, W1_START, W1_END, 20)
                 .then().statusCode(201).extract().jsonPath().getLong("data.id");
         long taskId = createTask(pmToken, sprintId, "Assign target").then().statusCode(201)
                 .extract().jsonPath().getLong("data.id");
@@ -219,7 +231,7 @@ class SprintTaskFlowIT extends IntegrationTestBase {
         String studentToken = registerVerifyAndLogin("Skip Student");
         long batchId = createBatch(pmToken, "SKIP_TRACK", 10);
         addStudent(pmToken, batchId, uuidFromToken(studentToken));
-        long sprintId = createSprint(pmToken, batchId, 1, "2026-09-01", "2026-09-07", 20)
+        long sprintId = createSprint(pmToken, batchId, 1, W1_START, W1_END, 20)
                 .then().statusCode(201).extract().jsonPath().getLong("data.id");
         long taskId = createTask(pmToken, sprintId, "No skipping").then().statusCode(201)
                 .extract().jsonPath().getLong("data.id");
@@ -237,7 +249,7 @@ class SprintTaskFlowIT extends IntegrationTestBase {
     void updateTask_backlogToAssignedViaPut_returns409() {
         String pmToken = registerVerifyGrantRoleAndLogin("Bypass PM", "TRAINER_PM");
         long batchId = createBatch(pmToken, "BYPASS_TRACK", 10);
-        long sprintId = createSprint(pmToken, batchId, 1, "2026-09-01", "2026-09-07", 20)
+        long sprintId = createSprint(pmToken, batchId, 1, W1_START, W1_END, 20)
                 .then().statusCode(201).extract().jsonPath().getLong("data.id");
         long taskId = createTask(pmToken, sprintId, "No PUT bypass").then().statusCode(201)
                 .extract().jsonPath().getLong("data.id");
@@ -258,9 +270,9 @@ class SprintTaskFlowIT extends IntegrationTestBase {
         long batchId = createBatch(pmToken, "VELOCITY_TRACK", 10);
         addStudent(pmToken, batchId, uuidFromToken(studentToken));
 
-        long sprint1 = createSprint(pmToken, batchId, 1, "2026-09-01", "2026-09-07", 20)
+        long sprint1 = createSprint(pmToken, batchId, 1, W1_START, W1_END, 20)
                 .then().statusCode(201).extract().jsonPath().getLong("data.id");
-        long sprint2 = createSprint(pmToken, batchId, 2, "2026-09-08", "2026-09-14", 20)
+        long sprint2 = createSprint(pmToken, batchId, 2, W2_START, W2_END, 20)
                 .then().statusCode(201).extract().jsonPath().getLong("data.id");
 
         long taskId = createTask(pmToken, sprint1, "Ship the feature").then().statusCode(201)
@@ -306,12 +318,12 @@ class SprintTaskFlowIT extends IntegrationTestBase {
         String pmToken = registerVerifyGrantRoleAndLogin("Window PM", "TRAINER_PM");
         long batchId = createBatch(pmToken, "WINDOW_TRACK", 10);
 
-        createAssignmentWindow(pmToken, batchId, "2026-09-01", "2026-09-07", "2026-09-07T18:00:00Z", null)
+        createAssignmentWindow(pmToken, batchId, W1_START, W1_END, "2026-09-07T18:00:00Z", null)
                 .then().statusCode(201)
                 .body("data.batchId", equalTo((int) batchId))
                 .body("data.taskId", org.hamcrest.Matchers.nullValue());
 
-        createAssignmentWindow(pmToken, batchId, "2026-09-08", "2026-09-14", "2026-09-14T18:00:00Z", null)
+        createAssignmentWindow(pmToken, batchId, W2_START, W2_END, "2026-09-14T18:00:00Z", null)
                 .then().statusCode(201);
 
         // build-plan.md feature 11 verify line: "Assignment windows can be created and listed
@@ -325,11 +337,11 @@ class SprintTaskFlowIT extends IntegrationTestBase {
         .then()
                 .statusCode(200)
                 .body("data.content", hasSize(2))
-                .body("data.content[0].weekStart", equalTo("2026-09-01"))
-                .body("data.content[1].weekStart", equalTo("2026-09-08"));
+                .body("data.content[0].weekStart", equalTo(W1_START))
+                .body("data.content[1].weekStart", equalTo(W2_START));
 
         // duplicate (batch, week_start) — the unique constraint's own business-rule mirror
-        createAssignmentWindow(pmToken, batchId, "2026-09-01", "2026-09-07", "2026-09-07T18:00:00Z", null)
+        createAssignmentWindow(pmToken, batchId, W1_START, W1_END, "2026-09-07T18:00:00Z", null)
                 .then().statusCode(409).body("error.code", equalTo("ASSIGNMENT_WINDOW_WEEK_TAKEN"));
     }
 
@@ -338,12 +350,12 @@ class SprintTaskFlowIT extends IntegrationTestBase {
         String pmToken = registerVerifyGrantRoleAndLogin("Cross Batch PM", "TRAINER_PM");
         long batchId = createBatch(pmToken, "WINDOW_HOME_TRACK", 10);
         long otherBatchId = createBatch(pmToken, "WINDOW_OTHER_TRACK", 10);
-        long otherSprintId = createSprint(pmToken, otherBatchId, 1, "2026-09-01", "2026-09-07", 20)
+        long otherSprintId = createSprint(pmToken, otherBatchId, 1, W1_START, W1_END, 20)
                 .then().statusCode(201).extract().jsonPath().getLong("data.id");
         long foreignTaskId = createTask(pmToken, otherSprintId, "Belongs elsewhere").then().statusCode(201)
                 .extract().jsonPath().getLong("data.id");
 
-        createAssignmentWindow(pmToken, batchId, "2026-09-01", "2026-09-07", "2026-09-07T18:00:00Z", foreignTaskId)
+        createAssignmentWindow(pmToken, batchId, W1_START, W1_END, "2026-09-07T18:00:00Z", foreignTaskId)
                 .then().statusCode(409).body("error.code", equalTo("ASSIGNMENT_WINDOW_TASK_WRONG_BATCH"));
     }
 
@@ -381,8 +393,8 @@ class SprintTaskFlowIT extends IntegrationTestBase {
     private Response updateSprintStatus(String pmToken, long sprintId, String status) {
         Map<String, Object> body = new java.util.HashMap<>();
         body.put("goal", "Updated goal");
-        body.put("startDate", "2026-09-01");
-        body.put("endDate", "2026-09-07");
+        body.put("startDate", W1_START);
+        body.put("endDate", W1_END);
         body.put("plannedPoints", 20);
         body.put("status", status);
         return given()
