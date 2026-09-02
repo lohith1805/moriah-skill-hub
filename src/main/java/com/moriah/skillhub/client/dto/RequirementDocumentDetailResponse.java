@@ -5,16 +5,19 @@ import com.moriah.skillhub.client.entity.RequirementDocumentType;
 
 import java.time.Instant;
 
-/** {@code approvedByUuid}/{@code approvedByFullName} are {@code null} until {@code PUT
- * /ba/documents/{id}/approve} is called. {@code devReviewedByUuid}/{@code devReviewedAt} are
- * {@code null} until a developer acknowledges the requirement (gap B1.16). */
-public record RequirementDocumentResponse(
+/**
+ * The single-document view (gap B1.16) — everything {@link RequirementDocumentResponse} carries
+ * plus {@code content}, the actual requirement text a developer needs to read. Kept separate
+ * from the list DTO so a page of list rows never ships every document's full LONGTEXT.
+ */
+public record RequirementDocumentDetailResponse(
         Long id,
         Long clientProjectId,
         RequirementDocumentType docType,
         String title,
         int version,
         RequirementDocumentStatus status,
+        String content,
         String authoredByUuid,
         String authoredByFullName,
         String approvedByUuid,

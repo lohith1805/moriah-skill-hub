@@ -4,20 +4,27 @@ import com.moriah.skillhub.client.dto.CreateRequirementDocumentRequest;
 import com.moriah.skillhub.client.dto.CreateResourceAllocationRequest;
 import com.moriah.skillhub.client.dto.RequirementDocumentResponse;
 import com.moriah.skillhub.client.dto.ResourceAllocationResponse;
+import com.moriah.skillhub.client.entity.RequirementDocumentStatus;
 import com.moriah.skillhub.common.dto.ApiResponse;
+import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.common.security.CurrentUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** The {@code /ba/**} prefix is this codebase's existing role-gating-by-path convention (same as
@@ -34,6 +41,18 @@ public class BaController {
 
     private final RequirementDocumentService requirementDocumentService;
     private final ResourceAllocationService resourceAllocationService;
+
+    @GetMapping("/documents")
+    @PreAuthorize("hasAnyRole('BUSINESS_ANALYST','ADMIN')")
+    @Operation(summary = "List requirement documents — optional clientProjectId / status filters")
+    public ResponseEntity<ApiResponse<PageResponse<RequirementDocumentResponse>>> listDocuments(
+            @RequestParam(required = false) Long clientProjectId,
+            @RequestParam(required = false) RequirementDocumentStatus status,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+
+        return ResponseEntity.ok(ApiResponse.success(
+                requirementDocumentService.list(clientProjectId, status, pageable)));
+    }
 
     @PostMapping("/documents")
     @PreAuthorize("hasAnyRole('BUSINESS_ANALYST','ADMIN')")

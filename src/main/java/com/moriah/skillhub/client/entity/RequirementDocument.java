@@ -67,4 +67,15 @@ public class RequirementDocument extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "approved_by")
     private User approvedBy;
+
+    /** Set when a DEVELOPER acknowledges the requirement through {@code POST /api/v1/dev/
+     * requirement-documents/{id}/acknowledge} (gap B1.16). Orthogonal to {@link #status}, which
+     * is the BA approval axis. {@code null} = not yet acknowledged. Stamped once; a re-acknowledge
+     * keeps the original timestamp. */
+    @Column(name = "dev_reviewed_at")
+    private java.time.Instant devReviewedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "dev_reviewed_by")
+    private User devReviewedBy;
 }

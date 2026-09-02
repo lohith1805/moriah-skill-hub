@@ -1,6 +1,7 @@
 package com.moriah.skillhub.client;
 
 import com.moriah.skillhub.client.dto.CreateRequirementDocumentRequest;
+import com.moriah.skillhub.client.dto.RequirementDocumentDetailResponse;
 import com.moriah.skillhub.client.dto.RequirementDocumentResponse;
 import com.moriah.skillhub.client.entity.ClientProject;
 import com.moriah.skillhub.client.entity.RequirementDocument;
@@ -8,6 +9,7 @@ import com.moriah.skillhub.client.entity.RequirementDocumentStatus;
 import com.moriah.skillhub.client.repository.ClientProjectRepository;
 import com.moriah.skillhub.client.repository.RequirementDocumentRepository;
 import com.moriah.skillhub.common.audit.AuditLogService;
+import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
@@ -15,8 +17,11 @@ import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
 
 /**
  * build-plan.md feature 21: BA converts client scope into {@code requirement_documents} (BRD/
@@ -86,6 +91,42 @@ public class RequirementDocumentService {
         return toResponse(document);
     }
 
+    /** {@code GET /api/v1/ba/documents} and {@code GET /api/v1/dev/requirement-documents} — same
+     * rows, the caller's role decides which route they came in on. */
+    @Transactional(readOnly = true)
+    public PageResponse<RequirementDocumentResponse> list(Long clientProjectId,
+            RequirementDocumentStatus status, Pageable pageable) {
+        return PageResponse.from(
+                requirementDocumentRepository.search(clientProjectId, status, pageable).map(this::toResponse));
+    }
+
+    @Transactional(readOnly = true)
+    public RequirementDocumentDetailResponse getDetail(Long documentId) {
+        return toDetailResponse(requireDocument(documentId));
+    }
+
+    /**
+     * {@code POST /api/v1/dev/requirement-documents/{id}/acknowledge} (gap B1.16) — a developer
+     * records that they have read the requirement. Idempotent: the first acknowledgement's
+     * timestamp and reviewer are kept; a second call is a no-op that still returns the current
+     * state. Does not touch {@code status} (the BA approval axis).
+     */
+    @Transactional
+    public RequirementDocumentDetailResponse acknowledgeByDeveloper(Long documentId, Long callerUserId) {
+        RequirementDocument document = requireDocument(documentId);
+        if (document.getDevReviewedAt() == null) {
+            User reviewer = userRepository.findById(callerUserId)
+                    .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.USER_NOT_FOUND, callerUserId));
+            document.setDevReviewedAt(Instant.now());
+            document.setDevReviewedBy(reviewer);
+            auditLogService.record(callerUserId, "REQUIREMENT_DOCUMENT_DEV_REVIEWED", "RequirementDocument",
+                    document.getId(), null, document.getVersion());
+            log.info("[dev/requirement-documents] {} acknowledged document {} v{}",
+                    callerUserId, document.getId(), document.getVersion());
+        }
+        return toDetailResponse(document);
+    }
+
     private ClientProject requireProject(Long id) {
         return clientProjectRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.CLIENT_PROJECT_NOT_FOUND, id));
@@ -99,6 +140,7 @@ public class RequirementDocumentService {
     private RequirementDocumentResponse toResponse(RequirementDocument document) {
         User author = document.getAuthoredBy();
         User approver = document.getApprovedBy();
+        User devReviewer = document.getDevReviewedBy();
         return new RequirementDocumentResponse(
                 document.getId(),
                 document.getClientProject() == null ? null : document.getClientProject().getId(),
@@ -109,6 +151,30 @@ public class RequirementDocumentService {
                 author.getUuid(),
                 author.getFullName(),
                 approver == null ? null : approver.getUuid(),
-                approver == null ? null : approver.getFullName());
+                approver == null ? null : approver.getFullName(),
+                devReviewer == null ? null : devReviewer.getUuid(),
+                devReviewer == null ? null : devReviewer.getFullName(),
+                document.getDevReviewedAt());
+    }
+
+    private RequirementDocumentDetailResponse toDetailResponse(RequirementDocument document) {
+        User author = document.getAuthoredBy();
+        User approver = document.getApprovedBy();
+        User devReviewer = document.getDevReviewedBy();
+        return new RequirementDocumentDetailResponse(
+                document.getId(),
+                document.getClientProject() == null ? null : document.getClientProject().getId(),
+                document.getDocType(),
+                document.getTitle(),
+                document.getVersion(),
+                document.getStatus(),
+                document.getContent(),
+                author.getUuid(),
+                author.getFullName(),
+                approver == null ? null : approver.getUuid(),
+                approver == null ? null : approver.getFullName(),
+                devReviewer == null ? null : devReviewer.getUuid(),
+                devReviewer == null ? null : devReviewer.getFullName(),
+                document.getDevReviewedAt());
     }
 }

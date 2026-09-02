@@ -1,6 +1,7 @@
 package com.moriah.skillhub.client;
 
 import com.moriah.skillhub.client.dto.CreateRequirementDocumentRequest;
+import com.moriah.skillhub.client.dto.RequirementDocumentDetailResponse;
 import com.moriah.skillhub.client.dto.RequirementDocumentResponse;
 import com.moriah.skillhub.client.entity.ClientProject;
 import com.moriah.skillhub.client.entity.RequirementDocument;
@@ -9,6 +10,7 @@ import com.moriah.skillhub.client.entity.RequirementDocumentType;
 import com.moriah.skillhub.client.repository.ClientProjectRepository;
 import com.moriah.skillhub.client.repository.RequirementDocumentRepository;
 import com.moriah.skillhub.common.audit.AuditLogService;
+import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
@@ -19,12 +21,19 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /** build-plan.md feature 21: BA document versioning ("a new document for the same
@@ -159,5 +168,67 @@ class RequirementDocumentServiceTest {
         assertThatThrownBy(() -> requirementDocumentService.approve(404L, 9L))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REQUIREMENT_DOCUMENT_NOT_FOUND);
+    }
+
+    private RequirementDocument doc(long id) {
+        RequirementDocument d = new RequirementDocument();
+        d.setId(id);
+        d.setVersion(1);
+        d.setStatus(RequirementDocumentStatus.IN_REVIEW);
+        d.setContent("Build a weather dashboard.");
+        d.setAuthoredBy(user(5L, "ba-uuid", "Ba One"));
+        return d;
+    }
+
+    @Test
+    void list_passesFiltersThroughAndMapsRows() {
+        RequirementDocument d = doc(1L);
+        when(requirementDocumentRepository.search(eq(10L), eq(RequirementDocumentStatus.IN_REVIEW), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(d), PageRequest.of(0, 20), 1));
+
+        PageResponse<RequirementDocumentResponse> page = requirementDocumentService.list(
+                10L, RequirementDocumentStatus.IN_REVIEW, PageRequest.of(0, 20));
+
+        assertThat(page.content()).hasSize(1);
+        assertThat(page.content().get(0).devReviewedAt()).isNull();
+    }
+
+    @Test
+    void getDetail_includesContent() {
+        when(requirementDocumentRepository.findWithAssociationsById(1L)).thenReturn(Optional.of(doc(1L)));
+
+        RequirementDocumentDetailResponse detail = requirementDocumentService.getDetail(1L);
+
+        assertThat(detail.content()).isEqualTo("Build a weather dashboard.");
+    }
+
+    @Test
+    void acknowledgeByDeveloper_firstCall_stampsReviewerAndAudits() {
+        RequirementDocument d = doc(1L);
+        when(requirementDocumentRepository.findWithAssociationsById(1L)).thenReturn(Optional.of(d));
+        when(userRepository.findById(7L)).thenReturn(Optional.of(user(7L, "dev-uuid", "Dev One")));
+
+        RequirementDocumentDetailResponse detail = requirementDocumentService.acknowledgeByDeveloper(1L, 7L);
+
+        assertThat(d.getDevReviewedAt()).isNotNull();
+        assertThat(d.getDevReviewedBy().getUuid()).isEqualTo("dev-uuid");
+        assertThat(detail.devReviewedByUuid()).isEqualTo("dev-uuid");
+        assertThat(detail.status()).isEqualTo(RequirementDocumentStatus.IN_REVIEW); // unchanged
+        verify(auditLogService).record(eq(7L), eq("REQUIREMENT_DOCUMENT_DEV_REVIEWED"), any(), eq(1L), any(), any());
+    }
+
+    @Test
+    void acknowledgeByDeveloper_secondCall_keepsOriginalReviewerAndDoesNotReaudit() {
+        RequirementDocument d = doc(1L);
+        d.setDevReviewedAt(java.time.Instant.parse("2026-08-01T00:00:00Z"));
+        d.setDevReviewedBy(user(2L, "first-dev", "First Dev"));
+        when(requirementDocumentRepository.findWithAssociationsById(1L)).thenReturn(Optional.of(d));
+
+        RequirementDocumentDetailResponse detail = requirementDocumentService.acknowledgeByDeveloper(1L, 7L);
+
+        assertThat(detail.devReviewedByUuid()).isEqualTo("first-dev");
+        assertThat(d.getDevReviewedAt()).isEqualTo(java.time.Instant.parse("2026-08-01T00:00:00Z"));
+        verify(userRepository, never()).findById(7L);
+        verify(auditLogService, never()).record(any(), eq("REQUIREMENT_DOCUMENT_DEV_REVIEWED"), any(), any(), any(), any());
     }
 }
