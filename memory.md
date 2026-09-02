@@ -42,9 +42,14 @@ commit, `mvn verify` GREEN at two checkpoints — 444 unit + 267 integration, 0 
 - **B1.7 — Lead-Gen Campaigns** (committed after clean-verify recovery) — `V24` `lead_campaigns`.
   `GET/POST/PUT/DELETE /api/v1/leads/campaigns` (`LeadCampaignController`, LEAD_GEN/ADMIN). DELETE
   → status CANCELLED. New `ErrorCode.LEAD_CAMPAIGN_NOT_FOUND`.
+- **B1.14 — BA Meetings** — `V25` `ba_meetings` (title, agenda, optional client_project_id,
+  scheduled_at, duration, location, status, minutes). `GET/POST/PUT/DELETE /api/v1/ba/meetings`
+  (`BaMeetingController`, BUSINESS_ANALYST/ADMIN). DELETE → status CANCELLED.
 
-**Migrations added this session: V20–V24.** Next unused = **V25**.
+**Migrations added this session: V20–V25.** Next unused = **V26**.
 **Clean `mvn clean verify` GREEN after B1.7: 460 unit + 267 integration, 0 failures.**
+(A final verify after B1.14 was launched — check `git log` / a `/tmp/vfinal.txt` if this session
+resumed mid-run.)
 (One scare mid-session: a background `verify` collapsed with a flood of "connection closed" +
 `bash fork: Resource temporarily unavailable` + my log file hitting a size cap — purely host
 resource exhaustion, NOT a code bug. Re-run clean = green. Lesson: run `verify` ALONE, filter
@@ -53,9 +58,13 @@ its log with `grep --line-buffered`, never unbounded `tee`.)
 **`README.md` has UNCOMMITTED local edits (not from this session's commits) that paste Razorpay
 TEST api keys + seeded-user rows.** Left untouched. Should be moved out of the tracked file.
 
-**Part B gaps still open:** B1.8 student interviews, B1.9 client talent pool + recruitment
-requests, B1.10 HR exit/onboarding/disciplinary, B1.14 BA meetings, B1.15-part1 assessment
-question bank, B1.18 installment plans (likely skip), B1.4 per-lesson quiz.
+**Part B gaps still open (all sizeable new modules):** B1.8 student interviews, B1.9 client
+talent pool + recruitment requests, B1.10 HR exit/onboarding/disciplinary, B1.15-part1
+assessment question bank, B1.18 installment plans (likely skip), B1.4 per-lesson quiz.
+
+**Session-3 endpoint tally: ~40 across 11 gap items** (B1.4, B1.5, B1.6, B1.7, B1.11, B1.12,
+B1.13, B1.14, B1.15-part2, B1.16, B1.17), each its own commit on `main`, all unit-tested,
+`verify` green at every checkpoint. Frontend integration (Part A) still not started.
 
 ## What was built
 
