@@ -1,5 +1,6 @@
 package com.moriah.skillhub.hr;
 
+import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
@@ -11,6 +12,7 @@ import com.moriah.skillhub.hr.repository.EmployeeRepository;
 import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -57,6 +59,24 @@ public class EmployeeService {
 
         employeeRepository.save(employee);
         return toResponse(employee);
+    }
+
+    /** {@code GET /api/v1/hr/employees} — feature 19 shipped only create; the FE's HR workspace
+     * needs the directory too. All filters optional. */
+    @Transactional(readOnly = true)
+    public PageResponse<EmployeeResponse> list(EmployeeStatus status, String department, String search, Pageable pageable) {
+        return PageResponse.from(employeeRepository.search(status, blankToNull(department), blankToNull(search), pageable)
+                .map(this::toResponse));
+    }
+
+    @Transactional(readOnly = true)
+    public EmployeeResponse get(Long id) {
+        return toResponse(employeeRepository.findWithAssociationsById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.EMPLOYEE_NOT_FOUND, id)));
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 
     private EmployeeResponse toResponse(Employee employee) {
