@@ -1,10 +1,15 @@
 -- =============================================================================================
--- DEV-ONLY test data. Loaded by DevDataLoader (@Profile("dev")) on app startup, once per DB —
--- NEVER by Flyway, NEVER in the `test` or `prod` profiles. See docs/test-data.md.
+-- DEV-ONLY test data — a Flyway *repeatable* migration (R__), applied only in the `dev` profile.
 --
--- Every statement is idempotent (INSERT IGNORE / INSERT ... WHERE NOT EXISTS) and keyed by a
--- natural unique column, so re-running is a no-op and order does not depend on auto-increment
--- ids.
+-- It runs because application-dev.yml adds `classpath:db/testdata` to spring.flyway.locations.
+-- application.yml (used by `prod`) and src/test/resources/application-test.yml (used by every
+-- integration test) DO NOT add that location, so Flyway there never sees this file — the `test`
+-- and `prod` databases stay free of sample data, which is the whole reason it isn't a versioned
+-- V__ migration in db/migration/.
+--
+-- Repeatable = re-applied automatically whenever this file's checksum changes. Every statement
+-- is idempotent (INSERT IGNORE / INSERT ... SELECT ... WHERE NOT EXISTS) and keyed by a natural
+-- unique column, so re-running is a no-op and order does not depend on auto-increment ids.
 --
 -- All accounts: password = "Password123!"  (BCrypt cost 12)
 -- =============================================================================================
@@ -126,7 +131,7 @@ WHERE b.name = 'FS-2026-01'
 
 -- ---- One PUBLISHED project authored by the developer ---------------------------------
 INSERT INTO projects (title, slug, description, tech_stack, difficulty, domain, version, status, created_by)
-SELECT 'Todo API', 'todo-api', 'A REST API for a todo list — the sprint-1 reference project.',
+SELECT 'Todo API', 'todo-api', 'A REST API for a todo list - the sprint-1 reference project.',
        JSON_ARRAY('Java', 'Spring Boot', 'MySQL'), 'BEGINNER', 'Web', 'v1', 'PUBLISHED',
        (SELECT id FROM users WHERE email = 'dev@moriah.test')
 WHERE NOT EXISTS (SELECT 1 FROM projects WHERE slug = 'todo-api');

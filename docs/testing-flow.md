@@ -12,7 +12,7 @@ body** and **which field of one response feeds the next request**.
 
 ---
 
-## 0 · Seeded accounts (from `db/testdata/dev-seed.sql`)
+## 0 · Seeded accounts (from `db/testdata/R__dev_seed_data.sql`, auto-applied by Flyway in the `dev` profile)
 
 All password **`Password123!`**. UUIDs are fixed so you can paste them.
 

@@ -11,6 +11,13 @@
 spring:
   config:
     import: "optional:file:./.env[.properties]"
+  flyway:
+    # Dev-only: add the sample-data location on top of the real migrations. `db/testdata/` holds
+    # one repeatable migration (R__dev_seed_data.sql) that seeds the test accounts/batch/leads on
+    # every `mvn spring-boot:run` — no separate script to run on a fresh machine. application.yml
+    # (prod) and application-test.yml keep the default `classpath:db/migration` only, so this
+    # sample data never reaches the test or production databases.
+    locations: classpath:db/migration,classpath:db/testdata
   jpa:
     # show-sql is deliberately OFF: it writes raw SQL straight to System.out, bypassing the log
     # framework and duplicating every statement already emitted by `org.hibernate.SQL: DEBUG`

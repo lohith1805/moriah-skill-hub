@@ -540,7 +540,7 @@ At every point, the previous application version still runs against the current 
 - Never `DROP COLUMN`, `RENAME COLUMN`, or narrow a type in the same release that changes the code using it
 - Any migration touching a table over 1M rows uses `ALGORITHM=INPLACE, LOCK=NONE` and is verified with `EXPLAIN` first
 - `V15__indexes_constraints.sql` adds `CHECK` constraints and indexes to populated tables — this is the one migration most likely to lock in production. Test it against a restored production-sized dump, not an empty Testcontainer.
-- Seed migrations contain reference data only (roles, plans, pip_rules). `permissions`/`role_permissions` are created but deliberately not seeded — see the note under V1. **Sample users, batches, and leads live in `db/testdata/` and are loaded by a dev-profile runner, never by Flyway.**
+- Seed migrations contain reference data only (roles, plans, pip_rules). `permissions`/`role_permissions` are created but deliberately not seeded — see the note under V1. **Sample users, batches, and leads live in `db/testdata/R__dev_seed_data.sql` — a Flyway repeatable migration run only in the `dev` profile (`application-dev.yml` adds `classpath:db/testdata` to `spring.flyway.locations`). `application.yml` and `application-test.yml` keep the default `classpath:db/migration`, so the `test` and `prod` databases never load it.**
 
 ---
 

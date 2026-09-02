@@ -183,8 +183,10 @@ http://localhost:8080/swagger-ui.html             (dev profile only)
 mvn verify
 ```
 
-- Sample users / batches / leads live in `db/testdata/` and are loaded by a **dev-profile runner**,
-  never by Flyway. Reference data (roles, plans) is seeded by `V4`/`V5`.
+- Sample users / batches / leads live in `db/testdata/R__dev_seed_data.sql` — a **Flyway repeatable
+  migration**, run only in the `dev` profile (`application-dev.yml` adds `classpath:db/testdata` to
+  `spring.flyway.locations`; `test`/`prod` keep the default and never load it). Reference data
+  (roles, plans) is seeded by `V4`/`V5`.
 - `context/progress-tracker.md` — the authoritative project-status log (feature checklist,
   migration ledger, decision log, UAT scenarios).
 - To regenerate the API docs after an endpoint change: re-export `docs/openapi.json` from

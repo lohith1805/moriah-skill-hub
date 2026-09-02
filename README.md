@@ -40,11 +40,13 @@ the source of truth for project status.
 
 Seed data
 
-For Linux
-docker exec -i skillhub-mysql mysql -umoriah_app -papp_dev_only moriah_skillhub < src/main/resources/db/testdata/dev-seed.sql
+No manual step. `src/main/resources/db/testdata/R__dev_seed_data.sql` is a Flyway repeatable
+migration that runs automatically on `mvn spring-boot:run` (the `dev` profile adds
+`classpath:db/testdata` to `spring.flyway.locations`). Accounts: `admin@ / pm@ / dev@ / sales@ /
+hr@ / ba@ / client@ / student1@ / student2@ / student3@ moriah.test`, password `Password123!`.
 
-For Windows
-cmd /c "docker exec -i skillhub-mysql mysql -umoriah_app -papp_dev_only moriah_skillhub < src/main/resources/db/testdata/dev-seed.sql"
+To reload from scratch: `docker compose down -v && docker compose up -d`, then start the app.
+The `test` and `prod` profiles never load this file.
 
 
 MiniIO Bucket
