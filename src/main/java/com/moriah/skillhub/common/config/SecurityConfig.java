@@ -73,7 +73,13 @@ public class SecurityConfig {
      */
     private static final String[] PUBLIC_PATHS = {
             "/actuator/health",
+            // springdoc serves the spec/UI at the bare paths as well as under a suffix — permit
+            // every form explicitly so a request never falls through to anyRequest().authenticated()
+            // (which, via the servlet ERROR dispatch to /error, surfaces as a confusing 401).
+            "/v3/api-docs",
             "/v3/api-docs/**",
+            "/v3/api-docs.yaml",
+            "/swagger-ui",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/api/v1/auth/**",

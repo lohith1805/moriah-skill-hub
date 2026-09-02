@@ -72,6 +72,14 @@ public class ReplicaDataSourceConfig {
         replicaDataSource.setPoolName("replica-pool");
         replicaDataSource.setMaximumPoolSize(replicaDataSourceProperties.maxPoolSize());
         replicaDataSource.setReadOnly(true);
+        // Audit 2026-08-31 (L17): a long-lived reporting pool that previously set only pool size —
+        // give it the same explicit lifecycle/timeout settings as the primary so an idle or
+        // half-dead connection is recycled predictably.
+        replicaDataSource.setMinimumIdle(2);
+        replicaDataSource.setConnectionTimeout(10_000);
+        replicaDataSource.setMaxLifetime(1_500_000);   // 25m
+        replicaDataSource.setKeepaliveTime(120_000);
+        replicaDataSource.setLeakDetectionThreshold(60_000);
         return new JdbcTemplate(replicaDataSource);
     }
 }

@@ -14,6 +14,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
@@ -78,7 +79,7 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
                 "Expected OAuth2AuthenticationToken, got " + authentication.getClass());
     }
 
-    private void writeJson(HttpServletResponse response, HttpStatus status, ApiResponse<?> body) throws IOException {
+    private void writeJson(HttpServletResponse response, HttpStatusCode status, ApiResponse<?> body) throws IOException {
         response.setStatus(status.value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.getWriter().write(objectMapper.writeValueAsString(body));

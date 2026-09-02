@@ -1,59 +1,56 @@
 # Memory — Moriah Skill Hub Backend
 
-Last updated: 2026-08-27 (Features 09–19 complete, reviewed, `mvn verify` green. Session ran autonomously per standing instruction and stopped after feature 19 as directed.)
+Last updated: 2026-08-28 (Features 20–24 complete. **The full 24-feature build is done**, 8 days ahead of the Sep 11 target. Session ran fully autonomously per standing instruction and stopped after feature 24 as directed.)
 
 ## What was built
 
-**Features 01–08.** ✅ Complete, committed. (See git log / `context/progress-tracker.md` decision log.)
+**Features 01–19.** ✅ Complete. (See prior memory entries / `context/progress-tracker.md` decision log.)
 
-**Features 09–12.** ✅ Complete, committed, pushed. (See prior memory entry / progress-tracker.md — not repeated here.)
+**Feature 20 — Certificate Engine, Graduation and Public Verification (V14).** ✅ Complete, `/review`'d, committed `da141bc`. New `certificate/` package: `Certificate`/`CertificateType` entity, `CertificateService`, `GraduationService`, `QrCodeService`, `CertificateController`, `VerificationController` (public, unauthenticated verify endpoint). `BatchService.graduate`/`hasGraduatedFromBatch` added. Clears the long-standing portfolio Open Stub (`completedProjects`/`issuedCertificates` on `GET /portfolio/{slug}`).
 
-**Feature 13 — Standups and Attendance.** ✅ Complete, `/architect`'d, `/review`'d.
+**Feature 21 — BA and Client Portal (V15).** ✅ Complete, `/review`'d (0 findings), committed `acf46dd`. New `client/` package: `Client`/`ClientProject`/`RequirementDocument`/`ResourceAllocation`, `ClientController` (`/clients/**`) + `BaController` (`/ba/**`). Client portal logins are ADMIN-provisioned only, reusing the existing password-reset flow (never a bespoke token/plaintext password).
 
-**Feature 14 — Assessment Engine.** ✅ Complete, `/review`'d.
+**Feature 22 — Admin Metrics and Exports.** ✅ Complete, `/review`'d (0 findings), committed `e9aa922`. New `admin/` package (metrics overview, revenue, user/role/status management, audit query, async XLSX exports via SXSSFWorkbook). New `ReplicaDataSourceConfig` wires the previously-unused `mysql-replica` docker service for real. No new migration — every underlying view/table already existed.
 
-**Feature 15 — Developer Content Portal.** ✅ Complete, `/review`'d.
+**Feature 23 — Audit, Hardening and Performance (V16).** ✅ Complete, `/review`'d (0 findings), committed `0a17350`. Cross-cutting pass, not new functionality: V16 migration (1 CHECK gap + 8 real indexes), closed real audit-logging gaps in `payment/` (was fully unaudited) and `CodeReviewService.create`, fixed a real N+1 (`TaskSubmissionRepository.search`), added security headers (HSTS/nosniff/frame-deny/CSP — none existed before), resolved the deferred `@Transactional`-wraps-S3-upload issue across `CertificateService`/`InvoiceService`/`PayrollService`.
 
-**Feature 16 — Student Metrics (V10).** ✅ Complete, `/review`'d.
+**Feature 24 — Integration Testing and UAT.** ✅ Complete, `/review`'d (0 findings), committed `bd2b977`. Closed real test-coverage gaps (Checkout/Subscription/Pip/Standup controllers had zero HTTP coverage; 3 role-groups had no wrong-role 403 test; one PIP rule boundary untested). Added `NightlyChainUatFlowIT` (genuine end-to-end 01:30→01:45→02:00 chain) and `MetricsAndPipChainProfilingIT`. Actually re-ran the local restore drill (fresh containers, fresh dump/binlog replay — 3 rows, matched). Exported `docs/openapi.json`.
 
-**Feature 17 — PIP Rule Engine (V11).** ✅ Complete, `/architect`'d, `/review`'d.
-
-**Feature 18 — CRM Module (V12).** ✅ Complete, built directly (no `/architect`), `/review`'d. New `crm/` package: `Lead`/`LeadActivity`/`SalesTarget`, dedupe-hash + WhatsApp inbound/outbound, `v_lead_funnel` view.
-
-**Feature 19 — HR Module (V13).** ✅ Complete, built directly, `/review`'d. New `hr/` package: `Employee`/`HrDocument`/`LeaveRequest`/`PayrollRecord` entities, 5 services (Employee, HrDocument, Leave, Payroll, HrLetter) each with a controller. New shared infra: `common/security/CurrentUserUuid` (mirrors `@CurrentUser`, resolves uuid instead of userId), two new `OwnershipGuard` namespaces (`payslips/`, `hr-letters/` — both "owner OR HR_MANAGER/ADMIN"). New cross-package read: `BatchService.hasGraduated(userId)`.
-
-**`mvn verify`: 323 unit tests + 209 integration tests, 0 failures, genuinely green** as of the end of this session.
+**`mvn verify`: 385 unit tests + 269 integration tests, 0 failures, genuinely green** as of the end of this session.
 
 ## Decisions made
 
-- **Standing instruction governing all of features 13–19 this session**: decide autonomously per `context/build-plan.md`/`context/AGENTS.md` without asking the user design questions; run `/review` after each feature; **stop after feature 19** — do not start feature 20 without new explicit instruction. This instruction is now fulfilled; a fresh session needs new direction to proceed past this point (or the user may simply say "continue with feature 20").
-- **No git repository exists in this working directory.** `/review`'s normal `git diff`-based Phase 0 can't run — the established workaround (used for features 18 and 19) is 5 parallel Agent-tool review calls, each briefed with the explicit new/modified file list, together covering the usual 8 review angles. Keep using this approach for future `/review` invocations unless a git repo gets initialized.
-- **`users.id` must never be exposed in any response DTO** — always the resource's own `uuid`. A resource's own PK (`Employee.id`, `Lead.id`, `Project.id`, etc.) is fine to expose directly; only `users.id` specifically is forbidden. This has been a recurring `/review` finding across CRM and HR — check new DTOs against it proactively.
-- **Mandatory 2FA login flow for `ADMIN`/`HR_MANAGER` roles in integration tests** — established in `PipFlowIT`, must be replicated (`completeMandatoryTwoFactorSetupAndLogin` + `currentTotpCode` helpers) in every new `*FlowIT` class whenever it logs in as one of these roles, or every subsequent authenticated call 401s. Easy to forget — bit twice this session (once implicitly needing the fix in `HrFlowIT`).
-- **RFC 5321 email local-part length (64 octets)** — a test fixture full name that's too long breaks registration with a 400 that cascades into confusing 401s downstream. Check fixture name lengths in any new `*FlowIT` class.
-- **PDF-rendering boilerplate is now duplicated 3× (`InvoiceService`, `PayrollService`, `HrLetterService`)** — flagged via `spawn_task` (chip: "Extract shared PDF-rendering helper", task_id `task_168cd7c1`) rather than fixed inline, since it would touch the already-shipped Invoice feature. Worth picking up if the user wants that chip actioned.
+- **Standing instruction governing this entire session**: decide autonomously per `context/build-plan.md`/`context/AGENTS.md` without asking design questions; run `/review` after each feature; **build through feature 24, then stop.** This instruction is now fully discharged — a fresh session needs new explicit direction to do anything further on this project.
+- **Git repository initialized this session** (none existed before, at all). `.env` correctly excluded. `/review` now uses real `git diff` for every feature instead of the old parallel-agent-file-list workaround — that workaround is obsolete, don't reintroduce it.
+- **Workflow pattern**: the orchestrating session did all `/architect`-equivalent research/decision-making itself (reading build-plan.md/architecture.md/existing conventions, resolving every open design question up front), then delegated the actual implementation + `mvn verify` to a background general-purpose Agent per feature, with a long, fully-decided, self-contained prompt. After each feature: reviewed the real `git diff` directly, decided any fixes autonomously, committed. This worked well — every feature shipped with 0-1 findings on review, and several real bugs were caught by the delegated agents themselves before ever reaching review (see Problems solved).
+- **Honesty standard held throughout, deliberately, on every "can't fully test this locally" item** (load testing, production-scale migration dry run, staging deploy, restore drill scope) — never fabricated a passing number or a claim that couldn't be backed by a real local test. UAT Scenario row 9 (p95 ≤ 200ms) is explicitly left unchecked in `progress-tracker.md` because the real measured number (~6s under local load) doesn't meet it. This precedent should hold for any future work on this project too.
+- **`@Transactional` must never wrap an outbound call** (S3, HTTP) — this was violated 4 times independently across features 07/08/19/20 before feature 23 caught and fixed all of them at once. Watch for this in any new service that renders-then-uploads a file.
 
 ## Problems solved
 
-- **`HrFlowIT` 12/17 failures, all 401s** — root cause was the missing mandatory-2FA-login branch for `HR_MANAGER` (see Decisions above). Fixed by copying `PipFlowIT`'s helpers.
-- **Two genuine authorization bugs found by feature 19's `/review`** (most severe findings of the session): an `HR_MANAGER` could approve their own leave request, and could verify their own uploaded KYC document, because the HR-override branch in each service never checked caller-isn't-requester. Fixed with a new `ErrorCode.SELF_DECISION_NOT_ALLOWED` (403), checked in both `LeaveService.decide` and `HrDocumentService.verify`.
-- **TOCTOU race in "check exists, then save" services** (`PayrollService.generate`, `EmployeeService.create`) had no `DataIntegrityViolationException` handler — a genuine concurrent race would 500 instead of returning the documented 409. Fixed with a new codebase-wide `GlobalExceptionHandler` handler (not HR-specific — backstops every service using this pattern).
-- **Various HR-specific correctness bugs from `/review`**: BigDecimal scale mismatch in payroll gross-amount calc (violated literal "DECIMAL(12,2)" spec line), unbounded negative net pay, N+1 query in payroll generation (fixed via 2 new batch repository methods), payslip S3 key format deviating from architecture.md's `yyyy-MM` template, a dead `@NotBlank` validation (no `@Validated` on the controller — Bean Validation on `@RequestParam` silently does nothing without it, worth remembering for any future `@RequestParam` validation).
+- **Two real Spring auto-configuration traps (feature 22)**: (1) a second `DataSource`/`JdbcTemplate` `@Bean` silently suppresses the primary connection pool — `@ConditionalOnMissingBean` matches by type, not qualifier. Fixed by never registering the replica pool as its own bean, and explicitly re-declaring `@Primary` on the default `JdbcTemplate`. (2) `@Async` self-invocation within the same class silently runs synchronously (proxy bypass) — fixed by splitting into a separate bean (`ExportGenerationService`). Both documented in that code's own Javadoc — read it before adding a third connection pool or another `@Async` method to this codebase.
+- **A subtle HSTS bug (feature 23)**: Spring Security's default HSTS header writer only fires when `HttpServletRequest.isSecure()` is true, but this project has no `server.ssl.*` configured anywhere — meaning the realistic deployment shape is TLS terminated upstream, so the default would have silently never sent the header. Fixed with an unconditional `requestMatcher(AnyRequestMatcher.INSTANCE)`.
+- **A real cross-test-class pollution bug (feature 20)**: two `CertificateFlowIT` fixtures left permanently-`ACTIVE` `batch_students` rows that corrupted `MetricsRefreshFlowIT`'s deliberately-unscoped whole-platform cohort scan, since Testcontainers MySQL is a single static-singleton shared across the whole `mvn verify` run. Fixed by not inserting the row when the test doesn't actually need a specific status. Any future `*FlowIT` fixture that sets `batch_students` to `ACTIVE`/`ON_PIP` and doesn't transition it away by test end will reproduce this.
+- **A genuine test-timing flake (feature 24)**: `NotificationQueueIT`'s 10-second poll budget wasn't always enough once feature 24's own new tests (300 PIP-triggered notification enqueues in `MetricsAndPipChainProfilingIT`) added real extra traffic to the shared Redis queue. Confirmed via isolated re-runs it wasn't a logic bug; fixed by widening the poll budget to 30s.
+- **Recurring build-agent friction**: background agents kept ending their turn while `mvn verify` was still running in a background shell (or a self-imposed wait-loop), producing incomplete reports — happened at least once on every one of features 20-24. Fix was always the same manual resume message: tell the agent explicitly to call Bash for `mvn verify` with `run_in_background` omitted/false and an explicit `timeout` ≥ 480000ms. Twice this also coincided with a genuine session usage-limit interrupt mid-build; in both cases work-in-progress survived on disk and resuming the same agent picked up cleanly.
 
 ## Current state
 
-Features 01–19 all complete. `context/progress-tracker.md` is fully up to date through feature 19, including its full `/review` decision-log entry (15 findings: 13 fixed, 2 no-change-needed with documented reasoning). Migration Ledger shows V13 applied. Nothing is committed to git in this session (no git repo exists in this working directory at all — confirm with the user whether one should be initialized before Feature 20, since `/review`'s normal diff-based workflow and any future `git commit` request depend on it).
+**All 24 features complete, committed, and `/review`'d clean.** `context/progress-tracker.md` is fully up to date — Current Status, full Progress checklist, Migration Ledger through V16, Open Stubs table (all 5 rows cleared), UAT Scenarios table (9/10 rows checked with real proof pointers, row 9 honestly unchecked), Database Resilience Checklist, and a complete decision log for every feature this session touched.
 
-One background task chip is pending (not yet actioned): `task_168cd7c1` — extract shared PDF-rendering helper across Invoice/Payroll/HrLetter services.
+Git log: `bfa045b` (01-19 snapshot) → `da141bc` (20) → `acf46dd` (21) → `e9aa922` (22) → `0a17350` (23) → `bd2b977` (24). Nothing uncommitted. No PR/push happened — everything is local commits on `main`.
 
 ## Next session starts with
 
-**Feature 20 — Certificate Engine, Graduation and Public Verification (V14).** Build-plan.md flags this one `/architect` first — do not skip that step (it's the first `/architect` flag since feature 17). Check whether the user wants the same autonomous-build-then-review workflow continued, or wants to weigh in on this feature's design given the `/architect` flag specifically calls for a planning conversation before code.
+**Nothing is queued.** The build is complete. If the user wants to continue working on this project, likely directions:
+1. A genuinely new feature beyond the original 24-feature plan.
+2. Addressing one of the honestly-flagged gaps: real load testing against the p95 target, a production-scale migration dry run, or an actual staging deployment — all three need infrastructure that doesn't exist yet in this project.
+3. A bug fix or refinement to something already shipped.
 
-Before starting, worth asking the user: (1) should a git repository be initialized in this working directory now, given `/review`'s workaround has been needed twice already and will keep being needed every feature until one exists; (2) does the standing "build features 13–19, stop after 19" instruction extend to 20+, or does the user want to redirect.
+In any of these cases: run `/remember restore` first, then read `context/progress-tracker.md`'s Current Status and (for gap-related work) its UAT Scenarios table and feature 23/24 decision-log entries before doing anything.
 
 ## Open questions
 
-- No git repository exists in this project directory at all. Every `/review` this session has worked around it with parallel-agent file-list reviews instead of `git diff`. Worth resolving before too many more features stack up with no version history.
-- `project-overview.md` still says `/api/v1/webhooks/*` includes `github` — `build-plan.md`'s real spec never builds one (noted in a prior memory entry, still open, not blocking).
-- The HR module's staff-track letter-eligibility path (`Employee.status == EXITED`) is currently unreachable — no endpoint in feature 19's spec transitions an employee's status. This is expected to resolve itself if/when a future feature adds staff offboarding; not a bug, just worth knowing if someone asks why an EXITED-status experience letter test needs to hand-construct the entity rather than going through a real endpoint.
+- `docs/openapi.json` (feature 24) is a one-time static export — it will drift from the live `/v3/api-docs` the moment any endpoint changes, and nothing regenerates it automatically. Worth wiring into a build step if this project ever gets real CI.
+- `project-overview.md` still says `/api/v1/webhooks/*` includes `github` — build-plan.md's real spec never built one. Noted across several prior sessions, still open, not blocking.
+- No staging environment or deployment target has ever been chosen for this project. Every "verified locally, not against production scale" caveat (V16 migration, load test, restore drill) traces back to this one root fact.

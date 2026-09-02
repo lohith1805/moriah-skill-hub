@@ -10,12 +10,15 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
+import org.springframework.util.DigestUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 
@@ -28,8 +31,15 @@ import java.time.Instant;
  * <p>
  * Two tiers, feature 03's auth-specific limit and feature 04's global one, in a single filter
  * rather than two separate mechanisms: {@code /api/v1/auth/**} gets the tighter
- * {@code auth-requests-per-minute} (10); everything else gets
- * {@code global-requests-per-minute} (60).
+ * {@code auth-requests-per-minute}; everything else gets {@code global-requests-per-minute}.
+ * <p>
+ * <b>Audit 2026-08-31 (C4):</b> a request carrying a bearer token is bucketed by a hash of that
+ * token, not by client IP. Behind a load balancer that terminates TLS, every request's {@code
+ * getRemoteAddr()} is the LB's address (until {@code trusted-proxies} is configured), which would
+ * otherwise collapse all authenticated traffic into a single shared bucket. Tokenless requests —
+ * which includes the {@code /api/v1/auth/**} brute-force surface — still bucket by IP, so a
+ * correct {@code trusted-proxies} configuration remains necessary for login throttling to work
+ * per-client (and account-level lockout in {@code AuthService} is the complementary defence).
  */
 @Component
 @RequiredArgsConstructor
@@ -51,9 +61,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
                 ? properties.authRequestsPerMinute()
                 : properties.globalRequestsPerMinute();
 
-        String ip = clientIpResolver.resolve(request);
         long window = Instant.now().getEpochSecond() / 60;
-        String key = "ratelimit:%s:%d".formatted(ip, window);
+        String key = "ratelimit:%s:%d".formatted(callerIdentity(request), window);
 
         Long count = redisTemplate.opsForValue().increment(key);
         if (count != null && count == 1L) {
@@ -66,6 +75,22 @@ public class RateLimitFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    /**
+     * A bearer-token request buckets on {@code tok:<md5(token)>}; everything else on
+     * {@code ip:<client ip>}. The hash keeps raw tokens out of Redis keys and logs; MD5 is
+     * adequate here (a bucketing discriminator, not a security primitive).
+     */
+    private String callerIdentity(HttpServletRequest request) {
+        String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
+        if (authorization != null && authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
+            String token = authorization.substring(7).trim();
+            if (!token.isEmpty()) {
+                return "tok:" + DigestUtils.md5DigestAsHex(token.getBytes(StandardCharsets.UTF_8));
+            }
+        }
+        return "ip:" + clientIpResolver.resolve(request);
     }
 
     private void writeRateLimitExceeded(HttpServletResponse response) throws IOException {

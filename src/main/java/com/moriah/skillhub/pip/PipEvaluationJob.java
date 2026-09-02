@@ -1,5 +1,6 @@
 package com.moriah.skillhub.pip;
 
+import com.moriah.skillhub.common.job.JobChainGuard;
 import com.moriah.skillhub.common.job.JobRun;
 import com.moriah.skillhub.common.job.JobRunTracker;
 import lombok.RequiredArgsConstructor;
@@ -22,13 +23,24 @@ import org.springframework.stereotype.Component;
 public class PipEvaluationJob {
 
     private static final String JOB_NAME = "PipEvaluationJob";
+    private static final String PREDECESSOR = "MetricsRefreshJob";
 
     private final PipEvaluationService pipEvaluationService;
     private final JobRunTracker jobRunTracker;
+    private final JobChainGuard jobChainGuard;
 
     @Scheduled(cron = "${moriah.pip.evaluation-cron}", zone = "${moriah.jobs.zone}")
     @SchedulerLock(name = JOB_NAME, lockAtMostFor = "30m")
     public void evaluateScheduled() {
+        // Audit 2026-08-31 (H4): reading student_metrics before tonight's refresh completed is
+        // "worse than not running at all" (AGENTS.md) — skip rather than evaluate stale metrics.
+        if (!jobChainGuard.predecessorSucceededRecently(PREDECESSOR)) {
+            JobRun skipped = jobRunTracker.start(JOB_NAME);
+            String reason = PREDECESSOR + " has no recent SUCCESS run — skipping to avoid evaluating stale metrics";
+            log.error("[{}] {}", JOB_NAME, reason);
+            jobRunTracker.fail(skipped.getId(), reason);
+            return;
+        }
         JobRun run = jobRunTracker.start(JOB_NAME);
         try {
             int count = pipEvaluationService.evaluate();

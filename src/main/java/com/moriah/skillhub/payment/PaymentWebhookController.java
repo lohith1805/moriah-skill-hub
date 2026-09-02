@@ -68,11 +68,12 @@ public class PaymentWebhookController {
         String eventId = eventType + ":" + primaryEntityId;
 
         if (webhookIdempotencyService.claim("RAZORPAY", eventId, eventType, rawBody)) {
-            paymentWebhookService.handleRazorpayEvent(payload);
+            processClaimed("RAZORPAY", eventId, () -> paymentWebhookService.handleRazorpayEvent(payload));
         }
 
-        // 200 either way — including for a duplicate. A non-200 triggers Razorpay's retry storm
-        // (library-docs.md "Razorpay").
+        // 200 for a successfully processed event or a duplicate. A handler failure rethrows from
+        // processClaimed() → a 5xx, which is exactly what makes Razorpay redeliver (the claim is
+        // released first so the redelivery is treated as fresh work). library-docs.md "Razorpay".
         return ResponseEntity.ok().build();
     }
 
@@ -88,10 +89,26 @@ public class PaymentWebhookController {
         Event event = maybeEvent.get();
 
         if (webhookIdempotencyService.claim("STRIPE", event.getId(), event.getType(), rawBody)) {
-            paymentWebhookService.handleStripeEvent(event);
+            processClaimed("STRIPE", event.getId(), () -> paymentWebhookService.handleStripeEvent(event));
         }
 
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Runs a just-claimed event's handler, marking the claim {@code PROCESSED} in the same
+     * transaction on success. On failure the claim is released (so the gateway's redelivery
+     * re-claims it) and the exception is rethrown so the response is a 5xx.
+     */
+    private void processClaimed(String gateway, String eventId, Runnable handler) {
+        try {
+            webhookIdempotencyService.runAndMarkProcessed(gateway, eventId, handler);
+        } catch (RuntimeException e) {
+            webhookIdempotencyService.releaseClaim(gateway, eventId);
+            log.error("[webhook/{}] handler failed for event {}; claim released for redelivery",
+                    gateway.toLowerCase(), eventId, e);
+            throw e;
+        }
     }
 
     private JsonNode parseJson(String rawBody) {

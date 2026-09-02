@@ -17,6 +17,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Optional<User> findByUuid(String uuid);
 
+    /** Audit 2026-08-31 (H7): lightweight projection for the per-request auth check in
+     * {@code JwtAuthFilter} — avoids materialising the full {@code User} entity on every call. */
+    Optional<AuthUserView> findAuthViewByUuid(String uuid);
+
     boolean existsByEmail(String email);
 
     /** feature 22: {@code GET /admin/users?role=&status=} — both filters optional. An {@code

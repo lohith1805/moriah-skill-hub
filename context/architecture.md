@@ -228,7 +228,9 @@ Two jobs in sequence, not one. Metrics are computed and persisted first; the rul
 
 01:45 IST  MetricsRefreshJob
              → recomputes student_metrics for every active student
-             → three aggregate queries, one upsert per batch of 500
+             → several flat aggregate queries (attendance, tasks, quizzes,
+               assignment windows, weekly reviews), one upsert per batch of 500
+             → gated on AttendanceFinalisationJob's SUCCESS run via JobChainGuard
 
 02:00 IST  PipEvaluationJob (ShedLock)
              → loads the whole cohort from student_metrics in ONE query
@@ -309,7 +311,7 @@ UNIQUE KEY uq_one_active_subscription (active_user_id)
 
 **`payments`** — id, user_id FK, plan_id FK, gateway (RAZORPAY / STRIPE), gateway_order_id (unique), gateway_payment_id, amount DECIMAL(12,2), currency CHAR(3), status (CREATED / PENDING / CAPTURED / FAILED / REFUNDED), failure_reason, captured_at
 
-**`invoices`** — id, payment_id FK unique, invoice_number (unique, `MSH-INV-{YYYY}-{seq}`), amount, tax_amount, total_amount, pdf_key, status (PENDING / ISSUED / FAILED), issued_at
+**`invoices`** — id, payment_id FK unique, invoice_number (unique, `MSH-INV-{payment id, zero-padded 6}` — no year segment, unlike certificate numbers; see `Constants.INVOICE_PREFIX`), amount, tax_amount, total_amount, pdf_key, status (PENDING / ISSUED / FAILED), issued_at
 
 **`webhook_events`** — id, gateway, event_id (**unique — the idempotency guarantee**), event_type, payload JSON, processed_at, status, error_message
 

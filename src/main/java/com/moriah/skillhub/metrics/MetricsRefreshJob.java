@@ -1,5 +1,6 @@
 package com.moriah.skillhub.metrics;
 
+import com.moriah.skillhub.common.job.JobChainGuard;
 import com.moriah.skillhub.common.job.JobRun;
 import com.moriah.skillhub.common.job.JobRunTracker;
 import lombok.RequiredArgsConstructor;
@@ -28,13 +29,23 @@ import org.springframework.stereotype.Component;
 public class MetricsRefreshJob {
 
     private static final String JOB_NAME = "MetricsRefreshJob";
+    private static final String PREDECESSOR = "AttendanceFinalisationJob";
 
     private final StudentMetricsService studentMetricsService;
     private final JobRunTracker jobRunTracker;
+    private final JobChainGuard jobChainGuard;
 
     @Scheduled(cron = "${moriah.metrics.refresh-cron}", zone = "${moriah.jobs.zone}")
     @SchedulerLock(name = JOB_NAME, lockAtMostFor = "30m")
     public void refreshScheduled() {
+        // Audit 2026-08-31 (H4): refuse to run against a half-finalised attendance denominator.
+        if (!jobChainGuard.predecessorSucceededRecently(PREDECESSOR)) {
+            JobRun skipped = jobRunTracker.start(JOB_NAME);
+            String reason = PREDECESSOR + " has no recent SUCCESS run — skipping to avoid corrupting metrics";
+            log.error("[{}] {}", JOB_NAME, reason);
+            jobRunTracker.fail(skipped.getId(), reason);
+            return;
+        }
         JobRun run = jobRunTracker.start(JOB_NAME);
         try {
             int count = studentMetricsService.refresh();

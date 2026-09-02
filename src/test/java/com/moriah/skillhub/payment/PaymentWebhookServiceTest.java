@@ -25,12 +25,14 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -88,6 +90,8 @@ class PaymentWebhookServiceTest {
         payment.setAmount(new BigDecimal("14999.00"));
         payment.setCurrency("INR");
         payment.setStatus(PaymentStatus.CREATED);
+
+        ReflectionTestUtils.setField(paymentWebhookService, "jobsZone", "Asia/Kolkata");
     }
 
     @Test
@@ -101,11 +105,31 @@ class PaymentWebhookServiceTest {
 
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CAPTURED);
         assertThat(payment.getGatewayPaymentId()).isEqualTo("pi_test123");
-        verify(userSubscriptionRepository).saveAndFlush(subscriptionCaptor.capture());
+        verify(userSubscriptionRepository).save(subscriptionCaptor.capture());
         assertThat(subscriptionCaptor.getValue().getStatus()).isEqualTo(SubscriptionStatus.ACTIVE);
         assertThat(subscriptionCaptor.getValue().getPaymentId()).isEqualTo(100L);
         verify(invoiceRepository).save(any());
         verify(eventPublisher).publishEvent(new PaymentCapturedEvent(100L));
+    }
+
+    @Test
+    void checkoutSessionCompleted_userAlreadyHasActiveSubscription_capturesButSkipsInvoiceAllocationAndEvent() {
+        // Audit 2026-08-31 (H6): money is captured, but with a pre-existing ACTIVE subscription no
+        // second one can be created — the flow must stop before invoice / allocation / event.
+        when(paymentRepository.findById(100L)).thenReturn(Optional.of(payment));
+        UserSubscription existing = new UserSubscription();
+        existing.setStatus(SubscriptionStatus.ACTIVE);
+        when(userSubscriptionRepository.findByUserIdAndStatus(1L, SubscriptionStatus.ACTIVE))
+                .thenReturn(Optional.of(existing));
+
+        paymentWebhookService.handleStripeEvent(mockCheckoutSessionCompleted(100L, 1499900L, "pi_test123"));
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CAPTURED);
+        verify(userSubscriptionRepository, never()).save(any());
+        verify(invoiceRepository, never()).save(any());
+        verify(batchAllocationService, never()).allocate(any(), any(), any());
+        verify(eventPublisher, never()).publishEvent(any());
+        verify(auditLogService).record(any(), eq("PAYMENT_CAPTURED_NO_SUBSCRIPTION"), any(), any(), any(), any());
     }
 
     @Test
@@ -119,7 +143,7 @@ class PaymentWebhookServiceTest {
         paymentWebhookService.handleStripeEvent(event);
 
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
-        verify(userSubscriptionRepository, never()).saveAndFlush(any());
+        verify(userSubscriptionRepository, never()).save(any());
         verify(invoiceRepository, never()).save(any());
         verify(eventPublisher, never()).publishEvent(any());
     }
@@ -133,7 +157,7 @@ class PaymentWebhookServiceTest {
 
         paymentWebhookService.handleStripeEvent(event);
 
-        verify(userSubscriptionRepository, never()).saveAndFlush(any());
+        verify(userSubscriptionRepository, never()).save(any());
         verify(eventPublisher, never()).publishEvent(any());
     }
 

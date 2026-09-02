@@ -1,7 +1,7 @@
 package com.moriah.skillhub.common.security;
 
-import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.entity.UserStatus;
+import com.moriah.skillhub.user.repository.AuthUserView;
 import com.moriah.skillhub.user.repository.UserRepository;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
@@ -12,6 +12,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -76,7 +77,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             }
 
             String uuid = claims.getSubject();
-            User user = userRepository.findByUuid(uuid).orElse(null);
+            AuthUserView user = userRepository.findAuthViewByUuid(uuid).orElse(null);
             if (user == null || user.getStatus() != UserStatus.ACTIVE) {
                 log.warn("[security/jwt] token subject not found or not active");
                 return Optional.empty();
@@ -87,6 +88,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 log.info("[security/jwt] rejected stale token_version for user {}", user.getUuid());
                 return Optional.empty();
             }
+
+            // Correlation: tag every subsequent log line of this request with the caller's uuid.
+            // MdcLoggingFilter runs earlier in the chain and does MDC.clear() in its finally block.
+            MDC.put("userId", user.getUuid());
 
             @SuppressWarnings("unchecked")
             List<String> roles = claims.get("roles", List.class);

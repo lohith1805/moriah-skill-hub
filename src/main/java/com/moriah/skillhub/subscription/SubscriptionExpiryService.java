@@ -4,10 +4,12 @@ import com.moriah.skillhub.subscription.entity.SubscriptionStatus;
 import com.moriah.skillhub.subscription.entity.UserSubscription;
 import com.moriah.skillhub.subscription.repository.UserSubscriptionRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 
 /**
@@ -29,11 +31,18 @@ public class SubscriptionExpiryService {
 
     private final UserSubscriptionRepository userSubscriptionRepository;
 
+    /** Audit 2026-08-31 (M7): "today" must be resolved in the jobs' scheduling zone, not the JVM
+     * default — on a UTC host {@code LocalDate.now()} at 03:00 IST is still the previous calendar
+     * day, expiring subscriptions a day early. */
+    @Value("${moriah.jobs.zone}")
+    private String jobsZone;
+
     /** One flat query for the whole cohort, processed in memory — code-standards.md "Async and
      * Scheduled Work": "a repository call inside the per-item loop is a defect." */
     @Transactional
     public int runExpiry() {
-        List<UserSubscription> overdue = userSubscriptionRepository.findActiveExpiredAsOf(LocalDate.now());
+        List<UserSubscription> overdue = userSubscriptionRepository.findActiveExpiredAsOf(
+                LocalDate.now(ZoneId.of(jobsZone)));
         for (UserSubscription subscription : overdue) {
             subscription.setStatus(SubscriptionStatus.EXPIRED);
         }

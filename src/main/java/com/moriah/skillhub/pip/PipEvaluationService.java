@@ -25,11 +25,13 @@ import com.moriah.skillhub.user.entity.RoleCode;
 import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -81,6 +83,12 @@ public class PipEvaluationService {
     private final NotificationService notificationService;
     private final List<PipRuleEvaluator> evaluators;
 
+    /** Audit 2026-08-31 (M7): a PIP window's start/end dates must be computed in the jobs' zone —
+     * on a UTC host the 02:00 IST run's {@code LocalDate.now()} is the previous calendar day, so
+     * every 15-day remediation window would be a day short. */
+    @Value("${moriah.jobs.zone}")
+    private String jobsZone;
+
     @Transactional
     public int evaluate() {
         List<StudentMetricProjection> cohort = studentMetricsService.currentCohortMetrics();
@@ -101,12 +109,19 @@ public class PipEvaluationService {
 
         int triggeredCount = 0;
         for (StudentMetricProjection metric : cohort) {
+            // `alreadyOpenUserIds` starts as the set of users with a pre-existing open record and
+            // is extended below with every user triggered in *this* run. Audit 2026-08-31 (C2):
+            // `currentCohortMetrics()` returns one row per (user_id, batch_id), and a student
+            // enrolled in two batches at once is a legitimate data shape — without adding the
+            // just-fired user here, the second batch row would call fire() again, hit
+            // uq_one_open_pip on flush, and roll back the entire nightly run for every batch.
             if (alreadyOpenUserIds.contains(metric.userId())) {
                 continue;
             }
             Optional<Trigger> trigger = firstTrigger(metric, orderedEvaluators, rulesByCode);
             if (trigger.isPresent()) {
                 fire(metric, trigger.get(), hrUserIds);
+                alreadyOpenUserIds.add(metric.userId());
                 triggeredCount++;
             }
         }
@@ -134,7 +149,7 @@ public class PipEvaluationService {
     }
 
     private void fire(StudentMetricProjection metric, Trigger trigger, List<Long> hrUserIds) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(ZoneId.of(jobsZone));
         User student = userRepository.getReferenceById(metric.userId());
         Batch batch = batchRepository.getReferenceById(metric.batchId());
 

@@ -7,6 +7,20 @@ springdoc:
   api-docs:
     enabled: false
 
+spring:
+  # DB TLS hardening (Audit 2026-08-31 M11): in production the DB connection must verify the
+  # server certificate, not just encrypt. Set DB_SSL_MODE=VERIFY_CA (or VERIFY_IDENTITY) and
+  # point DB_TLS_TRUSTSTORE_URL at a keystore holding the DB's CA. The base application.yml url
+  # already reads sslMode=${DB_SSL_MODE:REQUIRED}; append the truststore params via an explicit
+  # SPRING_DATASOURCE_URL override at deploy time:
+  #   ...?sslMode=VERIFY_CA&trustCertificateKeyStoreUrl=${DB_TLS_TRUSTSTORE_URL}&trustCertificateKeyStorePassword=${DB_TLS_TRUSTSTORE_PASSWORD}
+  data:
+    redis:
+      # Audit 2026-08-31 (M10): Redis holds 2FA challenges, the JWT denylist and rate-limit
+      # counters. REDIS_PASSWORD must be set (and TLS terminated to Redis / network-isolated) in
+      # production — the app logs a startup WARNING if it is blank here.
+      password: ${REDIS_PASSWORD:}
+
 moriah:
   security:
     cors:
@@ -17,6 +31,39 @@ moriah:
     trusted-proxies: ${TRUSTED_PROXIES:}
 
 logging:
+  # ---- Where logs go ----------------------------------------------------------------------
+  # Console: kept on — the container / systemd / platform collector reads stdout.
+  # File:    rotating file on disk, for local retention and grep-on-the-box debugging.
+  #          Default path is ./logs/skillhub.log (Spring Boot creates the dir). On a real
+  #          server set  LOG_FILE=/var/log/skillhub/application.log  in the environment.
+  file:
+    name: ${LOG_FILE:logs/skillhub.log}
+  logback:
+    rollingpolicy:
+      # Rolled files land next to the active one, e.g.
+      #   logs/skillhub.log.2026-09-02.0.gz , .1.gz , ...   (daily + when size cap is hit)
+      file-name-pattern: "${LOG_FILE:logs/skillhub.log}.%d{yyyy-MM-dd}.%i.gz"
+      max-file-size: 50MB           # start a new file once the active one reaches this
+      max-history: 30              # keep 30 days of rolled archives
+      total-size-cap: 3GB          # ...but never more than this in total — delete the oldest
+      clean-history-on-start: true
+
+  # ---- How each line looks ---------------------------------------------------------------
+  # Console stays ECS JSON (one object per line) for the platform collector.
+  # File is human-readable with a full timestamp + the MDC correlation ids
+  # (requestId from MdcLoggingFilter, userId from JwtAuthFilter).
+  # To make the FILE JSON too, delete the `pattern.file` line and add:  structured.format.file: ecs
+  structured:
+    format:
+      console: ecs
+  pattern:
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{40} [req=%X{requestId:-},user=%X{userId:-}] - %msg%n"
+
+  # ---- Levels --------------------------------------------------------------------------------
   level:
     root: WARN
-    com.moriah.skillhub: INFO
+    "com.moriah.skillhub": INFO
+    # Kept at INFO through root=WARN — startup forensics an operator actually needs:
+    #   which schema version this instance is on, and connection-pool health.
+    org.flywaydb: INFO
+    com.zaxxer.hikari: INFO

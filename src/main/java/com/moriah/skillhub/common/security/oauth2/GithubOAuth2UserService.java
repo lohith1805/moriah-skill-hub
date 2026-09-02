@@ -8,9 +8,11 @@ import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 import org.springframework.security.oauth2.core.user.OAuth2User;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,7 +39,18 @@ public class GithubOAuth2UserService extends DefaultOAuth2UserService {
     private static final String EMAILS_URI = "https://api.github.com/user/emails";
     private static final String USER_NAME_ATTRIBUTE = "id";
 
-    private final RestClient restClient = RestClient.create();
+    // Audit 2026-08-31 (M15): explicit timeouts — RestClient.create() has none, so a hung
+    // api.github.com response would block a login request thread indefinitely.
+    private final RestClient restClient = RestClient.builder()
+            .requestFactory(timeoutFactory())
+            .build();
+
+    private static SimpleClientHttpRequestFactory timeoutFactory() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(Duration.ofSeconds(3));
+        factory.setReadTimeout(Duration.ofSeconds(8));
+        return factory;
+    }
 
     @Override
     public OAuth2User loadUser(OAuth2UserRequest userRequest) throws OAuth2AuthenticationException {

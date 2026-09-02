@@ -8,6 +8,7 @@ import com.moriah.skillhub.common.security.TrustedProxyProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.mock.env.MockEnvironment;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -34,7 +35,7 @@ class RateLimitFilterIT extends IntegrationTestBase {
     @Test
     void requestsBeyondTheLimitReceive429() throws Exception {
         RateLimitProperties tightLimit = new RateLimitProperties(3, 3);
-        ClientIpResolver clientIpResolver = new ClientIpResolver(new TrustedProxyProperties(List.of()));
+        ClientIpResolver clientIpResolver = new ClientIpResolver(new TrustedProxyProperties(List.of()), new MockEnvironment());
         RateLimitFilter filter = new RateLimitFilter(redisTemplate, tightLimit, objectMapper, clientIpResolver);
 
         String ip = "203.0.113." + System.nanoTime() % 250; // unique-ish per test run, avoids cross-run collision

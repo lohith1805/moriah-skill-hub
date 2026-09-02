@@ -127,10 +127,20 @@ public class CertificateService {
                     "Not every sprint in this batch is COMPLETED yet.");
         }
 
+        CertificateType type = request.certificateType() != null ? request.certificateType() : CertificateType.COMPLETION;
+        // Audit 2026-08-31 (M17): calling issue() twice would otherwise mint two certificate rows,
+        // two PDFs and two verification codes for the same graduation. A previously-revoked one
+        // does not block a corrected re-issue.
+        if (certificateRepository.existsByUserIdAndBatchIdAndCertificateTypeAndRevokedAtIsNull(
+                student.getId(), batch.getId(), type)) {
+            throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION,
+                    "A " + type + " certificate has already been issued to this student for this batch.");
+        }
+
         Certificate certificate = new Certificate();
         certificate.setUser(student);
         certificate.setBatch(batch);
-        certificate.setCertificateType(request.certificateType() != null ? request.certificateType() : CertificateType.COMPLETION);
+        certificate.setCertificateType(type);
         certificate.setVerificationCode(generateUniqueVerificationCode());
         certificate.setIssuedBy(userRepository.getReferenceById(callerUserId));
         certificate.setIssuedAt(Instant.now());

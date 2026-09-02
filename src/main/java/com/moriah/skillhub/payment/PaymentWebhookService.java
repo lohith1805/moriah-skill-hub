@@ -21,14 +21,15 @@ import com.stripe.model.EventDataObjectDeserializer;
 import com.stripe.model.checkout.Session;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Optional;
 
 /**
@@ -52,6 +53,11 @@ public class PaymentWebhookService {
     private final ApplicationEventPublisher eventPublisher;
     private final BatchAllocationService batchAllocationService;
     private final AuditLogService auditLogService;
+
+    /** Audit 2026-08-31 (M7): subscription start/end dates resolved in the jobs' zone, not the
+     * JVM default (a UTC host would date them a day early for late-evening-UTC captures). */
+    @Value("${moriah.jobs.zone}")
+    private String jobsZone;
 
     @Transactional
     public void handleRazorpayEvent(JsonNode payload) {
@@ -148,7 +154,21 @@ public class PaymentWebhookService {
         auditLogService.record(null, "PAYMENT_CAPTURED", "Payment", payment.getId(),
                 previousStatus, PaymentStatus.CAPTURED);
 
-        activateSubscription(payment);
+        if (!activateSubscription(payment)) {
+            // Audit 2026-08-31 (H6): the user already has an ACTIVE subscription, so no second one
+            // could be created. Do NOT go on to issue an invoice, allocate a batch seat, or fire
+            // PaymentCapturedEvent (which would try to render an invoice PDF for a row that does
+            // not exist) — the money is captured with nothing delivered, which needs a manual
+            // refund, not more downstream side effects. A distinct audit action makes this
+            // findable without log-grepping.
+            auditLogService.record(null, "PAYMENT_CAPTURED_NO_SUBSCRIPTION", "Payment", payment.getId(),
+                    previousStatus, PaymentStatus.CAPTURED);
+            log.error("[webhook] payment {} captured for user {} but no subscription was created "
+                    + "(user already has an ACTIVE subscription); invoice + batch allocation SKIPPED — "
+                    + "this payment requires a manual refund or a renewal flow", payment.getId(),
+                    payment.getUser().getId());
+            return;
+        }
         createPendingInvoice(payment);
 
         // build-plan.md feature 10: "finds an ACTIVE/PLANNED batch matching track and minimum
@@ -160,27 +180,33 @@ public class PaymentWebhookService {
         eventPublisher.publishEvent(new PaymentCapturedEvent(payment.getId()));
     }
 
-    private void activateSubscription(Payment payment) {
+    /** @return {@code true} if an ACTIVE subscription was created, {@code false} if the user
+     *          already had one — see {@link #capturePayment} for how the caller handles false.
+     *          <p>Audit 2026-08-31 (H6): checks for an existing ACTIVE row up front rather than
+     *          catching {@code uq_one_active_subscription} from a {@code saveAndFlush} — a flush
+     *          failure poisons the Hibernate session and would roll back the whole webhook
+     *          transaction (payment never marked CAPTURED), leaving the gateway to retry forever.
+     *          The DB constraint still backstops the rare concurrent-double-capture race. */
+    private boolean activateSubscription(Payment payment) {
+        boolean alreadyActive = userSubscriptionRepository
+                .findByUserIdAndStatus(payment.getUser().getId(), SubscriptionStatus.ACTIVE)
+                .isPresent();
+        if (alreadyActive) {
+            return false;
+        }
+
         SubscriptionPlan plan = subscriptionPlanRepository.findById(payment.getPlanId()).orElseThrow();
 
+        LocalDate startDate = LocalDate.now(ZoneId.of(jobsZone));
         UserSubscription subscription = new UserSubscription();
         subscription.setUser(payment.getUser());
         subscription.setPlan(plan);
         subscription.setPaymentId(payment.getId());
-        subscription.setStartDate(LocalDate.now());
-        subscription.setEndDate(LocalDate.now().plusDays(plan.getDurationDays()));
+        subscription.setStartDate(startDate);
+        subscription.setEndDate(startDate.plusDays(plan.getDurationDays()));
         subscription.setStatus(SubscriptionStatus.ACTIVE);
-
-        try {
-            userSubscriptionRepository.saveAndFlush(subscription);
-        } catch (DataIntegrityViolationException e) {
-            // uq_one_active_subscription — this user already has an ACTIVE row. Renewal/upgrade
-            // handling (transitioning the old row out first) isn't specified for this feature;
-            // the payment itself is still genuinely captured, so it stays CAPTURED — just without
-            // a second active subscription the schema's own constraint refuses to allow.
-            log.warn("[webhook] payment {} captured but user {} already has an active subscription — "
-                    + "not activating a second one", payment.getId(), payment.getUser().getId());
-        }
+        userSubscriptionRepository.save(subscription);
+        return true;
     }
 
     private void createPendingInvoice(Payment payment) {

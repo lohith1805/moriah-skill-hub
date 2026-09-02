@@ -380,7 +380,10 @@ public class StudentMetricsService {
          * the identical {@code lastActivity} could get different results if the upsert loop happens
          * to straddle a day boundary while building thousands of rows. */
         int daysSinceLastActivity(Instant now) {
-            return (int) Duration.between(lastActivity, now).toDays();
+            // Audit 2026-08-31 (L9): clamp at 0 — a future-dated lastActivity (clock skew on
+            // tasks.updated_at, or a future joined_at) would otherwise go negative and could
+            // never trip TaskAbandonedRule.
+            return Math.max(0, (int) Duration.between(lastActivity, now).toDays());
         }
     }
 }

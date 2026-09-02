@@ -1,9 +1,21 @@
-# Local development — matches docker-compose.yml. Real secrets never live here; anything
-# sensitive still comes from an env var, docker-compose.yml just supplies dev-only values for
-# those env vars via its own environment block.
+# Local development — matches docker-compose.yml.
+#
+# `spring.config.import` below loads the project-root `.env` (KEY=VALUE, parsed as .properties)
+# into the Environment so `${DB_HOST}` / `${DB_PORT}` / `${REDIS_HOST}` / … in application.yml
+# resolve when the app is started on the host with `mvn spring-boot:run` or from an IDE.
+# `optional:` = skipped silently if `.env` is absent. Dev-profile only — the `test` profile gets
+# its datasource from Testcontainers `@ServiceConnection`, and `prod` uses real env vars / a
+# secret store, so neither reads `.env`.
+#
+# `docker compose` reads the same `.env` natively for the mysql/redis/minio containers.
 spring:
+  config:
+    import: "optional:file:./.env[.properties]"
   jpa:
-    show-sql: true
+    # show-sql is deliberately OFF: it writes raw SQL straight to System.out, bypassing the log
+    # framework and duplicating every statement already emitted by `org.hibernate.SQL: DEBUG`
+    # below. Formatting + bind values come from the two Hibernate loggers instead.
+    show-sql: false
     properties:
       hibernate.format_sql: true
 
@@ -24,3 +36,4 @@ logging:
   level:
     com.moriah.skillhub: DEBUG
     org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE   # the "?" placeholder values for each statement above

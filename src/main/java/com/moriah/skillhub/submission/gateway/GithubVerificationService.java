@@ -22,7 +22,11 @@ import java.util.regex.Pattern;
 @Slf4j
 public class GithubVerificationService {
 
-    private static final Pattern PR_URL = Pattern.compile("^https://github\\.com/([\\w.-]+)/([\\w.-]+)/pull/(\\d+)/?$");
+    // Audit 2026-08-31 (L3): owner/repo segments must start and end alphanumeric, so a segment
+    // can never be "." or ".." (which would expand to /repos/../../pulls/N against api.github.com).
+    private static final String SEGMENT = "[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?";
+    private static final Pattern PR_URL =
+            Pattern.compile("^https://github\\.com/(" + SEGMENT + ")/(" + SEGMENT + ")/pull/(\\d+)/?$");
 
     private final GithubPrFetcher githubPrFetcher;
 

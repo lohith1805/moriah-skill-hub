@@ -55,16 +55,25 @@ public class HrDocumentService {
         if (documentType == null || documentType.isBlank()) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED, "documentType is required.");
         }
+        // Audit 2026-08-31 (M9): documentType is a raw request param that flows into the S3 key
+        // AND into the hr_documents.document_type column AND back out in the response DTO. Strip
+        // everything outside a safe slug alphabet so it can't inject '/' or '..' into the key or
+        // markup into the stored/echoed value.
+        String safeDocumentType = documentType.trim().replaceAll("[^A-Za-z0-9_-]", "");
+        if (safeDocumentType.isEmpty()) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                    "documentType must contain letters, digits, '-' or '_'.");
+        }
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.USER_NOT_FOUND, userId));
 
-        String key = "hr-documents/" + user.getUuid() + "/" + documentType + "-" + UUID.randomUUID() + ".pdf";
+        String key = "hr-documents/" + user.getUuid() + "/" + safeDocumentType + "-" + UUID.randomUUID() + ".pdf";
         storageService.upload(key, readBytes(file), HR_DOCUMENT_CONTENT_TYPE);
 
         HrDocument document = new HrDocument();
         document.setUser(user);
-        document.setDocumentType(documentType);
+        document.setDocumentType(safeDocumentType);
         document.setFileKey(key);
         document.setVerificationStatus(HrDocumentStatus.PENDING);
         hrDocumentRepository.save(document);

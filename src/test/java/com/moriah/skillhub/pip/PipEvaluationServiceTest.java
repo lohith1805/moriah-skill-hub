@@ -81,9 +81,11 @@ class PipEvaluationServiceTest {
             new QuizFailureRule(), new ReviewFailedRule(), new TaskAbandonedRule());
 
     private PipEvaluationService service() {
-        return new PipEvaluationService(studentMetricsService, pipRecordRepository, pipRuleRepository,
-                pipMilestoneRepository, batchService, userRepository, batchRepository, userService,
-                auditLogService, notificationService, REAL_EVALUATORS);
+        PipEvaluationService service = new PipEvaluationService(studentMetricsService, pipRecordRepository,
+                pipRuleRepository, pipMilestoneRepository, batchService, userRepository, batchRepository,
+                userService, auditLogService, notificationService, REAL_EVALUATORS);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "jobsZone", "Asia/Kolkata");
+        return service;
     }
 
     private PipRule rule(PipRuleCode code, String threshold) {

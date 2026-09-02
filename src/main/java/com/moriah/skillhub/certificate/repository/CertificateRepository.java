@@ -1,6 +1,7 @@
 package com.moriah.skillhub.certificate.repository;
 
 import com.moriah.skillhub.certificate.entity.Certificate;
+import com.moriah.skillhub.certificate.entity.CertificateType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -16,6 +17,12 @@ public interface CertificateRepository extends JpaRepository<Certificate, Long> 
     /** {@code CertificateService#generateUniqueVerificationCode}'s collision probe — a single
      * indexed lookup against {@code uq_certificates_verification_code}, not a table scan. */
     boolean existsByVerificationCode(String verificationCode);
+
+    /** Audit 2026-08-31 (M17): guard against issuing a second live certificate for the same
+     * (student, batch, type). A revoked one does not count — re-issuing a corrected certificate
+     * after a revoke is a legitimate flow. */
+    boolean existsByUserIdAndBatchIdAndCertificateTypeAndRevokedAtIsNull(
+            Long userId, Long batchId, CertificateType certificateType);
 
     /** {@code GET /api/v1/certificates/verify/{code}} — public, unauthenticated, and the <b>only</b>
      * column this lookup is ever keyed on (build-plan.md: "never accept a certificate id here").

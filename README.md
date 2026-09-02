@@ -37,3 +37,17 @@ must be running.
 Build order, what's done, and what's next live in
 [`context/progress-tracker.md`](context/progress-tracker.md) — that file, not this README, is
 the source of truth for project status.
+
+Seed data
+
+For Linux
+docker exec -i skillhub-mysql mysql -umoriah_app -papp_dev_only moriah_skillhub < src/main/resources/db/testdata/dev-seed.sql
+
+For Windows
+cmd /c "docker exec -i skillhub-mysql mysql -umoriah_app -papp_dev_only moriah_skillhub < src/main/resources/db/testdata/dev-seed.sql"
+
+
+MiniIO Bucket
+
+docker exec skillhub-minio mc alias set local http://localhost:9000 skillhub_minio minio_dev_only
+docker exec skillhub-minio mc mb --ignore-existing local/moriah-skillhub

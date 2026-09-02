@@ -9,6 +9,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 
@@ -16,9 +17,10 @@ import java.util.HexFormat;
  * Meta's WhatsApp Cloud API webhook signature: {@code X-Hub-Signature-256: sha256=<hex hmac>},
  * HMAC-SHA256 of the raw request body keyed by the app secret — no SDK for this on
  * code-standards.md's approved dependency list, unlike Razorpay's {@code Utils.verifyWebhookSignature}.
- * {@link javax.crypto.Mac#doFinal} is not constant-time; a raw {@code equals} timing side-channel
- * on a webhook signature (not a login credential) is an accepted, minor risk here, same as this
- * codebase accepts elsewhere for non-credential comparisons.
+ * <p>
+ * Audit 2026-08-31 (L1): the computed and presented digests are compared with {@link
+ * MessageDigest#isEqual} on the decoded bytes, which is constant-time — Razorpay's and Stripe's
+ * own verifiers do the same, and it costs nothing.
  */
 @Component
 @RequiredArgsConstructor
@@ -34,12 +36,17 @@ public class WhatsAppSignatureVerifier {
             return false;
         }
         String expectedHex = signatureHeader.substring("sha256=".length());
+        byte[] expected;
+        try {
+            expected = HexFormat.of().parseHex(expectedHex);
+        } catch (IllegalArgumentException e) {
+            return false; // not valid hex — can't be a real signature
+        }
         try {
             Mac mac = Mac.getInstance(HMAC_ALGORITHM);
             mac.init(new SecretKeySpec(props.appSecret().getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM));
             byte[] computed = mac.doFinal(rawBody.getBytes(StandardCharsets.UTF_8));
-            String computedHex = HexFormat.of().formatHex(computed);
-            return computedHex.equalsIgnoreCase(expectedHex);
+            return MessageDigest.isEqual(computed, expected);
         } catch (NoSuchAlgorithmException | InvalidKeyException e) {
             log.error("[webhook/whatsapp] signature verification failed unexpectedly", e);
             return false;

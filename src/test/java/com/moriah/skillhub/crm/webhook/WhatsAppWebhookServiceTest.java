@@ -19,6 +19,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -63,11 +64,21 @@ class WhatsAppWebhookServiceTest {
         return objectMapper.readTree(json);
     }
 
+    /** The real service delegates the per-message work to {@code runAndMarkProcessed}, which
+     * runs it inside a transaction; the mock just invokes the supplied Runnable inline. */
+    private void runHandlerInline() {
+        doAnswer(inv -> {
+            ((Runnable) inv.getArgument(2)).run();
+            return null;
+        }).when(webhookIdempotencyService).runAndMarkProcessed(eq("WHATSAPP"), any(), any());
+    }
+
     @Test
     void handleInbound_matchingLead_logsActivity() throws Exception {
         Lead lead = new Lead();
         lead.setId(3L);
         when(webhookIdempotencyService.claim(eq("WHATSAPP"), eq("wamid.1"), any(), any())).thenReturn(true);
+        runHandlerInline();
         when(leadRepository.findFirstByPhoneOrderByCreatedAtDesc("15551234567")).thenReturn(Optional.of(lead));
 
         service().handleInbound(inboundMessagePayload("wamid.1", "15551234567", "Interested, please call"), "{}");
@@ -82,6 +93,7 @@ class WhatsAppWebhookServiceTest {
     @Test
     void handleInbound_noMatchingLead_logsNothing() throws Exception {
         when(webhookIdempotencyService.claim(eq("WHATSAPP"), eq("wamid.2"), any(), any())).thenReturn(true);
+        runHandlerInline();
         when(leadRepository.findFirstByPhoneOrderByCreatedAtDesc("15559999999")).thenReturn(Optional.empty());
 
         service().handleInbound(inboundMessagePayload("wamid.2", "15559999999", "hello"), "{}");

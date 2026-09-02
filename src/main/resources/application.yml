@@ -5,12 +5,26 @@ spring:
     default: dev
 
   datasource:
-    url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useSSL=true&serverTimezone=UTC
+    # Audit 2026-08-31 (M11): sslMode is explicit and defaults to REQUIRED — the connection must
+    # be TLS or it fails, instead of the legacy `useSSL=true` (== PREFERRED, which silently falls
+    # back to plaintext). Set DB_SSL_MODE=VERIFY_CA with a pinned trustCertificateKeyStoreUrl in
+    # any environment where the DB host can be spoofed (see application-prod.yml).
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?sslMode=${DB_SSL_MODE:REQUIRED}&serverTimezone=UTC
     username: ${DB_USERNAME}          # moriah_app — no DDL rights
     password: ${DB_PASSWORD}
     hikari:
+      # Audit 2026-08-31 (L2): fixed-size pool (min == max) for predictable latency under bursts —
+      # HikariCP's own guidance for latency-sensitive services; a cold pool ramp opening dozens of
+      # TLS connections mid-burst was a contributor to the load-test p95. connection-timeout is
+      # env-driven (default = Hikari's own 30s): production can tighten it to fail fast on
+      # saturation, but the default must stay tolerant enough for the co-located concurrent
+      # integration tests (a 3s value made 150-thread ConnectionPoolLoadIT reject ~12 requests).
       maximum-pool-size: ${DB_POOL_MAX:50}
-      minimum-idle: 10
+      minimum-idle: ${DB_POOL_MIN:50}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:30000}
+      max-lifetime: 1500000          # 25m — below MySQL's 8h wait_timeout and any LB idle cutoff
+      keepalive-time: 120000
+      leak-detection-threshold: 60000
 
   jpa:
     hibernate:
@@ -19,6 +33,10 @@ spring:
     properties:
       hibernate.jdbc.batch_size: 50
       hibernate.order_inserts: true
+      # Audit 2026-08-31 (M4): batch-fetch any lazy @ManyToOne touched off a path without an
+      # explicit @EntityGraph/JOIN FETCH, instead of one SELECT per parent.
+      hibernate.default_batch_fetch_size: 100
+      hibernate.order_updates: true
 
   flyway:
     enabled: true
@@ -44,6 +62,11 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       timeout: 2000ms
+    web:
+      pageable:
+        # Audit 2026-08-31 (M14): @PageableDefault only sets the default; without this a caller
+        # can request ?size=2000 on any list endpoint (Spring's built-in cap). Bound it globally.
+        max-page-size: 100
 
   security:
     oauth2:
@@ -91,7 +114,7 @@ moriah:
     # (architecture.md: "the replica has the same schema/users via real replication" — no new DB
     # user needed), pointed at the docker-compose mysql-replica service instead of mysql.
     replica:
-      url: jdbc:mysql://${DB_REPLICA_HOST}:${DB_REPLICA_PORT:3307}/${DB_NAME}?useSSL=true&serverTimezone=UTC
+      url: jdbc:mysql://${DB_REPLICA_HOST}:${DB_REPLICA_PORT:3307}/${DB_NAME}?sslMode=${DB_SSL_MODE:REQUIRED}&serverTimezone=UTC
       username: ${DB_USERNAME}
       password: ${DB_PASSWORD}
       max-pool-size: ${DB_REPLICA_POOL_MAX:10}
@@ -99,8 +122,12 @@ moriah:
     cors:
       allowed-origins: []
     rate-limit:
-      auth-requests-per-minute: 10
-      global-requests-per-minute: 60
+      # auth-requests-per-minute is IP-scoped (login/2FA/reset carry no bearer token); keep it
+      # tight. global-requests-per-minute is per-bearer-token for authenticated calls (audit
+      # 2026-08-31 C4), so it is a per-user budget — a dashboard that fans out to a dozen /me
+      # endpoints on load must fit comfortably inside one window.
+      auth-requests-per-minute: ${AUTH_RATE_LIMIT_PER_MIN:10}
+      global-requests-per-minute: ${GLOBAL_RATE_LIMIT_PER_MIN:300}
     # IPs allowed to set X-Forwarded-For and be believed (the load balancer / reverse proxy
     # fronting this service). Empty by default — no deployment target is chosen yet, so every
     # request's client IP falls back to getRemoteAddr() until a real proxy's IP is set here
@@ -178,6 +205,11 @@ moriah:
     # moriah.auth-links immediately above (see CertificateProperties' own Javadoc for why: no shared
     # frontend-base-URL config exists in this build, a decision already made twice before this one).
     verify-url-template: ${CERTIFICATE_VERIFY_URL_TEMPLATE:http://localhost:3000/verify/{code}}
+  webhook:
+    # Audit 2026-08-31 (C3): backstop sweep that surfaces any webhook_events row stuck in
+    # RECEIVED (handler process killed between the business commit and the claim release). Does
+    # not re-drive anything — the gateway owns redelivery — just makes a stuck event visible.
+    reconciliation-cron: ${WEBHOOK_RECONCILIATION_CRON:0 */10 * * * *}
   subscription:
     # `/architect feature 07` decision: 03:00 IST, after the 01:30->02:00 PIP pipeline finishes.
     expiry-cron: ${SUBSCRIPTION_EXPIRY_CRON:0 0 3 * * *}
