@@ -260,9 +260,11 @@ All of these have working defaults. `SERVER_PORT` (8080), `SPRING_PROFILES_ACTIV
 `NOTIFICATION_REAPER_CRON`, `WEBHOOK_RECONCILIATION_CRON`; the token-reaper job's schedule is the
 property `moriah.token-reaper.cron`, default `0 20 3 * * *`).
 
-`EMAIL_VERIFICATION_URL_TEMPLATE` / `PASSWORD_RESET_URL_TEMPLATE` / `STRIPE_SUCCESS_URL` /
-`STRIPE_CANCEL_URL` / `CERTIFICATE_VERIFY_URL_TEMPLATE` are **frontend routes** — the backend
-never serves them; leave the localhost:3000 defaults.
+`EMAIL_VERIFICATION_URL_TEMPLATE` / `PASSWORD_RESET_URL_TEMPLATE` / `STAFF_INVITE_URL_TEMPLATE` /
+`STRIPE_SUCCESS_URL` / `STRIPE_CANCEL_URL` / `CERTIFICATE_VERIFY_URL_TEMPLATE` are **frontend
+routes** — the backend never serves them; leave the localhost:3000 defaults.
+(`STAFF_INVITE_URL_TEMPLATE` default `http://localhost:3000/accept-invite?token={token}` — the
+page a staff invitee lands on to set their password; see `POST /api/v1/admin/users`.)
 
 ---
 
@@ -369,6 +371,7 @@ WHATSAPP_APP_SECRET=dummy
 # ── Frontend routes (backend only substitutes {token}/{code}) ────────────
 EMAIL_VERIFICATION_URL_TEMPLATE=http://localhost:3000/verify-email?token={token}
 PASSWORD_RESET_URL_TEMPLATE=http://localhost:3000/reset-password?token={token}
+STAFF_INVITE_URL_TEMPLATE=http://localhost:3000/accept-invite?token={token}
 CERTIFICATE_VERIFY_URL_TEMPLATE=http://localhost:3000/verify/{code}
 ```
 

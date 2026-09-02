@@ -20,6 +20,7 @@ public enum ErrorCode {
     FILE_TOO_LARGE(HttpStatus.BAD_REQUEST, "This file exceeds the maximum upload size."),
     INVALID_PR_URL(HttpStatus.BAD_REQUEST, "This does not look like a valid GitHub pull request URL."),
     EXPORT_REPORT_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "This export report type is not supported."),
+    ROLE_NOT_STAFF_ASSIGNABLE(HttpStatus.BAD_REQUEST, "STUDENT and CLIENT are self-service roles and cannot be assigned to a staff invite."),
 
     // 401 — missing or expired credential
     UNAUTHENTICATED(HttpStatus.UNAUTHORIZED, "Authentication is required to access this resource."),
@@ -35,6 +36,9 @@ public enum ErrorCode {
     NOT_RESOURCE_OWNER(HttpStatus.FORBIDDEN, "You do not have access to this resource."),
     ACCOUNT_NOT_VERIFIED(HttpStatus.FORBIDDEN, "Please verify your email before logging in."),
     ACCOUNT_SUSPENDED(HttpStatus.FORBIDDEN, "This account is suspended."),
+    ACCOUNT_INVITE_PENDING(HttpStatus.FORBIDDEN, "Finish setting your password from the invite link before signing in."),
+    ACCOUNT_PENDING_APPROVAL(HttpStatus.FORBIDDEN, "Your registration is still awaiting review. We'll email you once it's approved."),
+    ACCOUNT_REGISTRATION_REJECTED(HttpStatus.FORBIDDEN, "This registration request was not approved."),
     NOT_BATCH_OWNER(HttpStatus.FORBIDDEN, "You are not the PM for this batch."),
     NOT_BATCH_MEMBER(HttpStatus.FORBIDDEN, "This student is not an active member of this batch."),
     PR_AUTHOR_MISMATCH(HttpStatus.FORBIDDEN, "This pull request was not opened by your linked GitHub account."),
@@ -78,6 +82,9 @@ public enum ErrorCode {
     EMAIL_ALREADY_REGISTERED(HttpStatus.CONFLICT, "An account with this email already exists."),
     INVALID_OR_EXPIRED_VERIFICATION_TOKEN(HttpStatus.CONFLICT, "This verification link is invalid or has expired."),
     INVALID_OR_EXPIRED_RESET_TOKEN(HttpStatus.CONFLICT, "This password reset link is invalid or has expired."),
+    INVALID_OR_EXPIRED_INVITE_TOKEN(HttpStatus.CONFLICT, "This invite link is invalid, has expired, or has already been used."),
+    INVITE_NOT_PENDING(HttpStatus.CONFLICT, "This user's invite is not pending — it may already have been accepted."),
+    CLIENT_REQUEST_NOT_PENDING(HttpStatus.CONFLICT, "This client registration has already been decided."),
     TWO_FACTOR_ALREADY_ENABLED(HttpStatus.CONFLICT, "Two-factor authentication is already enabled on this account."),
     TWO_FACTOR_NOT_ENABLED(HttpStatus.CONFLICT, "Two-factor authentication is not enabled on this account."),
     COUPON_EXPIRED(HttpStatus.CONFLICT, "This coupon is not valid right now."),

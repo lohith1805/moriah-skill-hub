@@ -10,7 +10,7 @@
     },
     "servers": [
         {
-            "url": "http://localhost:58205",
+            "url": "http://localhost:8080",
             "description": "Generated server url"
         }
     ],
@@ -2520,13 +2520,44 @@
                 "tags": [
                     "Auth"
                 ],
-                "summary": "Register a new account",
+                "summary": "Register a new student account",
                 "operationId": "register",
                 "requestBody": {
                     "content": {
                         "application/json": {
                             "schema": {
                                 "$ref": "#/components/schemas/RegisterRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseRegisterResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/register/client": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Corporate-client self-registration — creates a PENDING_APPROVAL account that cannot log in until an ADMIN approves it at POST /api/v1/admin/client-requests/{uuid}/approve",
+                "operationId": "registerClient",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ClientRegisterRequest"
                             }
                         }
                     },
@@ -2713,6 +2744,37 @@
                         "application/json": {
                             "schema": {
                                 "$ref": "#/components/schemas/LoginRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseLoginResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/accept-invite": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Redeem a staff accept-invite link — sets the password, activates the account (INVITED -> ACTIVE) and logs in. Returns a 2FA challenge instead of tokens for an invited ADMIN / HR_MANAGER, exactly like a normal first login.",
+                "operationId": "acceptInvite",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AcceptInviteRequest"
                             }
                         }
                     },
@@ -3037,6 +3099,202 @@
                 }
             }
         },
+        "/api/v1/admin/users": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "List users, optionally filtered by role and/or status",
+                "operationId": "list_8",
+                "parameters": [
+                    {
+                        "name": "role",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "STUDENT",
+                                "TRAINER_PM",
+                                "DEVELOPER",
+                                "LEAD_GEN",
+                                "HR_MANAGER",
+                                "BUSINESS_ANALYST",
+                                "ADMIN",
+                                "CLIENT"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "ACTIVE",
+                                "SUSPENDED",
+                                "TERMINATED",
+                                "PENDING_VERIFICATION",
+                                "INVITED",
+                                "PENDING_APPROVAL",
+                                "REJECTED"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "pageable",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/Pageable"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated user list",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponsePageResponseAdminUserResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an ADMIN",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponsePageResponseAdminUserResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Invite a staff member — creates an INVITED account and emails an accept-invite link. roles must be staff roles (not STUDENT/CLIENT).",
+                "operationId": "inviteStaff",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateStaffRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "description": "Invite created and emailed",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseAdminUserResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "roles contains STUDENT or CLIENT",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseAdminUserResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an ADMIN",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseAdminUserResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Email already registered",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseAdminUserResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/users/{userUuid}/resend-invite": {
+            "post": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Re-send the accept-invite link for an account still in INVITED state — burns the previous link",
+                "operationId": "resendInvite",
+                "parameters": [
+                    {
+                        "name": "userUuid",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Invite re-sent",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseAdminUserResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an ADMIN",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseAdminUserResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No user with this uuid",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseAdminUserResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "This user's invite is not pending",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseAdminUserResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/exports/{report}": {
             "post": {
                 "tags": [
@@ -3081,6 +3339,138 @@
                             "*/*": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ApiResponseExportResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/client-requests/{userUuid}/reject": {
+            "post": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Decline a client registration — account becomes REJECTED and the applicant is emailed the reason",
+                "operationId": "reject",
+                "parameters": [
+                    {
+                        "name": "userUuid",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RejectClientRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Rejected",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseClientRequestResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an ADMIN",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseClientRequestResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No user with this uuid",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseClientRequestResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "This registration has already been decided",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseClientRequestResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/client-requests/{userUuid}/approve": {
+            "post": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Approve a client registration — account becomes ACTIVE and the applicant is emailed",
+                "operationId": "approve",
+                "parameters": [
+                    {
+                        "name": "userUuid",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Approved",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseClientRequestResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an ADMIN",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseClientRequestResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No user with this uuid",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseClientRequestResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "This registration has already been decided",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseClientRequestResponse"
                                 }
                             }
                         }
@@ -3219,7 +3609,7 @@
                     "PIP"
                 ],
                 "summary": "Browse PIP records",
-                "operationId": "list_8",
+                "operationId": "list_9",
                 "parameters": [
                     {
                         "name": "batchId",
@@ -3335,7 +3725,7 @@
                 "tags": [
                     "HR"
                 ],
-                "operationId": "list_9",
+                "operationId": "list_10",
                 "parameters": [
                     {
                         "name": "month",
@@ -3567,79 +3957,6 @@
                 }
             }
         },
-        "/api/v1/admin/users": {
-            "get": {
-                "tags": [
-                    "Admin"
-                ],
-                "summary": "List users, optionally filtered by role and/or status",
-                "operationId": "list_10",
-                "parameters": [
-                    {
-                        "name": "role",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string",
-                            "enum": [
-                                "STUDENT",
-                                "TRAINER_PM",
-                                "DEVELOPER",
-                                "LEAD_GEN",
-                                "HR_MANAGER",
-                                "BUSINESS_ANALYST",
-                                "ADMIN",
-                                "CLIENT"
-                            ]
-                        }
-                    },
-                    {
-                        "name": "status",
-                        "in": "query",
-                        "required": false,
-                        "schema": {
-                            "type": "string",
-                            "enum": [
-                                "ACTIVE",
-                                "SUSPENDED",
-                                "TERMINATED",
-                                "PENDING_VERIFICATION"
-                            ]
-                        }
-                    },
-                    {
-                        "name": "pageable",
-                        "in": "query",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/components/schemas/Pageable"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Paginated user list",
-                        "content": {
-                            "*/*": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiResponsePageResponseAdminUserResponse"
-                                }
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "Caller is not an ADMIN",
-                        "content": {
-                            "*/*": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiResponsePageResponseAdminUserResponse"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
         "/api/v1/admin/metrics/revenue": {
             "get": {
                 "tags": [
@@ -3722,13 +4039,62 @@
                 }
             }
         },
+        "/api/v1/admin/client-requests": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "List client self-registrations awaiting review (default) or already rejected",
+                "description": "status may only be PENDING_APPROVAL (default) or REJECTED",
+                "operationId": "list_11",
+                "parameters": [
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "ACTIVE",
+                                "SUSPENDED",
+                                "TERMINATED",
+                                "PENDING_VERIFICATION",
+                                "INVITED",
+                                "PENDING_APPROVAL",
+                                "REJECTED"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "pageable",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/Pageable"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponsePageResponseClientRequestResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/audit": {
             "get": {
                 "tags": [
                     "Admin"
                 ],
                 "summary": "Read-only audit log, optionally filtered by entity type, user, and a start date",
-                "operationId": "list_11",
+                "operationId": "list_12",
                 "parameters": [
                     {
                         "name": "entityType",
@@ -4584,7 +4950,7 @@
                 "properties": {
                     "thresholdValue": {
                         "type": "number",
-                        "minimum": 0.00
+                        "minimum": 0.0
                     },
                     "severity": {
                         "type": "string",
@@ -5122,7 +5488,10 @@
                             "ACTIVE",
                             "SUSPENDED",
                             "TERMINATED",
-                            "PENDING_VERIFICATION"
+                            "PENDING_VERIFICATION",
+                            "INVITED",
+                            "PENDING_APPROVAL",
+                            "REJECTED"
                         ]
                     }
                 },
@@ -5148,7 +5517,10 @@
                             "ACTIVE",
                             "SUSPENDED",
                             "TERMINATED",
-                            "PENDING_VERIFICATION"
+                            "PENDING_VERIFICATION",
+                            "INVITED",
+                            "PENDING_APPROVAL",
+                            "REJECTED"
                         ]
                     },
                     "roles": {
@@ -6448,11 +6820,11 @@
                     },
                     "sessionHours": {
                         "type": "number",
-                        "minimum": 0.00
+                        "minimum": 0.0
                     },
                     "deductions": {
                         "type": "number",
-                        "minimum": 0.00
+                        "minimum": 0.0
                     }
                 },
                 "required": [
@@ -6646,11 +7018,11 @@
                     },
                     "baseSalary": {
                         "type": "number",
-                        "minimum": 0.00
+                        "minimum": 0.0
                     },
                     "hourlyRate": {
                         "type": "number",
-                        "minimum": 0.00
+                        "minimum": 0.0
                     },
                     "reportingManagerId": {
                         "type": "integer",
@@ -7268,9 +7640,7 @@
                     "success": {
                         "type": "boolean"
                     },
-                    "data": {
-                        
-                    },
+                    "data": {},
                     "error": {
                         "$ref": "#/components/schemas/ErrorDetail"
                     },
@@ -7346,6 +7716,49 @@
                         "type": "string"
                     }
                 }
+            },
+            "ClientRegisterRequest": {
+                "type": "object",
+                "properties": {
+                    "fullName": {
+                        "type": "string",
+                        "maxLength": 150,
+                        "minLength": 0
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "maxLength": 180,
+                        "minLength": 0
+                    },
+                    "phone": {
+                        "type": "string",
+                        "maxLength": 20,
+                        "minLength": 0
+                    },
+                    "password": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "minLength": 8
+                    },
+                    "companyName": {
+                        "type": "string",
+                        "maxLength": 150,
+                        "minLength": 0
+                    },
+                    "industry": {
+                        "type": "string",
+                        "maxLength": 100,
+                        "minLength": 0
+                    }
+                },
+                "required": [
+                    "companyName",
+                    "email",
+                    "fullName",
+                    "password",
+                    "phone"
+                ]
             },
             "RefreshRequest": {
                 "type": "object",
@@ -7487,6 +7900,24 @@
                         "$ref": "#/components/schemas/TokenPairResponse"
                     }
                 }
+            },
+            "AcceptInviteRequest": {
+                "type": "object",
+                "properties": {
+                    "token": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "password": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "minLength": 8
+                    }
+                },
+                "required": [
+                    "password",
+                    "token"
+                ]
             },
             "TwoFactorVerifyRequest": {
                 "type": "object",
@@ -7970,6 +8401,50 @@
                     }
                 }
             },
+            "CreateStaffRequest": {
+                "type": "object",
+                "properties": {
+                    "fullName": {
+                        "type": "string",
+                        "maxLength": 150,
+                        "minLength": 0
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "maxLength": 180,
+                        "minLength": 0
+                    },
+                    "phone": {
+                        "type": "string",
+                        "maxLength": 20,
+                        "minLength": 0
+                    },
+                    "roles": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "STUDENT",
+                                "TRAINER_PM",
+                                "DEVELOPER",
+                                "LEAD_GEN",
+                                "HR_MANAGER",
+                                "BUSINESS_ANALYST",
+                                "ADMIN",
+                                "CLIENT"
+                            ]
+                        },
+                        "minItems": 1,
+                        "uniqueItems": true
+                    }
+                },
+                "required": [
+                    "email",
+                    "fullName",
+                    "roles"
+                ]
+            },
             "ApiResponseExportResponse": {
                 "type": "object",
                 "properties": {
@@ -8005,6 +8480,76 @@
                         "type": "string"
                     },
                     "urlExpiresAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "RejectClientRequest": {
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "maxLength": 500,
+                        "minLength": 0
+                    }
+                },
+                "required": [
+                    "reason"
+                ]
+            },
+            "ApiResponseClientRequestResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/ClientRequestResponse"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ErrorDetail"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "ClientRequestResponse": {
+                "type": "object",
+                "properties": {
+                    "uuid": {
+                        "type": "string"
+                    },
+                    "fullName": {
+                        "type": "string"
+                    },
+                    "email": {
+                        "type": "string"
+                    },
+                    "phone": {
+                        "type": "string"
+                    },
+                    "companyName": {
+                        "type": "string"
+                    },
+                    "industry": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "ACTIVE",
+                            "SUSPENDED",
+                            "TERMINATED",
+                            "PENDING_VERIFICATION",
+                            "INVITED",
+                            "PENDING_APPROVAL",
+                            "REJECTED"
+                        ]
+                    },
+                    "submittedAt": {
                         "type": "string",
                         "format": "date-time"
                     }
@@ -9185,6 +9730,54 @@
                     "leadCount": {
                         "type": "integer",
                         "format": "int64"
+                    }
+                }
+            },
+            "ApiResponsePageResponseClientRequestResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/PageResponseClientRequestResponse"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ErrorDetail"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "PageResponseClientRequestResponse": {
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ClientRequestResponse"
+                        }
+                    },
+                    "page": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "size": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "totalElements": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "totalPages": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "last": {
+                        "type": "boolean"
                     }
                 }
             },

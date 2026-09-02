@@ -1,10 +1,13 @@
 package com.moriah.skillhub.admin;
 
 import com.moriah.skillhub.admin.dto.AdminUserResponse;
+import com.moriah.skillhub.admin.dto.CreateStaffRequest;
 import com.moriah.skillhub.admin.dto.UpdateUserRolesRequest;
 import com.moriah.skillhub.admin.dto.UpdateUserStatusRequest;
+import com.moriah.skillhub.auth.AuthService;
 import com.moriah.skillhub.common.audit.AuditLogService;
 import com.moriah.skillhub.common.dto.PageResponse;
+import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
 import com.moriah.skillhub.user.dto.UserRoleCodeProjection;
@@ -48,6 +51,7 @@ public class AdminUserService {
     private final UserRoleRepository userRoleRepository;
     private final RoleRepository roleRepository;
     private final AuditLogService auditLogService;
+    private final AuthService authService;
 
     @Transactional(readOnly = true)
     public PageResponse<AdminUserResponse> list(RoleCode role, UserStatus status, Pageable pageable) {
@@ -109,6 +113,62 @@ public class AdminUserService {
         auditLogService.record(callerUserId, "USER_ROLES_CHANGED", "User", user.getId(), oldRoles, request.roles());
 
         return toResponse(user, newRoles.stream().map(Role::getCode).toList());
+    }
+
+    /**
+     * {@code POST /api/v1/admin/users} — creates a staff account in {@code INVITED} state and
+     * emails an accept-invite link (there is no other runtime path to onboard a
+     * TRAINER_PM/DEVELOPER/LEAD_GEN/HR_MANAGER/BUSINESS_ANALYST/ADMIN — {@code /auth/register}
+     * only ever mints a STUDENT). No {@code token_version} bump: a brand-new account has no
+     * outstanding tokens. Delegates the token + email to {@code AuthService#issueStaffInvite},
+     * the same way {@code ClientService} delegates its set-password email — {@code AuthService}
+     * owns every token/link this system emails.
+     */
+    @Transactional
+    public AdminUserResponse inviteStaff(CreateStaffRequest request, Long callerUserId) {
+        for (RoleCode code : request.roles()) {
+            if (code == RoleCode.STUDENT || code == RoleCode.CLIENT) {
+                throw new BusinessException(ErrorCode.ROLE_NOT_STAFF_ASSIGNABLE);
+            }
+        }
+        if (userRepository.existsByEmail(request.email())) {
+            throw new BusinessException(ErrorCode.EMAIL_ALREADY_REGISTERED);
+        }
+
+        List<Role> roles = request.roles().stream()
+                .map(code -> roleRepository.findByCode(code)
+                        .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.RESOURCE_NOT_FOUND, code)))
+                .toList();
+
+        User user = new User();
+        user.setFullName(request.fullName());
+        user.setEmail(request.email());
+        user.setPhone(request.phone());
+        user.setStatus(UserStatus.INVITED);
+        userRepository.save(user);
+
+        userRoleRepository.saveAll(roles.stream()
+                .map(role -> new UserRole(user.getId(), role.getId()))
+                .toList());
+
+        authService.issueStaffInvite(user);
+
+        List<RoleCode> roleCodes = roles.stream().map(Role::getCode).toList();
+        auditLogService.record(callerUserId, "STAFF_INVITED", "User", user.getId(), null, roleCodes);
+        return toResponse(user, roleCodes);
+    }
+
+    /** {@code POST /api/v1/admin/users/{userUuid}/resend-invite} — re-issues the accept-invite
+     * link (burning the previous one) for an account still in {@code INVITED} state. */
+    @Transactional
+    public AdminUserResponse resendStaffInvite(String userUuid, Long callerUserId) {
+        User user = requireUser(userUuid);
+        if (user.getStatus() != UserStatus.INVITED) {
+            throw new BusinessException(ErrorCode.INVITE_NOT_PENDING);
+        }
+        authService.issueStaffInvite(user);
+        auditLogService.record(callerUserId, "STAFF_INVITE_RESENT", "User", user.getId(), null, null);
+        return toResponse(user, currentRoles(user.getId()));
     }
 
     private List<RoleCode> currentRoles(Long userId) {

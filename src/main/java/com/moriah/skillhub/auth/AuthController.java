@@ -1,5 +1,7 @@
 package com.moriah.skillhub.auth;
 
+import com.moriah.skillhub.auth.dto.AcceptInviteRequest;
+import com.moriah.skillhub.auth.dto.ClientRegisterRequest;
 import com.moriah.skillhub.auth.dto.ForgotPasswordRequest;
 import com.moriah.skillhub.auth.dto.LoginRequest;
 import com.moriah.skillhub.auth.dto.LoginResponse;
@@ -15,6 +17,7 @@ import com.moriah.skillhub.auth.dto.TwoFactorEnableResponse;
 import com.moriah.skillhub.auth.dto.TwoFactorVerifyRequest;
 import com.moriah.skillhub.auth.dto.TwoFactorVerifyResponse;
 import com.moriah.skillhub.auth.dto.VerifyEmailRequest;
+import com.moriah.skillhub.client.ClientRegistrationService;
 import com.moriah.skillhub.common.dto.ApiResponse;
 import com.moriah.skillhub.common.security.ClientIpResolver;
 import com.moriah.skillhub.common.security.CurrentUser;
@@ -44,12 +47,32 @@ public class AuthController {
     private final AuthService authService;
     private final TwoFactorService twoFactorService;
     private final ClientIpResolver clientIpResolver;
+    private final ClientRegistrationService clientRegistrationService;
 
     @PostMapping("/register")
-    @Operation(summary = "Register a new account")
+    @Operation(summary = "Register a new student account")
     public ResponseEntity<ApiResponse<RegisterResponse>> register(@Valid @RequestBody RegisterRequest request) {
         RegisterResponse response = authService.register(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
+    }
+
+    @PostMapping("/register/client")
+    @Operation(summary = "Corporate-client self-registration — creates a PENDING_APPROVAL account that "
+            + "cannot log in until an ADMIN approves it at POST /api/v1/admin/client-requests/{uuid}/approve")
+    public ResponseEntity<ApiResponse<RegisterResponse>> registerClient(
+            @Valid @RequestBody ClientRegisterRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success(clientRegistrationService.register(request)));
+    }
+
+    @PostMapping("/accept-invite")
+    @Operation(summary = "Redeem a staff accept-invite link — sets the password, activates the account "
+            + "(INVITED -> ACTIVE) and logs in. Returns a 2FA challenge instead of tokens for an "
+            + "invited ADMIN / HR_MANAGER, exactly like a normal first login.")
+    public ResponseEntity<ApiResponse<LoginResponse>> acceptInvite(
+            @Valid @RequestBody AcceptInviteRequest request, HttpServletRequest httpRequest) {
+        LoginResponse response = authService.acceptInvite(request, userAgent(httpRequest), clientIp(httpRequest));
+        return ResponseEntity.ok(ApiResponse.success(response));
     }
 
     @PostMapping("/login")

@@ -197,6 +197,21 @@
       "type": "string"
     },
     {
+      "key": "staffAccessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "staffRefreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "staffChallengeToken",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "webhookSecret",
       "value": "local_test_secret",
       "type": "string"
@@ -1323,7 +1338,7 @@
           "name": "Other",
           "item": [
             {
-              "name": "Register",
+              "name": "Register \u2014 student",
               "request": {
                 "method": "POST",
                 "header": [
@@ -1359,6 +1374,98 @@
                 "description": "Creates a PENDING_VERIFICATION user; needs email verification before login."
               },
               "response": []
+            },
+            {
+              "name": "Register \u2014 corporate client",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "auth": {
+                  "type": "noauth"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/register/client",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "register",
+                    "client"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  },
+                  "raw": "{\n  \"fullName\": \"Nadia Newclient\",\n  \"email\": \"newclient@moriah.test\",\n  \"phone\": \"919812345670\",\n  \"password\": \"Password123!\",\n  \"companyName\": \"New Client Pvt Ltd\",\n  \"industry\": \"Software\"\n}"
+                },
+                "description": "Creates a PENDING_APPROVAL client \u2014 cannot log in until an ADMIN approves it at 'Admin / POST /api/v1/admin/client-requests/{userUuid}/approve'."
+              },
+              "response": []
+            },
+            {
+              "name": "Accept staff invite",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "auth": {
+                  "type": "noauth"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/auth/accept-invite",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "accept-invite"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  },
+                  "raw": "{\n  \"token\": \"\\u00abraw token from the accept-invite email\\u00bb\",\n  \"password\": \"Password123!\"\n}"
+                },
+                "description": "Redeem the emailed staff-invite link (issued by 'Admin / POST /api/v1/admin/users'). Returns the same LoginResponse as /auth/login \u2014 tokens, or a 2FA challenge for an invited ADMIN/HR_MANAGER. Stores into {{staffAccessToken}} / {{staffChallengeToken}}."
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "var d = pm.response.json().data || {};",
+                      "if (d.tokens && d.tokens.accessToken) {",
+                      "  pm.collectionVariables.set('staffAccessToken', d.tokens.accessToken);",
+                      "  pm.collectionVariables.set('staffRefreshToken', d.tokens.refreshToken); }",
+                      "if (d.challengeToken) pm.collectionVariables.set('staffChallengeToken', d.challengeToken);"
+                    ]
+                  }
+                }
+              ]
             },
             {
               "name": "Verify email",
@@ -1596,6 +1703,154 @@
           "response": []
         },
         {
+          "name": "GET /api/v1/admin/client-requests",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/client-requests",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "client-requests"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "List client self-registrations awaiting review (default) or already rejected\n\nRoles: ADMIN ({{adminAccessToken}}).  Using {{adminAccessToken}} \u2014 run 'Auth / Login \u2014 Admin' first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/admin/client-requests/{userUuid}/approve",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/client-requests/:userUuid/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "client-requests",
+                ":userUuid",
+                "approve"
+              ],
+              "variable": [
+                {
+                  "key": "userUuid",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Approve a client registration \u2014 account becomes ACTIVE and the applicant is emailed\n\nRoles: ADMIN ({{adminAccessToken}}).  Using {{adminAccessToken}} \u2014 run 'Auth / Login \u2014 Admin' first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/admin/client-requests/{userUuid}/reject",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/client-requests/:userUuid/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "client-requests",
+                ":userUuid",
+                "reject"
+              ],
+              "variable": [
+                {
+                  "key": "userUuid",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Decline a client registration \u2014 account becomes REJECTED and the applicant is emailed the reason\n\nRoles: ADMIN ({{adminAccessToken}}).  Using {{adminAccessToken}} \u2014 run 'Auth / Login \u2014 Admin' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
           "name": "POST /api/v1/admin/exports/{report}",
           "request": {
             "method": "POST",
@@ -1822,6 +2077,91 @@
               ]
             },
             "description": "List users, optionally filtered by role and/or status\n\nRoles: ADMIN ({{adminAccessToken}}).  Using {{adminAccessToken}} \u2014 run 'Auth / Login \u2014 Admin' first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/admin/users",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "users"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Invite a staff member \u2014 creates an INVITED account and emails an accept-invite link. roles must be staff roles (not STUDENT/CLIENT).\n\nRoles: ADMIN ({{adminAccessToken}}).  Using {{adminAccessToken}} \u2014 run 'Auth / Login \u2014 Admin' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"string\",\n  \"email\": \"user@example.com\",\n  \"phone\": \"string\",\n  \"roles\": [\n    \"STUDENT\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/admin/users/{userUuid}/resend-invite",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users/:userUuid/resend-invite",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "users",
+                ":userUuid",
+                "resend-invite"
+              ],
+              "variable": [
+                {
+                  "key": "userUuid",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Re-send the accept-invite link for an account still in INVITED state \u2014 burns the previous link\n\nRoles: ADMIN ({{adminAccessToken}}).  Using {{adminAccessToken}} \u2014 run 'Auth / Login \u2014 Admin' first."
           },
           "response": []
         },

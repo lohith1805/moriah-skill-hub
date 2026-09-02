@@ -4,6 +4,8 @@ import com.moriah.skillhub.client.entity.Client;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 public interface ClientRepository extends JpaRepository<Client, Long> {
@@ -15,4 +17,9 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
      * user beyond just resolving the client id. */
     @EntityGraph(attributePaths = "user")
     Optional<Client> findByUserId(Long userId);
+
+    /** Batch-load the {@code clients} rows for a page of client users — the client-approval
+     * queue's per-row company details ({@code ClientApprovalService#list}), gathered in one
+     * query the same way {@code AdminUserService#list} batch-loads roles. */
+    List<Client> findByUserIdIn(Collection<Long> userIds);
 }

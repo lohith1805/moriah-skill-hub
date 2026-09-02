@@ -199,6 +199,7 @@ moriah:
     # URL config exists (`/architect feature 08` decision).
     email-verification-url-template: ${EMAIL_VERIFICATION_URL_TEMPLATE:http://localhost:3000/verify-email?token={token}}
     password-reset-url-template: ${PASSWORD_RESET_URL_TEMPLATE:http://localhost:3000/reset-password?token={token}}
+    staff-invite-url-template: ${STAFF_INVITE_URL_TEMPLATE:http://localhost:3000/accept-invite?token={token}}
   certificates:
     # build-plan.md feature 20: the certificate QR encodes "{APP_BASE_URL}/verify/{verification_code}"
     # — {code} substituted with verification_code. Same per-purpose full-URL-template convention as

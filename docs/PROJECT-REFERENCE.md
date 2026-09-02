@@ -527,6 +527,142 @@ _Read-only audit log, optionally filtered by entity type, user, and a start date
 
 ---
 
+### `GET` `/api/v1/admin/client-requests`
+
+_List client self-registrations awaiting review (default) or already rejected_
+
+- **Auth:** Role — ADMIN
+- **Query params:** `status` (string)
+- **Paginated:** `page`, `size` (max 100), `sort=field,asc|desc`
+
+**Handler:** `ClientRequestController.list(…)`
+**Call chain:**
+- `ClientApprovalService.list(…)`  _[@Transactional]_
+    - `ClientRepository.findByUserIdIn()` → table **`clients`** (derived query)
+    - `UserRepository.search()` → table **`users`** (derived query)
+**Side effects:** @Transactional
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "uuid": "string",
+        "fullName": "string",
+        "email": "string",
+        "phone": "string",
+        "companyName": "string",
+        "industry": "string",
+        "status": "ACTIVE",
+        "submittedAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Errors:** — (envelope `error` on any failure; see §2.3)
+
+---
+
+### `POST` `/api/v1/admin/client-requests/{userUuid}/approve`
+
+_Approve a client registration — account becomes ACTIVE and the applicant is emailed_
+
+- **Auth:** Role — ADMIN
+- **Path params:** `userUuid` (string)
+
+**Handler:** `ClientRequestController.approve(…)`
+**Call chain:**
+- `ClientApprovalService.approve(…)`  _[@Transactional, enqueues notification, writes audit_logs]_
+    - `ClientRepository.findByUserId()` → table **`clients`** (derived query)
+    - `ClientRepository.save()` → table **`clients`** (derived query)
+    - `UserRepository.save()` → table **`users`** (derived query)
+    - `AuditLogService.record(…)`  _[@Transactional]_
+        - `AuditLogRepository.save()` → table **`?`** (derived query)
+    - `NotificationService.enqueueAfterCommit(…)`  _[enqueues notification]_
+**Side effects:** @Transactional, enqueues notification, writes audit_logs
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "uuid": "string",
+    "fullName": "string",
+    "email": "string",
+    "phone": "string",
+    "companyName": "string",
+    "industry": "string",
+    "status": "ACTIVE",
+    "submittedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Errors:** `403`, `404`, `409`
+
+---
+
+### `POST` `/api/v1/admin/client-requests/{userUuid}/reject`
+
+_Decline a client registration — account becomes REJECTED and the applicant is emailed the reason_
+
+- **Auth:** Role — ADMIN
+- **Path params:** `userUuid` (string)
+
+**Request body:**
+
+```json
+{
+  "reason": "string"
+}
+```
+
+**Handler:** `ClientRequestController.reject(…)`
+**Call chain:**
+- `ClientApprovalService.reject(…)`  _[@Transactional, enqueues notification, writes audit_logs]_
+    - `ClientRepository.findByUserId()` → table **`clients`** (derived query)
+    - `UserRepository.save()` → table **`users`** (derived query)
+    - `AuditLogService.record(…)`  _[@Transactional]_
+        - `AuditLogRepository.save()` → table **`?`** (derived query)
+    - `NotificationService.enqueueAfterCommit(…)`  _[enqueues notification]_
+**Side effects:** @Transactional, enqueues notification, writes audit_logs
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "uuid": "string",
+    "fullName": "string",
+    "email": "string",
+    "phone": "string",
+    "companyName": "string",
+    "industry": "string",
+    "status": "ACTIVE",
+    "submittedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Errors:** `403`, `404`, `409`
+
+---
+
 ### `POST` `/api/v1/admin/exports/{report}`
 
 _Generate an XLSX export (users/revenue/audit) and return a presigned download URL_
@@ -746,6 +882,102 @@ _List users, optionally filtered by role and/or status_
 ```
 
 **Errors:** `403`
+
+---
+
+### `POST` `/api/v1/admin/users`
+
+_Invite a staff member — creates an INVITED account and emails an accept-invite link. roles must be staff roles (not STUDENT/CLIENT)._
+
+- **Auth:** Role — ADMIN
+
+**Request body:**
+
+```json
+{
+  "fullName": "string",
+  "email": "user@example.com",
+  "phone": "string",
+  "roles": [
+    "STUDENT"
+  ]
+}
+```
+
+**Handler:** `AdminUserController.inviteStaff(…)`
+**Call chain:**
+- `AdminUserService.inviteStaff(…)`  _[@Transactional, writes audit_logs]_
+    - `RoleRepository.findByCode()` → table **`roles`** (derived query)
+    - `UserRepository.existsByEmail()` → table **`users`** (derived query)
+    - `UserRepository.save()` → table **`users`** (derived query)
+    - `UserRoleRepository.saveAll()` → table **`user_roles`** (derived query)
+    - `AuditLogService.record(…)`  _[@Transactional]_
+        - `AuditLogRepository.save()` → table **`?`** (derived query)
+    - `AuthService.issueStaffInvite(…)`  _[@Transactional, enqueues notification]_
+        - `StaffInviteTokenRepository.markAllUnusedAsUsedForUser()` → table **`staff_invite_tokens`** (`UPDATE StaffInviteToken t SET t.usedAt = :now WHERE t.user.id = :userId AND t.usedAt IS NULL`)
+        - `StaffInviteTokenRepository.save()` → table **`staff_invite_tokens`** (derived query)
+**Side effects:** @Transactional, enqueues notification, writes audit_logs
+
+**Response `201`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "uuid": "string",
+    "fullName": "string",
+    "email": "string",
+    "status": "ACTIVE",
+    "roles": [
+      "STUDENT"
+    ],
+    "createdAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Errors:** `400`, `403`, `409`
+
+---
+
+### `POST` `/api/v1/admin/users/{userUuid}/resend-invite`
+
+_Re-send the accept-invite link for an account still in INVITED state — burns the previous link_
+
+- **Auth:** Role — ADMIN
+- **Path params:** `userUuid` (string)
+
+**Handler:** `AdminUserController.resendInvite(…)`
+**Call chain:**
+- `AdminUserService.resendStaffInvite(…)`  _[@Transactional, writes audit_logs]_
+    - `AuditLogService.record(…)`  _[@Transactional]_
+        - `AuditLogRepository.save()` → table **`?`** (derived query)
+    - `AuthService.issueStaffInvite(…)`  _[@Transactional, enqueues notification]_
+        - `StaffInviteTokenRepository.markAllUnusedAsUsedForUser()` → table **`staff_invite_tokens`** (`UPDATE StaffInviteToken t SET t.usedAt = :now WHERE t.user.id = :userId AND t.usedAt IS NULL`)
+        - `StaffInviteTokenRepository.save()` → table **`staff_invite_tokens`** (derived query)
+**Side effects:** @Transactional, enqueues notification, writes audit_logs
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "uuid": "string",
+    "fullName": "string",
+    "email": "string",
+    "status": "ACTIVE",
+    "roles": [
+      "STUDENT"
+    ],
+    "createdAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Errors:** `403`, `404`, `409`
 
 ---
 
@@ -1497,6 +1729,54 @@ _Confirms 2FA setup (no challengeToken, uses the caller's access token) or compl
 
 ---
 
+### `POST` `/api/v1/auth/accept-invite`
+
+_Redeem a staff accept-invite link — sets the password, activates the account (INVITED -> ACTIVE) and logs in. Returns a 2FA challenge instead of tokens for an invited ADMIN / HR_MANAGER, exactly like a normal first login._
+
+- **Auth:** Public — no token
+
+**Request body:**
+
+```json
+{
+  "token": "string",
+  "password": "string"
+}
+```
+
+**Handler:** `AuthController.acceptInvite(…)`
+**Call chain:**
+- `AuthService.acceptInvite(…)`  _[@Transactional, writes audit_logs]_
+    - `StaffInviteTokenRepository.findByTokenHash()` → table **`staff_invite_tokens`** (derived query)
+    - `StaffInviteTokenRepository.save()` → table **`staff_invite_tokens`** (derived query)
+    - `UserRepository.save()` → table **`users`** (derived query)
+    - `AuditLogService.record(…)`  _[@Transactional]_
+        - `AuditLogRepository.save()` → table **`?`** (derived query)
+**Side effects:** @Transactional, writes audit_logs
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "twoFactorRequired": true,
+    "twoFactorSetupRequired": true,
+    "challengeToken": "string",
+    "tokens": {
+      "accessToken": "string",
+      "refreshToken": "string",
+      "expiresInSeconds": 0
+    }
+  },
+  "error": null
+}
+```
+
+**Errors:** — (envelope `error` on any failure; see §2.3)
+
+---
+
 ### `POST` `/api/v1/auth/login`
 
 _Log in with email and password. If 2FA is enabled, returns a challenge token instead of a token pair — exchange it at POST /2fa/verify._
@@ -1735,7 +2015,7 @@ _Exchange a refresh token for a new token pair; rotates the refresh token_
 
 ### `POST` `/api/v1/auth/register`
 
-_Register a new account_
+_Register a new student account_
 
 - **Auth:** Public — no token
 
@@ -1759,6 +2039,56 @@ _Register a new account_
     - `UserRepository.save()` → table **`users`** (derived query)
     - `UserRoleRepository.save()` → table **`user_roles`** (derived query)
 **Side effects:** @Transactional
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "uuid": "string",
+    "fullName": "string",
+    "email": "string"
+  },
+  "error": null
+}
+```
+
+**Errors:** — (envelope `error` on any failure; see §2.3)
+
+---
+
+### `POST` `/api/v1/auth/register/client`
+
+_Corporate-client self-registration — creates a PENDING_APPROVAL account that cannot log in until an ADMIN approves it at POST /api/v1/admin/client-requests/{uuid}/approve_
+
+- **Auth:** Public — no token
+
+**Request body:**
+
+```json
+{
+  "fullName": "string",
+  "email": "user@example.com",
+  "phone": "string",
+  "password": "string",
+  "companyName": "string",
+  "industry": "string"
+}
+```
+
+**Handler:** `AuthController.registerClient(…)`
+**Call chain:**
+- `ClientRegistrationService.register(…)`  _[@Transactional, enqueues notification, writes audit_logs]_
+    - `ClientRepository.save()` → table **`clients`** (derived query)
+    - `RoleRepository.findByCode()` → table **`roles`** (derived query)
+    - `UserRepository.existsByEmail()` → table **`users`** (derived query)
+    - `UserRepository.save()` → table **`users`** (derived query)
+    - `UserRoleRepository.save()` → table **`user_roles`** (derived query)
+    - `AuditLogService.record(…)`  _[@Transactional]_
+        - `AuditLogRepository.save()` → table **`?`** (derived query)
+    - `NotificationService.enqueueAfterCommit(…)`  _[enqueues notification]_
+**Side effects:** @Transactional, enqueues notification, writes audit_logs
 
 **Response `200`:**
 
@@ -5711,8 +6041,10 @@ http://localhost:8080/swagger-ui.html             (dev profile only)
 mvn verify
 ```
 
-- Sample users / batches / leads live in `db/testdata/` and are loaded by a **dev-profile runner**,
-  never by Flyway. Reference data (roles, plans) is seeded by `V4`/`V5`.
+- Sample users / batches / leads live in `db/testdata/R__dev_seed_data.sql` — a **Flyway repeatable
+  migration**, run only in the `dev` profile (`application-dev.yml` adds `classpath:db/testdata` to
+  `spring.flyway.locations`; `test`/`prod` keep the default and never load it). Reference data
+  (roles, plans) is seeded by `V4`/`V5`.
 - `context/progress-tracker.md` — the authoritative project-status log (feature checklist,
   migration ledger, decision log, UAT scenarios).
 - To regenerate the API docs after an endpoint change: re-export `docs/openapi.json` from

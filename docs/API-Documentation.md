@@ -1,6 +1,6 @@
 # Moriah Skill Hub — API Documentation
 
-> Generated from `docs/openapi.json` (OpenAPI 3.1.0). 100 endpoints across 23 groups. Auth/role column is read from each controller's `@PreAuthorize`.
+> Generated from `docs/openapi.json` (OpenAPI 3.1.0). 107 endpoints across 23 groups. Auth/role column is read from each controller's `@PreAuthorize`.
 
 ## Conventions
 
@@ -86,10 +86,10 @@ On success the callback returns the **same `LoginResponse` envelope as `POST /ap
 
 ## Contents
 
-- [Admin](#admin) — 8 endpoints
+- [Admin](#admin) — 13 endpoints
 - [Assessments](#assessments) — 5 endpoints
 - [Attendance](#attendance) — 4 endpoints
-- [Auth](#auth) — 11 endpoints
+- [Auth](#auth) — 13 endpoints
 - [BA](#ba) — 3 endpoints
 - [Batches](#batches) — 7 endpoints
 - [Bug Challenges](#bug-challenges) — 1 endpoints
@@ -161,6 +161,130 @@ Read-only audit log, optionally filtered by entity type, user, and a start date
 ```
 
 **Status codes:** `200`, `403`
+
+---
+
+### `GET` `/api/v1/admin/client-requests`
+
+List client self-registrations awaiting review (default) or already rejected
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Query parameters:**
+
+| name | type | required | description |
+|---|---|---|---|
+| `status` | string | no |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "uuid": "string",
+        "fullName": "string",
+        "email": "string",
+        "phone": "string",
+        "companyName": "string",
+        "industry": "string",
+        "status": "ACTIVE",
+        "submittedAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `POST` `/api/v1/admin/client-requests/{userUuid}/approve`
+
+Approve a client registration — account becomes ACTIVE and the applicant is emailed
+
+**Auth:** Role: ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `userUuid` | string |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "uuid": "string",
+    "fullName": "string",
+    "email": "string",
+    "phone": "string",
+    "companyName": "string",
+    "industry": "string",
+    "status": "ACTIVE",
+    "submittedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `403`, `404`, `409`
+
+---
+
+### `POST` `/api/v1/admin/client-requests/{userUuid}/reject`
+
+Decline a client registration — account becomes REJECTED and the applicant is emailed the reason
+
+**Auth:** Role: ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `userUuid` | string |  |
+
+**Request body:**
+
+```json
+{
+  "reason": "string"
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "uuid": "string",
+    "fullName": "string",
+    "email": "string",
+    "phone": "string",
+    "companyName": "string",
+    "industry": "string",
+    "status": "ACTIVE",
+    "submittedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `403`, `404`, `409`
 
 ---
 
@@ -370,6 +494,83 @@ List users, optionally filtered by role and/or status
 ```
 
 **Status codes:** `200`, `403`
+
+---
+
+### `POST` `/api/v1/admin/users`
+
+Invite a staff member — creates an INVITED account and emails an accept-invite link. roles must be staff roles (not STUDENT/CLIENT).
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Request body:**
+
+```json
+{
+  "fullName": "string",
+  "email": "user@example.com",
+  "phone": "string",
+  "roles": [
+    "STUDENT"
+  ]
+}
+```
+
+**Response `201`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "uuid": "string",
+    "fullName": "string",
+    "email": "string",
+    "status": "ACTIVE",
+    "roles": [
+      "STUDENT"
+    ],
+    "createdAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `201`, `400`, `403`, `409`
+
+---
+
+### `POST` `/api/v1/admin/users/{userUuid}/resend-invite`
+
+Re-send the accept-invite link for an account still in INVITED state — burns the previous link
+
+**Auth:** Role: ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `userUuid` | string |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "uuid": "string",
+    "fullName": "string",
+    "email": "string",
+    "status": "ACTIVE",
+    "roles": [
+      "STUDENT"
+    ],
+    "createdAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `403`, `404`, `409`
 
 ---
 
@@ -1036,6 +1237,44 @@ Confirms 2FA setup (no challengeToken, uses the caller's access token) or comple
 
 ---
 
+### `POST` `/api/v1/auth/accept-invite`
+
+Redeem a staff accept-invite link — sets the password, activates the account (INVITED -> ACTIVE) and logs in. Returns a 2FA challenge instead of tokens for an invited ADMIN / HR_MANAGER, exactly like a normal first login.
+
+**Auth:** Public — no token required
+
+**Request body:**
+
+```json
+{
+  "token": "string",
+  "password": "string"
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "twoFactorRequired": true,
+    "twoFactorSetupRequired": true,
+    "challengeToken": "string",
+    "tokens": {
+      "accessToken": "string",
+      "refreshToken": "string",
+      "expiresInSeconds": 0
+    }
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
 ### `POST` `/api/v1/auth/login`
 
 Log in with email and password. If 2FA is enabled, returns a challenge token instead of a token pair — exchange it at POST /2fa/verify.
@@ -1221,7 +1460,7 @@ Exchange a refresh token for a new token pair; rotates the refresh token
 
 ### `POST` `/api/v1/auth/register`
 
-Register a new account
+Register a new student account
 
 **Auth:** Public — no token required
 
@@ -1234,6 +1473,43 @@ Register a new account
   "phone": "string",
   "password": "string",
   "githubUsername": "string"
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "uuid": "string",
+    "fullName": "string",
+    "email": "string"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `POST` `/api/v1/auth/register/client`
+
+Corporate-client self-registration — creates a PENDING_APPROVAL account that cannot log in until an ADMIN approves it at POST /api/v1/admin/client-requests/{uuid}/approve
+
+**Auth:** Public — no token required
+
+**Request body:**
+
+```json
+{
+  "fullName": "string",
+  "email": "user@example.com",
+  "phone": "string",
+  "password": "string",
+  "companyName": "string",
+  "industry": "string"
 }
 ```
 

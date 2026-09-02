@@ -18,6 +18,10 @@ public final class Constants {
     /** How long a freshly issued password-reset link stays valid (build-plan.md feature 03). */
     public static final int PASSWORD_RESET_TOKEN_TTL_HOURS = 1;
 
+    /** How long a staff-invite link stays valid — a full working week, so an invite sent on a
+     * Friday is still usable the following week (frontend-integration decision, 2026-09-02). */
+    public static final int STAFF_INVITE_TOKEN_TTL_HOURS = 168;
+
     /** Invoice numbers are {@code MSH-INV-<payment id, zero-padded to 6 digits>} — collision-free
      * by construction (payments.id is already unique and monotonic), reconciliation-friendly
      * (build-plan.md feature 07; code-standards.md's own Constants example lists this prefix). */

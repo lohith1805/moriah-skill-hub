@@ -1,5 +1,6 @@
 package com.moriah.skillhub.auth;
 
+import com.moriah.skillhub.auth.dto.AcceptInviteRequest;
 import com.moriah.skillhub.auth.dto.ForgotPasswordRequest;
 import com.moriah.skillhub.auth.dto.LoginRequest;
 import com.moriah.skillhub.auth.dto.LoginResponse;
@@ -14,9 +15,11 @@ import com.moriah.skillhub.auth.dto.VerifyEmailRequest;
 import com.moriah.skillhub.auth.entity.EmailVerificationToken;
 import com.moriah.skillhub.auth.entity.PasswordResetToken;
 import com.moriah.skillhub.auth.entity.RefreshToken;
+import com.moriah.skillhub.auth.entity.StaffInviteToken;
 import com.moriah.skillhub.auth.repository.EmailVerificationTokenRepository;
 import com.moriah.skillhub.auth.repository.PasswordResetTokenRepository;
 import com.moriah.skillhub.auth.repository.RefreshTokenRepository;
+import com.moriah.skillhub.auth.repository.StaffInviteTokenRepository;
 import com.moriah.skillhub.common.audit.AuditLogService;
 import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
@@ -69,6 +72,7 @@ public class AuthService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final EmailVerificationTokenRepository emailVerificationTokenRepository;
+    private final StaffInviteTokenRepository staffInviteTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final JwtProperties jwtProperties;
@@ -115,6 +119,15 @@ public class AuthService {
         }
         if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
             throw new ForbiddenOperationException(ErrorCode.ACCOUNT_NOT_VERIFIED);
+        }
+        if (user.getStatus() == UserStatus.INVITED) {
+            throw new ForbiddenOperationException(ErrorCode.ACCOUNT_INVITE_PENDING);
+        }
+        if (user.getStatus() == UserStatus.PENDING_APPROVAL) {
+            throw new ForbiddenOperationException(ErrorCode.ACCOUNT_PENDING_APPROVAL);
+        }
+        if (user.getStatus() == UserStatus.REJECTED) {
+            throw new ForbiddenOperationException(ErrorCode.ACCOUNT_REGISTRATION_REJECTED);
         }
         if (user.getStatus() == UserStatus.SUSPENDED || user.getStatus() == UserStatus.TERMINATED) {
             auditLogService.record(user.getId(), "LOGIN_FAILED", "User", user.getId(),
@@ -265,6 +278,69 @@ public class AuthService {
     public void forgotPassword(ForgotPasswordRequest request) {
         // Same response regardless of whether the email exists — no account-enumeration signal.
         userRepository.findByEmail(request.email()).ifPresent(this::issuePasswordResetToken);
+    }
+
+    /**
+     * Issues (or re-issues) a staff accept-invite link for an {@code INVITED} user: burns any
+     * still-open invite for them first, mints one fresh single-use token, and emails the link.
+     * Public because {@code AdminUserService} owns staff creation and calls straight through
+     * here — the same delegation {@code ClientService} already does for its set-password email
+     * via {@link #forgotPassword}. The raw token is embedded in the link, never logged (same
+     * rule as {@link #issueEmailVerificationToken}).
+     */
+    @Transactional
+    public void issueStaffInvite(User user) {
+        staffInviteTokenRepository.markAllUnusedAsUsedForUser(user.getId(), Instant.now());
+
+        String raw = OpaqueTokenGenerator.generate();
+        StaffInviteToken token = new StaffInviteToken();
+        token.setUser(user);
+        token.setTokenHash(OpaqueTokenGenerator.sha256Hex(raw));
+        token.setExpiresAt(Instant.now().plus(Constants.STAFF_INVITE_TOKEN_TTL_HOURS, ChronoUnit.HOURS));
+        staffInviteTokenRepository.save(token);
+
+        String link = authLinkProperties.staffInviteUrlTemplate().replace("{token}", raw);
+        notificationService.enqueueAfterCommit(user.getId(), NotificationChannel.EMAIL, "STAFF_INVITE", Map.of(
+                "to", user.getEmail(),
+                "subject", "You've been invited to Moriah Skill Hub",
+                "body", "Set your password and activate your account: " + link));
+    }
+
+    /**
+     * Redeems a staff accept-invite link: validates the token, sets the chosen password, flips
+     * the account {@code INVITED -> ACTIVE} (email counts as verified — the invite was sent to
+     * it), and completes login. An invited ADMIN / HR_MANAGER lands on the mandatory-2FA setup
+     * challenge here, identical to a normal first login — {@link #completeOrChallengeLogin} stays
+     * the single enforcement point.
+     */
+    @Transactional
+    public LoginResponse acceptInvite(AcceptInviteRequest request, String userAgent, String ipAddress) {
+        String hash = OpaqueTokenGenerator.sha256Hex(request.token());
+        StaffInviteToken token = staffInviteTokenRepository.findByTokenHash(hash)
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_OR_EXPIRED_INVITE_TOKEN));
+
+        if (token.getUsedAt() != null || token.getExpiresAt().isBefore(Instant.now())) {
+            throw new BusinessException(ErrorCode.INVALID_OR_EXPIRED_INVITE_TOKEN);
+        }
+
+        User user = token.getUser();
+        if (user.getStatus() != UserStatus.INVITED) {
+            // Token still technically open, but the account was already activated (or disabled)
+            // by another path — treat the link as spent.
+            throw new BusinessException(ErrorCode.INVALID_OR_EXPIRED_INVITE_TOKEN);
+        }
+
+        token.setUsedAt(Instant.now());
+        staffInviteTokenRepository.save(token);
+
+        user.setPasswordHash(passwordEncoder.encode(request.password()));
+        user.setStatus(UserStatus.ACTIVE);
+        user.setEmailVerifiedAt(Instant.now());
+        userRepository.save(user);
+
+        auditLogService.record(user.getId(), "STAFF_INVITE_ACCEPTED", "User", user.getId(), null, null);
+
+        return completeOrChallengeLogin(user, userAgent, ipAddress);
     }
 
     @Transactional

@@ -336,10 +336,26 @@ auth_folder = {"name": "Auth", "item": [
                         "Bumps token_version — every access token for that user dies on its next request."),
     ]},
     {"name": "Other", "item": [
-        simple_auth_req("Register", "register",
+        simple_auth_req("Register — student", "register",
                         {"fullName": "New Tester", "email": "new@moriah.test", "phone": "919812345678",
                          "password": "Password123!", "githubUsername": "new-tester"},
                         "Creates a PENDING_VERIFICATION user; needs email verification before login."),
+        simple_auth_req("Register — corporate client", "register/client",
+                        {"fullName": "Nadia Newclient", "email": "newclient@moriah.test", "phone": "919812345670",
+                         "password": "Password123!", "companyName": "New Client Pvt Ltd", "industry": "Software"},
+                        "Creates a PENDING_APPROVAL client — cannot log in until an ADMIN approves it at "
+                        "'Admin / POST /api/v1/admin/client-requests/{userUuid}/approve'."),
+        simple_auth_req("Accept staff invite", "accept-invite",
+                        {"token": "«raw token from the accept-invite email»", "password": "Password123!"},
+                        "Redeem the emailed staff-invite link (issued by 'Admin / POST /api/v1/admin/users'). "
+                        "Returns the same LoginResponse as /auth/login — tokens, or a 2FA challenge for an "
+                        "invited ADMIN/HR_MANAGER. Stores into {{staffAccessToken}} / {{staffChallengeToken}}.",
+                        ev=[{"listen": "test", "script": {"type": "text/javascript", "exec": [
+                            "var d = pm.response.json().data || {};",
+                            "if (d.tokens && d.tokens.accessToken) {",
+                            "  pm.collectionVariables.set('staffAccessToken', d.tokens.accessToken);",
+                            "  pm.collectionVariables.set('staffRefreshToken', d.tokens.refreshToken); }",
+                            "if (d.challengeToken) pm.collectionVariables.set('staffChallengeToken', d.challengeToken);"]}}]),
         simple_auth_req("Verify email", "verify-email", {"token": "«from the email»"}),
         simple_auth_req("Forgot password", "password/forgot", {"email": "student1@moriah.test"}),
         simple_auth_req("Reset password", "password/reset", {"token": "«from the email»", "newPassword": "Password123!"}),
@@ -375,6 +391,8 @@ for rp in ["admin", "hr"]:
     cvars += [{"key": rp + "TotpSecret", "value": "", "type": "string"},
               {"key": rp + "TotpCode", "value": "", "type": "string"},
               {"key": rp + "OtpauthUri", "value": "", "type": "string"}]
+for k in ["staffAccessToken", "staffRefreshToken", "staffChallengeToken"]:
+    cvars.append({"key": k, "value": "", "type": "string"})
 cvars.append({"key": "webhookSecret", "value": "local_test_secret", "type": "string"})
 for k in ["batchId", "sprintId", "taskId", "backlogTaskId", "submissionId", "standupId", "quizId",
           "attemptId", "leadId", "employeeId", "docId", "leaveId", "pipId", "milestoneId",
