@@ -10,5 +10,9 @@ public interface SubscriptionPlanRepository extends JpaRepository<SubscriptionPl
 
     Optional<SubscriptionPlan> findByCode(String code);
 
+    /** Admin plan create (gap B1.13) rejects a duplicate {@code code} with a clean 409 before
+     * the unique constraint would surface as a raw {@code DataIntegrityViolation}. */
+    boolean existsByCode(String code);
+
     List<SubscriptionPlan> findByActiveTrueOrderByTierRankAsc();
 }

@@ -80,6 +80,7 @@ public enum ErrorCode {
     // 409 — a business rule was violated
     BUSINESS_RULE_VIOLATION(HttpStatus.CONFLICT, "The request could not be completed."),
     EMAIL_ALREADY_REGISTERED(HttpStatus.CONFLICT, "An account with this email already exists."),
+    PLAN_CODE_TAKEN(HttpStatus.CONFLICT, "A subscription plan with this code already exists."),
     INVALID_OR_EXPIRED_VERIFICATION_TOKEN(HttpStatus.CONFLICT, "This verification link is invalid or has expired."),
     INVALID_OR_EXPIRED_RESET_TOKEN(HttpStatus.CONFLICT, "This password reset link is invalid or has expired."),
     INVALID_OR_EXPIRED_INVITE_TOKEN(HttpStatus.CONFLICT, "This invite link is invalid, has expired, or has already been used."),

@@ -1,7 +1,9 @@
 package com.moriah.skillhub.admin;
 
+import com.moriah.skillhub.admin.dto.AdminUserDetailResponse;
 import com.moriah.skillhub.admin.dto.AdminUserResponse;
 import com.moriah.skillhub.admin.dto.CreateStaffRequest;
+import com.moriah.skillhub.admin.dto.UpdateUserRequest;
 import com.moriah.skillhub.admin.dto.UpdateUserRolesRequest;
 import com.moriah.skillhub.admin.dto.UpdateUserStatusRequest;
 import com.moriah.skillhub.auth.AuthService;
@@ -159,6 +161,48 @@ class AdminUserServiceTest {
 
         verify(userRepository, never()).save(any());
         verify(authService, never()).issueStaffInvite(any());
+    }
+
+    @Test
+    void get_returnsDetailViewWithRoles() {
+        user.setPhone("919111111111");
+        user.setLinkedinUrl("https://linkedin.com/in/target");
+        when(userRepository.findByUuid(user.getUuid())).thenReturn(Optional.of(user));
+        when(userRoleRepository.findRoleCodesByUserId(42L)).thenReturn(List.of(RoleCode.DEVELOPER));
+
+        AdminUserDetailResponse detail = adminUserService.get(user.getUuid());
+
+        assertThat(detail.uuid()).isEqualTo(user.getUuid());
+        assertThat(detail.phone()).isEqualTo("919111111111");
+        assertThat(detail.linkedinUrl()).isEqualTo("https://linkedin.com/in/target");
+        assertThat(detail.roles()).containsExactly(RoleCode.DEVELOPER);
+    }
+
+    @Test
+    void update_replacesProfileFields_doesNotBumpTokenVersion() {
+        when(userRepository.findByUuid(user.getUuid())).thenReturn(Optional.of(user));
+        when(userRoleRepository.findRoleCodesByUserId(42L)).thenReturn(List.of(RoleCode.DEVELOPER));
+
+        AdminUserDetailResponse detail = adminUserService.update(user.getUuid(),
+                new UpdateUserRequest("Renamed User", "919222222222", "renamed-gh", "  "), 999L);
+
+        assertThat(user.getFullName()).isEqualTo("Renamed User");
+        assertThat(user.getPhone()).isEqualTo("919222222222");
+        assertThat(user.getGithubUsername()).isEqualTo("renamed-gh");
+        assertThat(user.getLinkedinUrl()).isNull();
+        assertThat(user.getTokenVersion()).isEqualTo(3);
+        assertThat(detail.fullName()).isEqualTo("Renamed User");
+        verify(userRepository).save(user);
+        verify(auditLogService).record(eq(999L), eq("USER_PROFILE_UPDATED"), eq("User"), eq(42L), any(), any());
+    }
+
+    @Test
+    void update_unknownUuid_throwsNotFound() {
+        when(userRepository.findByUuid("missing")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> adminUserService.update("missing",
+                new UpdateUserRequest("X", null, null, null), 999L))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test

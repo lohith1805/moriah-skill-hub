@@ -3,6 +3,7 @@ package com.moriah.skillhub.subscription;
 import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
+import com.moriah.skillhub.subscription.dto.CreatePlanRequest;
 import com.moriah.skillhub.subscription.dto.PlanResponse;
 import com.moriah.skillhub.subscription.dto.SubscriptionResponse;
 import com.moriah.skillhub.subscription.dto.UpdatePlanRequest;
@@ -116,5 +117,48 @@ public class EntitlementService {
         subscriptionPlanRepository.save(plan);
 
         return planMapper.toResponse(plan);
+    }
+
+    /** {@code POST /api/v1/admin/plans} (gap B1.13). Same wholesale cache eviction as {@link
+     * #updatePlan} — a new plan changes the {@code plans} list and the {@code planCodesById}
+     * map. A duplicate {@code code} is a clean 409 rather than a raw constraint violation. */
+    @CacheEvict(value = {"plans", "planCodesById"}, allEntries = true)
+    @Transactional
+    public PlanResponse createPlan(CreatePlanRequest request) {
+        if (subscriptionPlanRepository.existsByCode(request.code())) {
+            throw new BusinessException(ErrorCode.PLAN_CODE_TAKEN);
+        }
+
+        SubscriptionPlan plan = new SubscriptionPlan();
+        plan.setCode(request.code());
+        plan.setName(request.name());
+        plan.setPriceInr(request.priceInr());
+        plan.setTierRank(request.tierRank());
+        plan.setDurationDays(request.durationDays());
+        plan.setMaxProjects(request.maxProjects());
+        plan.setMentorSupport(request.mentorSupport());
+        plan.setAllowsBatch(request.allowsBatch());
+        plan.setAllowsSprints(request.allowsSprints());
+        plan.setAllowsPip(request.allowsPip());
+        plan.setAllowsInternshipLetter(request.allowsInternshipLetter());
+        plan.setAllowsClientProject(request.allowsClientProject());
+        plan.setActive(request.active());
+        subscriptionPlanRepository.save(plan);
+
+        return planMapper.toResponse(plan);
+    }
+
+    /** {@code DELETE /api/v1/admin/plans/{id}} (gap B1.13). Deactivates, never row-deletes — a
+     * plan is referenced by {@code user_subscriptions}/{@code payments}/{@code batches.plan_tier_min}
+     * FKs, and history must survive. Idempotent. {@code resolvePlanId} already filters to
+     * {@code active} plans, so a deactivated plan immediately stops being selectable at checkout
+     * or batch creation. */
+    @CacheEvict(value = {"plans", "planCodesById"}, allEntries = true)
+    @Transactional
+    public void deactivatePlan(Long id) {
+        SubscriptionPlan plan = subscriptionPlanRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.PLAN_NOT_FOUND, id));
+        plan.setActive(false);
+        subscriptionPlanRepository.save(plan);
     }
 }

@@ -1,7 +1,9 @@
 package com.moriah.skillhub.admin;
 
+import com.moriah.skillhub.admin.dto.AdminUserDetailResponse;
 import com.moriah.skillhub.admin.dto.AdminUserResponse;
 import com.moriah.skillhub.admin.dto.CreateStaffRequest;
+import com.moriah.skillhub.admin.dto.UpdateUserRequest;
 import com.moriah.skillhub.admin.dto.UpdateUserRolesRequest;
 import com.moriah.skillhub.admin.dto.UpdateUserStatusRequest;
 import com.moriah.skillhub.common.dto.ApiResponse;
@@ -53,6 +55,35 @@ public class AdminUserController {
             @PageableDefault(size = 20) Pageable pageable) {
 
         return ResponseEntity.ok(ApiResponse.success(adminUserService.list(role, status, pageable)));
+    }
+
+    @GetMapping("/{userUuid}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Single-user detail — profile fields, roles, 2FA and login timestamps")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "User detail"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Caller is not an ADMIN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No user with this uuid")
+    })
+    public ResponseEntity<ApiResponse<AdminUserDetailResponse>> get(@PathVariable String userUuid) {
+        return ResponseEntity.ok(ApiResponse.success(adminUserService.get(userUuid)));
+    }
+
+    @PutMapping("/{userUuid}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Edit a user's profile fields (name, phone, GitHub, LinkedIn). "
+            + "Status and roles have their own endpoints.")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "User updated"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Caller is not an ADMIN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No user with this uuid"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "phone already belongs to another account")
+    })
+    public ResponseEntity<ApiResponse<AdminUserDetailResponse>> update(
+            @PathVariable String userUuid, @Valid @RequestBody UpdateUserRequest request,
+            @CurrentUser Long callerUserId) {
+
+        return ResponseEntity.ok(ApiResponse.success(adminUserService.update(userUuid, request, callerUserId)));
     }
 
     @PostMapping

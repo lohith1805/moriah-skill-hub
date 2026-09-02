@@ -1,7 +1,9 @@
 package com.moriah.skillhub.subscription;
 
+import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
+import com.moriah.skillhub.subscription.dto.CreatePlanRequest;
 import com.moriah.skillhub.subscription.dto.PlanResponse;
 import com.moriah.skillhub.subscription.dto.UpdatePlanRequest;
 import com.moriah.skillhub.subscription.entity.SubscriptionPlan;
@@ -89,6 +91,58 @@ class EntitlementServiceTest {
                 "X", BigDecimal.TEN, 30, null, false, false, false, false, false, false, true);
 
         assertThatThrownBy(() -> entitlementService.updatePlan(99L, request))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PLAN_NOT_FOUND);
+    }
+
+    private CreatePlanRequest createRequest(String code) {
+        return new CreatePlanRequest(code, "Weekend Sprint", new BigDecimal("4999.00"), 6, 90, 3,
+                true, true, true, false, false, false, true);
+    }
+
+    @Test
+    void createPlan_persistsEveryFieldIncludingCodeAndTierRank() {
+        when(subscriptionPlanRepository.existsByCode("WEEKEND")).thenReturn(false);
+        when(planMapper.toResponse(org.mockito.ArgumentMatchers.any(SubscriptionPlan.class)))
+                .thenReturn(new PlanResponse("WEEKEND", "Weekend Sprint", new BigDecimal("4999.00"),
+                        6, 90, true, true, true, false, false, false));
+
+        entitlementService.createPlan(createRequest("WEEKEND"));
+
+        org.mockito.ArgumentCaptor<SubscriptionPlan> captor =
+                org.mockito.ArgumentCaptor.forClass(SubscriptionPlan.class);
+        verify(subscriptionPlanRepository).save(captor.capture());
+        assertThat(captor.getValue().getCode()).isEqualTo("WEEKEND");
+        assertThat(captor.getValue().getTierRank()).isEqualTo(6);
+        assertThat(captor.getValue().isActive()).isTrue();
+    }
+
+    @Test
+    void createPlan_duplicateCode_throwsConflict() {
+        when(subscriptionPlanRepository.existsByCode("PRO")).thenReturn(true);
+
+        assertThatThrownBy(() -> entitlementService.createPlan(createRequest("PRO")))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PLAN_CODE_TAKEN);
+
+        verify(subscriptionPlanRepository, org.mockito.Mockito.never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void deactivatePlan_setsInactiveAndSaves() {
+        when(subscriptionPlanRepository.findById(1L)).thenReturn(Optional.of(plan));
+
+        entitlementService.deactivatePlan(1L);
+
+        assertThat(plan.isActive()).isFalse();
+        verify(subscriptionPlanRepository).save(plan);
+    }
+
+    @Test
+    void deactivatePlan_unknownId_throwsNotFound() {
+        when(subscriptionPlanRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> entitlementService.deactivatePlan(99L))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PLAN_NOT_FOUND);
     }
