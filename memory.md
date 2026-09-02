@@ -71,15 +71,12 @@ commit, `mvn verify` GREEN at two checkpoints — 444 unit + 267 integration, 0 
   serialized. `QUESTION_BANK_NOT_FOUND`, new `assessment.entity.QuestionDifficulty`.
 
 **Migrations added this session: V20–V31.** Next unused = **V32**.
-**Verify status:** last FULL green `mvn clean verify` = **B1.14** state (`ef5c437`): 465 unit +
-267 integration, 0. Then for **V26–V28** a verify ran **488 unit + 14 IT classes (through
-EntitlementGuardIT, incl. BaClientFlowIT/CrmFlowIT/AssessmentFlowIT/AdminMetricsFlowIT/
-CheckoutFlowIT) all GREEN** before being killed (host too slow — ITs taking 2-6× normal). Every
-IT that ran passed; Flyway `validate()` + `ddl-auto:validate` + context load all succeed for the
-new migrations (any IT booting at all proves that). **507 unit tests green** after B1.15/B1.10.
-A final `mvn clean verify` (task `bv9aog97x` / `/tmp/vfull.txt`) was launched covering V20–V31 —
-check it if this session resumed. The machine is HEAVILY loaded; a verify currently takes 60-90+
-min. Close VS Code's redhat.java JVM + other Java processes before running one.
+**Verify status — CLEARED.** Full `mvn clean verify` covering V20–V31 ran: **507 unit + 267
+integration**, with **1 flaky IT** (`PipFlowIT.updateRule_asPm_returns403` — expected 403, got
+401 after 19.5s: JWT auth timed out under a thrashing connection pool, machine at ~5× slowdown).
+**Re-ran `PipFlowIT` in isolation → 14/14 PASS, BUILD SUCCESS.** So the backend at HEAD is green;
+that failure is purely environmental, not a regression (V26–V31 touch nothing in `pip/`).
+Machine is HEAVILY loaded all session — a full verify takes 60–90 min; close other JVMs first.
 
 ## `taskkill //F //IM java.exe` is TOO BROAD — it also kills the user's VS Code redhat.java
 language server (it auto-restarts, but rude). Kill maven JVMs by PID / by `CommandLine -like
@@ -99,7 +96,51 @@ is done). **Everything else in Part B is done.**
 **Session-3 endpoint tally: ~70 across all of B1.1–B1.17** (B1.1–B1.3 were prior session; this
 session: B1.4, B1.5, B1.6, B1.7, B1.8, B1.9, B1.10 full, B1.11, B1.12, B1.13, B1.14, B1.15 full,
 B1.16, B1.17 + `GET /hr/employees`). Each its own commit on `main`, all unit-tested (507 green).
-Frontend integration (Part A) still not started — that is the next major body of work.
+
+## Frontend (Part A) — STARTED. Frontend is now its OWN git repo:
+`C:\Users\ADMIN\Desktop\Moraih Backend\moriah-skill-hub-updated` (was untracked). Commits:
+`a86db27` baseline (mock prototype), `b0e4b21` **auth spike** — DONE + `npm run build` passes:
+- `src/services/apiClient.js` — `USE_MOCKS=false`; real fetch; unwraps `{success,data,error}`
+  envelope; `tokenStore` (access + rotating refresh + expiry in localStorage); transparent
+  401→`POST /auth/refresh`→retry-once (single-flight); `requestMultipart()`.
+- `src/services/authService.js` — rewritten vs `/api/v1/auth/**` + `/users/me` + `/admin/**`.
+  FE `user` = `/users/me` fields + JWT `roles` claim; D3 primary-role collapse. 2FA-aware
+  `login`/`acceptInvite`; `verifyTwoFactor`, `beginTwoFactorSetup`, `refreshSession`, `logout`,
+  `registerStudent`/`verifyEmail`/`registerClient`/`requestPasswordReset`/`resetPassword`,
+  `inviteStaffMember`→`POST /admin/users`, `getPendingClients`/`setClientApproval`→
+  `/admin/client-requests`, `oauthAuthorizeUrl`.
+- `src/utils/constants.js` — `BACKEND_ROLE_TO_FE`/`FE_ROLE_TO_BACKEND`, `ROLE_PRIORITY`,
+  `primaryFeRole()`, `BACKEND_STATUS_TO_FE`, `PLAN_CODE_TO_FE`/`FE_PLAN_TO_BACKEND`.
+- `AuthContext.jsx` — removed the 1s poll; hydrates from `/users/me`; `hydrating` flag;
+  `completeTwoFactor`/`refreshUser`. `ProtectedRoute.jsx` waits out `hydrating`.
+- `Login.jsx` email+password + real 2FA step + OAuth redirect. `AcceptInvite.jsx` 2FA-aware.
+  New pages/routes `/reset-password`, `/verify-email`, `/auth/oauth/callback`.
+- `vite.config.js` `/api`→`http://localhost:8080` proxy; `.env`/`.env.example` (`VITE_API_BASE_URL`).
+
+### Frontend Part A — STILL TO DO (big):
+1. **The 13 `src/services/*Service.js`** (adminService, studentService, trainerService,
+   developerService, hrService, baService, clientService, crmService, notificationService) still
+   run against `mockData.js` + `localStorage`. Rewrite each to call `apiClient` with real paths
+   and unwrap `PageResponse.content`. This is the bulk of the work.
+2. **Page data bindings** — every `src/pages/**` reads mock-shaped blobs (`user.batch` string,
+   `user.subscription`, camelCase invented fields). Remap to real DTOs (`uuid`, ISO dates, enum
+   strings). ~90 page files.
+3. **Register wizard (D2 Hybrid)** — `src/pages/auth/Register.jsx` still collects payment then
+   creates an ACTIVE account. Reorder to: register → verify-email → login → `/student/subscription`
+   checkout. Add a route guard forcing checkout before the student dashboard unlocks.
+4. **OAuth** — backend `OAuth2AuthenticationSuccessHandler` currently writes a JSON envelope;
+   it must **redirect** to `${FE}/auth/oauth/callback?accessToken=..&refreshToken=..&expiresIn=..`
+   for the SPA loop to close (the callback page is ready and parses those params).
+5. **Multipart** — `src/pages/student/Profile.jsx` resume upload + `projects/{id}/assets` still
+   base64→localStorage; switch to `apiClient.requestMultipart`.
+6. **Delete the mock layer** — `mockData.js`, `pipEngine.js`, `placementPipeline.js`, all `msh_*`
+   localStorage usage, once services are migrated.
+7. Backend nicety: `GET /users/me` does NOT return roles/status (FE decodes the JWT for roles;
+   status is assumed ACTIVE post-login). Could add `roles`+`status` to `UserProfileResponse` to
+   simplify the FE, but not required.
+
+**B1.18 installment/EMI plans + B1.4 per-lesson quiz** remain the only un-built backend gaps
+(both deferred/optional).
 
 ## What was built
 
