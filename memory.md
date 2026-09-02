@@ -46,10 +46,33 @@ commit, `mvn verify` GREEN at two checkpoints — 444 unit + 267 integration, 0 
   scheduled_at, duration, location, status, minutes). `GET/POST/PUT/DELETE /api/v1/ba/meetings`
   (`BaMeetingController`, BUSINESS_ANALYST/ADMIN). DELETE → status CANCELLED.
 
-**Migrations added this session: V20–V25.** Next unused = **V26**.
-**Clean `mvn clean verify` GREEN after B1.7: 460 unit + 267 integration, 0 failures.**
-(A final verify after B1.14 was launched — check `git log` / a `/tmp/vfinal.txt` if this session
-resumed mid-run.)
+- **B1.8 — Student Interviews** (`ac13b26`) — `V26` `student_interviews`. `POST /api/v1/interviews`
+  + `GET` (staff, `?status/?type/?studentUuid`) + `GET /me` (STUDENT) + `PUT /{id}` +
+  `DELETE /{id}` (→ CANCELLED). New `interview/` module. `ErrorCode.INTERVIEW_NOT_FOUND`.
+- **B1.9 — Client Talent Pool + recruitment requests** (`18ff04b`) — `V27` `recruitment_requests`.
+  `GET /api/v1/talent-pool` (browse profiles; new `UserProfileRepository.searchTalentPool`),
+  `POST /api/v1/recruitment-requests` (CLIENT → PENDING), `GET /api/v1/recruitment-requests`
+  (CLIENT own / ADMIN+HR all — privilege from JWT roles), `PUT /{id}/status` (ADMIN/HR
+  approve/reject). New `talent/` module. Resume access deliberately NOT wired (needs an
+  OwnershipGuard branch). `ErrorCode.RECRUITMENT_REQUEST_NOT_FOUND`.
+- **B1.10 slice 1 — HR Exit Management** (`64a5257`) — `V28` `employee_exits`.
+  `POST /api/v1/hr/exits` + `GET` + `PUT /{id}` + `POST /{id}/complete` (HR_MANAGER/ADMIN).
+  `complete` flips `employees.status` (EXITED / TERMINATED for `ExitType.TERMINATION`) + stamps
+  `date_of_exit`. **Onboarding + disciplinary (rest of B1.10) NOT done.**
+  `ErrorCode.EMPLOYEE_EXIT_NOT_FOUND`.
+
+**Migrations added this session: V20–V28.** Next unused = **V29**.
+**Verify status:** last FULL green `mvn clean verify` was at **B1.14** (`ef5c437` state): 465 unit
++ 267 integration, 0 failures. B1.8/B1.9/B1.10 (V26/V27/V28) are unit-tested only (488 unit
+tests green) — a full verify was attempted but the **integration phase hung ~22 min with no
+output and had to be killed** (host resource exhaustion — orphan JVMs, thrashing; NOT a code
+defect). The three new migrations are plain additive `CREATE TABLE` in the exact shape of
+V21/V24/V25 which passed. **A clean `mvn clean verify` still needs to be run for B1.8–B1.10 when
+the machine is quiet** (close the VS Code Java language server + other JVMs first).
+
+## `taskkill //F //IM java.exe` is TOO BROAD — it also kills the user's VS Code redhat.java
+language server (it auto-restarts, but rude). Kill maven JVMs by PID / by `CommandLine -like
+'*Adoptium*'` instead.
 (One scare mid-session: a background `verify` collapsed with a flood of "connection closed" +
 `bash fork: Resource temporarily unavailable` + my log file hitting a size cap — purely host
 resource exhaustion, NOT a code bug. Re-run clean = green. Lesson: run `verify` ALONE, filter
@@ -58,13 +81,14 @@ its log with `grep --line-buffered`, never unbounded `tee`.)
 **`README.md` has UNCOMMITTED local edits (not from this session's commits) that paste Razorpay
 TEST api keys + seeded-user rows.** Left untouched. Should be moved out of the tracked file.
 
-**Part B gaps still open (all sizeable new modules):** B1.8 student interviews, B1.9 client
-talent pool + recruitment requests, B1.10 HR exit/onboarding/disciplinary, B1.15-part1
-assessment question bank, B1.18 installment plans (likely skip), B1.4 per-lesson quiz.
+**Part B gaps still open:** B1.10 onboarding + disciplinary (exit done), B1.15-part1 assessment
+question bank (needs new tables), B1.18 installment plans (likely skip), B1.4 per-lesson quiz.
+Also noticed in passing: `GET /api/v1/hr/employees` (list) does not exist — `EmployeeController`
+has only `POST`. Small gap worth a follow-up.
 
-**Session-3 endpoint tally: ~40 across 11 gap items** (B1.4, B1.5, B1.6, B1.7, B1.11, B1.12,
-B1.13, B1.14, B1.15-part2, B1.16, B1.17), each its own commit on `main`, all unit-tested,
-`verify` green at every checkpoint. Frontend integration (Part A) still not started.
+**Session-3 endpoint tally: ~53 across 14 gap items** (B1.4, B1.5, B1.6, B1.7, B1.8, B1.9,
+B1.10-exit, B1.11, B1.12, B1.13, B1.14, B1.15-part2, B1.16, B1.17), each its own commit on
+`main`, all unit-tested (488 green). Frontend integration (Part A) still not started.
 
 ## What was built
 
