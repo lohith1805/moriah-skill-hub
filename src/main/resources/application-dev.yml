@@ -33,6 +33,14 @@ springdoc:
     enabled: true
 
 moriah:
+  # There is no real read replica locally — docker-compose's `mysql-replica` is an unmanaged,
+  # schema-less stand-in (replication setup is manual; see runbook-dr.md). MetricsService and
+  # the admin exports query the replica pool *exclusively*, so point it at the primary here or
+  # every /admin/metrics/* call 500s with "table doesn't exist". DB_REPLICA_HOST / DB_REPLICA_PORT
+  # still override for anyone who has actually stood the replica up.
+  datasource:
+    replica:
+      url: jdbc:mysql://${DB_REPLICA_HOST:${DB_HOST}}:${DB_REPLICA_PORT:${DB_PORT}}/${DB_NAME}?sslMode=${DB_SSL_MODE:REQUIRED}&serverTimezone=UTC
   security:
     cors:
       allowed-origins:
