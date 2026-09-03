@@ -482,12 +482,24 @@ Students tab.
 - openapi/postman re-exported: **156 paths / 205 ops** (`/dev/jobs/{job}/run` + earlier
   `/checkout/preview`, `/batches/pending-allocations`).
 
+**#4 "all downloads → PDF" DONE** (FE `6415425`): new `src/utils/pdf.js` (jsPDF 4.2.1 — pulls
+`html2canvas` transitively, bundle ~1.9→2.3MB). `downloadPdf(filename,title,blocks)` +
+`downloadInvoicePdf(...)` + `openPdfUrl`. Converted: admin Transactions invoice (`.html`→`.pdf`),
+student Subscription invoice fallback (HTML window→`.pdf`; real server invoice still opens from
+`pdfUrl` first), student Interviews offer letter (`.txt`→`.pdf`), HR Documents (`.txt`→`.pdf`),
+student Profile resume-fallback (print window→`.pdf`; a real uploaded resume still downloads
+as-is). CSV exports (audit log, admin reports) stay CSV — data, not documents.
+
+**Student dashboard "not assigned to a batch" was a FE display bug, NOT invoice/subscription-
+related** (FE `fdeacb9`). The header read `user.track`/`user.batch`, which `GET /users/me`
+(`UserProfileResponse`) **never returns** — so it always said "not assigned" regardless of
+enrolment. Fixed: `studentService.getMyBatch()` → `GET /api/v1/batches` (student-scoped). The
+subscription goes ACTIVE in the SAME webhook tx as the capture (payment `CAPTURED` + `user_subscriptions`
+ACTIVE are two rows/tables); the invoice PDF is downstream/async and gates nothing.
+
 **Still-open items the user flagged (NOT yet done):**
 - **#3 admin invoice list + PDF download** — no admin invoice endpoint (student has
   `/subscriptions/me/invoices`); add an admin-scoped variant + a column in admin Payments.
-- **#4 "all downloads should be PDF"** — the real backend PDFs (certificate, invoice) work via
-  presigned URLs; the offer-letter / HR-doc / invoice-fallback / profile-CV downloads render
-  client-side `.txt` / `.html`. Needs a shared client-side PDF generator (jsPDF) pass — ~8 sites.
 - **#7 client "view projects" → 403 "no access to this document"** — `GET /api/v1/projects` excludes
   CLIENT by design (internal training catalogue); there is **no `GET /clients/projects` list**
   endpoint (only `POST /clients/projects` + `GET /clients/projects/{id}/progress`). `clientService`
@@ -503,7 +515,7 @@ Students tab.
   delivery succeed (tunnel up, MinIO up, `RAZORPAY_WEBHOOK_SECRET` set). `WebhookReconciliationJob`
   (every 10 min) is the backstop.
 
-**HEADs:** Frontend `4317f07` (branch `master`). Backend `035dc3b` on top of `a36f9f5` / `70645f1`
+**HEADs:** Frontend `6415425` (branch `master`). Backend `035dc3b` on top of `a36f9f5` / `70645f1`
 / `9e4e8b7`. Targeted unit slices green each pass (invoice/payment/notification/batch); full
 surefire (547) not re-run since the seed/spec work. `*IT` need Docker — a bean-wiring change once
 showed up only as a `BatchFlowIT` context-load failure, so run one IT (or restart the app, which
