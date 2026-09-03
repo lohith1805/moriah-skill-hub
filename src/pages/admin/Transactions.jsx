@@ -8,7 +8,8 @@ import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { Input, Select } from "../../components/ui/FormField";
-import { getTransactions } from "../../services/adminService";
+import { getTransactions, getInvoicePdfUrl } from "../../services/adminService";
+import { openPdfUrl } from "../../utils/pdf";
 import { CURRENCY } from "../../utils/constants";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required } from "../../utils/validators";
@@ -146,8 +147,22 @@ export default function AdminTransactions() {
     setInvoiceOpen(true);
   };
 
-  const handleInvoiceDownload = () => {
+  const handleInvoiceDownload = async () => {
     if (!invoiceTxn) return;
+    // Prefer the real server-generated invoice PDF; fall back to a client-built
+    // one for payments whose async invoice hasn't been issued (older rows, or
+    // still PROCESSING).
+    if (invoiceTxn.invoiceStatus === "ISSUED") {
+      try {
+        const url = await getInvoicePdfUrl(invoiceTxn.gatewayOrderId || invoiceTxn.id);
+        if (url) {
+          openPdfUrl(url, () => notify("Allow popups to open the invoice PDF.", { type: "warning" }));
+          return;
+        }
+      } catch {
+        /* fall through to the client-rendered copy */
+      }
+    }
     downloadInvoice(invoiceTxn);
     notify(`Tax invoice downloaded for ${invoiceTxn.id}.`, { type: "success" });
   };
@@ -197,6 +212,12 @@ export default function AdminTransactions() {
             { key: "gateway", header: "Gateway", className: "text-left" },
             { key: "date", header: "Date", className: "text-left" },
             { key: "status", header: "Status", className: "text-left", render: (r) => <Badge tone={r.status === "Success" ? "success" : r.status === "Refunded" ? "neutral" : "error"}>{r.status}</Badge> },
+            { key: "invoice", header: "Invoice", className: "text-left", render: (r) => {
+              if (r.invoiceNumber) return <span className="text-xs font-mono text-ink-600">{r.invoiceNumber}</span>;
+              if (r.invoiceStatus === "PROCESSING") return <Badge tone="warning">generating…</Badge>;
+              if (r.invoiceStatus === "FAILED") return <Badge tone="error">failed</Badge>;
+              return <span className="text-xs text-ink-400">—</span>;
+            } },
             { key: "action", header: "", className: "text-right", render: (r) => (
               <div className="flex gap-2 justify-end">
                 {(r.status === "Success" || r.status === "Refunded") && (

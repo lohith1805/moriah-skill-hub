@@ -188,12 +188,23 @@ function toFeTransaction(p) {
     date: (p.capturedAt || p.createdAt || "").slice(0, 10),
     capturedAt: p.capturedAt,
     createdAt: p.createdAt,
+    invoiceNumber: p.invoiceNumber || null,
+    // ISSUED | PENDING | FAILED | PROCESSING | null
+    invoiceStatus: p.invoiceStatus || null,
   };
 }
 
 export async function getTransactions({ page = 0, size = 50, status, gateway, userUuid } = {}) {
   const res = await apiClient.get("/admin/payments", { page, size, status, gateway, userUuid });
   return (res && res.content ? res.content : []).map(toFeTransaction);
+}
+
+// GET /api/v1/admin/payments/{gatewayOrderId}/invoice -> { url } (short-lived
+// pre-signed link to the server-generated invoice PDF). 404 while the async
+// invoice job hasn't produced it yet.
+export async function getInvoicePdfUrl(gatewayOrderId) {
+  const res = await apiClient.get(`/admin/payments/${gatewayOrderId}/invoice`);
+  return res?.url || null;
 }
 
 export async function getTransactionSummary() {
