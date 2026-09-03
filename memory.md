@@ -131,111 +131,94 @@ admin services. `npm install` done (`node_modules` gitignored). **Every commit v
   `getCoupons`/`createCoupon`/`updateCoupon`/`deleteCoupon` → `/admin/coupons` (B1.12).
   Backend enum codes translated; `PageResponse.content` unwrapped.
 
-### FRONTEND — service migration progress
+### FRONTEND — Part A integration status (branch `master`, HEAD `fd63107`)
 
-Frontend commits (branch `master`): `a86db27` baseline · `b0e4b21` auth · `c80e0e0` notif+admin ·
-`534db75` developerService · `d67633f` lead campaigns · `71de48d` BA meetings + talent pool ·
-`238ef3d` HR exits/onboarding/disciplinary · `4662f79` onboarding route · `c60f083` studentService
-reads · `9b41df3` trainerService batches + review queue.
-`npm run build` green after each (2796 modules, Node v24). **HEAD `9b41df3`.**
+`npm run build` green after every commit (2796 modules, Node v24). **Nothing browser-tested yet.**
+Commit trail: auth spike `b0e4b21` → notif+admin `c80e0e0` → developer `534db75` → lead campaigns
+`d67633f` → BA meetings + talent `71de48d` → HR exits/onboarding/disciplinary `238ef3d` →
+onboarding route `4662f79` → student reads `c60f083` → trainer batches+review-queue `9b41df3` →
+trainer sprint/task `dd853c7` → student sprint board `1df39e3` → trainer CodeReview `d1cc66d` →
+HR payroll `1bf6c25` → trainer PIP `cb313f3` → D2 register `e1f69a5` → OAuth fragment (FE `e1c4d19`
++ BE `bb09501`) → shared Profile/Settings `6f6d797` → student resume+profile `fd63107`.
 
-**DONE (wired to backend):**
-- notificationService, adminService, developerService (see above list) — from earlier.
-- **crmService** — `getCampaigns`/`createCampaign`/`updateCampaign`/`deleteCampaign` →
-  `/api/v1/leads/campaigns` (B1.7). `leadgen/Campaigns.jsx` rebuilt on the backend model
-  (channel enum, start/end dates, budget, targetLeads, PLANNED/ACTIVE/COMPLETED/CANCELLED);
-  the wa.me/mailto bulk-"Send" helper stays client-side over `getLeads()`, message template in
-  `msh_campaign_templates` localStorage. **Lead pipeline / targets / logInteraction still MOCK** —
-  backend `/leads` has no per-lead detail, no activity-list GET, no DELETE → `leadgen/Pipeline.jsx`
-  can't migrate without a Part B add.
-- **baService** — meetings → `/api/v1/ba/meetings` (B1.14): `getMeetings`/`createMeeting`/
-  `updateMeeting`/`saveMeetingMinutes`/`deleteMeeting`; date+"hh:mm AM" ↔ `scheduledAt` Instant,
-  meetLink↔location, momNotes↔minutes; `type`/`client`/`attendees` in `msh_ba_meeting_meta`
-  sidecar. `ba/Meetings.jsx` updated. **Requirement docs + resource plans still MOCK** (doc API is
-  text-only `content`, no file upload; no resource-plan endpoint).
-- **clientService** — `getTalentPool` → `/api/v1/talent-pool`, `requestRecruitment` →
-  `POST /api/v1/recruitment-requests`, new `getRecruitmentRequests` (B1.9). `toFeCandidate` maps
-  the profile, **`score` is approximated from `yearsExperience`** (no real perf score on the DTO).
-  **The `client/TalentPool.jsx` placement pipeline (shortlist→schedule→offer→sign→placed) is still
-  localStorage** (`utils/placementPipeline.js`) — no backend for it.
+**WIRED to the backend:**
+- **auth** — login/2FA/refresh/logout, register (student+client), verify-email, reset-password,
+  OAuth callback (reads `location.hash`), `updateProfile` (PUT /users/me/profile), voluntary 2FA
+  enable/verify/disable, `getMe`. `toFeUser` = /users/me + JWT `roles` claim + `twoFactorEnabled`.
+- **D2 register flow** — `Register.jsx` student path: create account → "verify email then sign in
+  & pick a plan" screen (no inline plan/payment). `student/Dashboard.jsx` guards on
+  GET /subscriptions/me → redirects to `/student/subscription` if none.
+- **OAuth** — backend success/failure handlers now `sendRedirect` to
+  `moriah.security.oauth2.frontend-redirect-uri` with the result in the URL **fragment**
+  (`#accessToken=…` / `#twoFactorRequired=true` / `#error=…`) — keeps tokens off the wire/logs.
+- **notificationService, adminService, developerService** (resources B1.6, lessons+quiz B1.4,
+  assessment banks B1.15, dev requirement-docs B1.16).
+- **crmService** — lead campaigns CRUD → `/leads/campaigns` (B1.7); `Campaigns.jsx` rebuilt.
+- **baService** — meetings → `/ba/meetings` (B1.14); `type`/`client`/`attendees` local sidecar.
+- **clientService** — talent-pool browse + `POST /recruitment-requests` (B1.9); `score` faked from
+  yearsExperience.
+- **hrService** — employees list, exits/onboarding/disciplinary CRUD + `/{id}/complete` (B1.10),
+  payroll (`getPayroll(month)` + `generatePayroll`). `hr/ExitManagement.jsx`, `hr/Onboarding.jsx`
+  (also newly routed at `/hr/onboarding`), `hr/Payroll.jsx` all rebuilt around employee pickers +
+  generic checklist editors.
+- **studentService** — lessons+quiz (server-graded, positional answer array), certificates
+  (`/certificates/me`), PIP (`/pip/me`), plans (`/plans`), `getMySubscription`, `getMyInterviews`
+  (B1.8), sprint board (`getMySprints`/`getMyTasks` fan-out over enrolled batches; `updateTaskStatus`
+  = `POST /tasks/{id}/pull` only), `submitGithubPR` → `POST /submissions`, `saveResumeFile` →
+  `POST /users/me/resume` multipart, profile save → `PUT /users/me/profile`.
+- **trainerService** — batches list/create, review queue + `reviewSubmission` → resolve latest
+  submission then `POST /reviews`, sprints (`getSprints` fan-out, `createSprint`, `activateSprint`),
+  tasks (`getSprintTasks` fan-out, `createTask` — epic/user-story/AC folded into `description`;
+  tasks start BACKLOG unassigned), `assignTask`/`updateTask`, PIP list + `updatePipCaseStatus` →
+  `POST /pip/{id}/review`. `trainer/Sprints.jsx`, `SprintPlanning.jsx`, `CodeReview.jsx`,
+  `PIPManagement.jsx` updated (assignee dropdown removed — see blocker below).
+- **shared/Profile.jsx** + **shared/Settings.jsx** — profile save, reset-link email, real 2FA.
 
-- **hrService** — exits / onboarding / disciplinary + employee list → `/api/v1/hr/*` (B1.10).
-  `getEmployees()` now fetches `/hr/employees` (kept back-compat no-arg; `readEmployees()` sync
-  stays for `getPayroll`). New fns: `getExits`/`createExit`/`updateExit`/`completeExit`,
-  `getOnboardings`/`createOnboarding`/`updateOnboarding`, `getDisciplinaryActions`/
-  `createDisciplinaryAction`/`updateDisciplinaryAction` + enum & default-checklist exports.
-  **`hr/ExitManagement.jsx`** rebuilt: employee picker, generic clearance-checklist editor,
-  Finalise → `POST /{id}/complete`; Disciplinary tab wired; PIP tab still local `msh_pip_records`;
-  dropped the mock "graduate→talent-pool on exit" coupling. **`hr/Onboarding.jsx`** rebuilt
-  (employee picker, checklist, status, notes) AND **wired into routing** — it was an orphan page;
-  added `/hr/onboarding` route + sidebar entry. Leave/payroll/attendance stay MOCK.
+**BLOCKED on missing backend endpoints (Part B round 2 — cannot finish these on the FE alone):**
+- **No PM/HR-visible "people list with uuids"**: no `GET /batches/{id}/students` roster. This
+  blocks: PM assign-task-to-named-student, `trainer/Graduation.jsx` (needs batchId+userUuid — has
+  `graduateStudent`/`issueCertificate` helpers ready), `trainer/Standups.jsx`, `trainer/Batches.jsx`
+  student enrolment, `hr/Documents.jsx` letters (`IssueLetterRequest.userUuid`).
+- **No aggregate analytics endpoint** → `trainer/Analytics.jsx` stays mock (`getAnalytics`).
+- **No PIP create endpoint** (nightly job only) → `triggerManualPip`/`removePipCase` throw a
+  clear message; only list + `/{id}/review` are wired.
+- **No HR leave-list / HR staff-attendance endpoint** → `hr/AttendanceLeave.jsx` + `ApplyLeaveWidget`
+  stay mock (LeaveController is POST + PUT decision only).
+- **No HR-document list endpoint** → `hr/Documents.jsx` KYC list can't load.
+- **No subscription checkout endpoint** on SubscriptionController → `subscribeToPlan` stays mock
+  (real flow is `POST /subscriptions/checkout` in the payment module).
+- **No backend for the client placement pipeline** (shortlist → interview rounds → offer → sign →
+  placed) → `client/TalentPool.jsx`, `student/Interviews.jsx`, most of `hr/Documents.jsx` stay on
+  `utils/placementPipeline.js`.
+- **Lead pipeline**: `/leads` has no per-lead detail / activity-list GET / DELETE →
+  `leadgen/Pipeline.jsx` + `leadgen/Targets.jsx` stay mock.
+- **BA docs are text-only** (no file upload) + **no resource-plan endpoint** → `ba/Documents.jsx`,
+  `ba/ResourcePlanning.jsx`, `ba/ClientReview.jsx` stay mock.
+- **Developer projects / bug challenges** — file-upload + in-browser test runner, unmigrated.
+- **`student/Assessments.jsx`** — separate quiz engine (`/api/v1/assessments`), not yet wired.
 
-- **studentService** — reads wired: video lessons + quiz → `/api/v1/lessons` (+ `/{id}/quiz`,
-  `/progress`, `/quiz/submit`, B1.4); `getCertificates` → `/certificates/me`; `getMyPipStatus` →
-  `/pip/me` (404→null); `getPlans` → `/plans` (falls back to static list); new `getMySubscription`
-  → `/subscriptions/me`; new `getMyInterviews` → `/interviews/me` (B1.8, no page yet).
-  **`student/Learning.jsx`** patched — `finishQuiz` now sends a positional answer-index array and
-  uses the server score (no client-side answer key; quiz % cached in `msh_lesson_quiz_scores`).
-  **Still MOCK:** sprint board / tasks / submissions (no "my tasks across sprints" endpoint —
-  needs batch→sprint→task fan-out), assessments + bug challenges, resume upload, `subscribeToPlan`
-  (no checkout endpoint on the subscription controller).
-- **trainerService** — `getBatches` → `/api/v1/batches` (`toFeBatch`: trackCode↔FE track name,
-  enrolledCount→students, ACTIVE/PLANNED→Active/Onboarding, health=null); `createBatch` →
-  `POST /batches` (FE track→trackCode, capacity defaults 20); new `getReviewQueue` →
-  `/reviews/queue`. **Still MOCK:** `getSprints`/`createSprint`/`getSprintTasks`/`createTask`/
-  `reviewSubmission` (need a coordinated batch↔sprint↔task rewrite — name→uuid, no epic/userStory
-  fields on the API), `getAnalytics`, `getPipCases`/`triggerManualPip` (PIP is nightly-job
-  triggered — only `POST /pip/{id}/review` exists), `approveGraduation` (→ needs
-  `/batches/{id}/students/{uuid}/graduate` + `/certificates/issue`), trainer student mgmt.
+**Cleanup deferred until the blocked features land**: delete `mockData.js` / `pipEngine.js` /
+`placementPipeline.js`; remove unused `clientService` `TALENT_POOL` import + `trainerService`
+`computeBatchHealth`; drop dead Register plan/payment handlers.
 
-**STILL TO DO — services (next session):**
-1. **trainer sprint/task planning** — the interlocked rewrite: `getSprints`+`createSprint`+
-   `activateSprint` (`/api/v1/sprints`, `POST /{id}/activate`), `getSprintTasks`+`createTask`+
-   `/tasks/{id}/assign`, plus `getStudentsForBatch` from `/batches/{id}` roster. Touches
-   `trainer/Sprints.jsx`, `SprintPlanning.jsx`, and `student/Tasks.jsx`/`Submissions.jsx` on the
-   student side. Backend has NO epic/userStory/acceptanceCriteria — drop or sidecar them.
-2. **trainer CodeReview** — `getReviewQueue` (done) → per task `GET /submissions?taskId=` → pick
-   latest → `POST /api/v1/reviews {submissionId, score 1-10, verdict APPROVED|CHANGES_REQUESTED}`.
-3. **HR leave/payroll/attendance** — `/api/v1/hr/leaves` + `/hr/payroll` shapes, then
-   `hr/AttendanceLeave.jsx` + `hr/Payroll.jsx` + `ApplyLeaveWidget.jsx`.
-4. **trainer analytics / PIP / graduation** — analytics has no aggregate endpoint (derive client
-   side from real sprints/tasks, or add a Part B endpoint); PIP list → `GET /api/v1/pip`,
-   review → `POST /pip/{id}/review`; graduation → `/batches/{id}/students/{uuid}/graduate` +
-   `/certificates/issue`.
-5. Register wizard reorder, OAuth backend redirect.
-6. Delete `mockData.js` / `pipEngine.js` / `placementPipeline.js` once nothing imports them
-   (`clientService.js` still imports `TALENT_POOL` unused; `trainerService.computeBatchHealth` now
-   dead — safe, remove later).
-   **Pattern reminder:** most old services are `getX()` + `saveX(wholeList)` which does NOT map to
-   REST — each migration = rewrite the consuming page's state (load + per-item create/update/delete).
+**Recommended Part B round 2 (unblocks most of the above), smallest first:**
+1. `GET /api/v1/batches/{id}/students` → `[{userUuid, fullName, status}]` (PM/ADMIN). Unblocks
+   task assignment, graduation, standups, batch enrolment.
+2. `GET /api/v1/hr/leaves` (+ filters) and `GET /api/v1/hr/documents` list endpoints.
+3. `GET /api/v1/trainer/analytics?batchId=` (velocity + quiz trend + per-student rows).
+4. `POST /api/v1/subscriptions/checkout` surfaced on SubscriptionController (or document that the
+   FE must call the payment module directly).
+5. Client placement-pipeline module (biggest) — or decide it stays FE-only.
 
-### Docs — integrated testing flow (2026-09-03)
-`docs/integrated-testing-flow.md` (NEW) — UI-driven E2E companion to `testing-flow.md` (which is
-API-only). Setup (backend `dev` + frontend `npm run dev` + vite proxy), a **wired-vs-mock matrix
-per screen**, then browser walkthroughs (Flows A–I) for every wired path: auth, notifications,
-admin users/plans/payments/coupons/audit, developer resources/lessons+quiz/banks/requirement-docs,
-lead campaigns, BA meetings, client talent pool, HR onboarding + exit/disciplinary — each step
-names the page, the click, the exact endpoint fired, what to verify, and an API/DB cross-check.
-Ends with an 11-point regression checklist. Update it as more services migrate.
-2. **Page data bindings** — ~90 `src/pages/**` files read mock-shaped blobs (`user.batch` string,
-   `user.subscription`, invented camelCase). Remap to real DTOs (`uuid`, ISO dates, enum strings,
-   `PageResponse`).
-3. **Register wizard (D2 Hybrid)** — `src/pages/auth/Register.jsx` still collects payment then
-   creates ACTIVE. Reorder: register → verify-email → login → `/student/subscription` checkout;
-   add a route guard forcing checkout before the student dashboard unlocks. `AuthContext.register`
-   already returns `{needsEmailVerification}` (no auto-login).
-4. **OAuth loop** — backend `OAuth2AuthenticationSuccessHandler` currently writes a JSON envelope;
-   it must **redirect** to `${FE}/auth/oauth/callback?accessToken=..&refreshToken=..&expiresIn=..`
-   (the callback page is ready for exactly those params). This is a small backend change.
-5. **Multipart** — `src/pages/student/Profile.jsx` resume + `projects/{id}/assets` still
-   base64→localStorage; switch to `apiClient.requestMultipart` (`POST /users/me/resume` field
-   name `file`; `POST /projects/{id}/assets`).
-6. **Delete mock layer** — `mockData.js`, `pipEngine.js`, `placementPipeline.js`, all `msh_*`
-   localStorage, once services are migrated.
-7. Backend nicety (optional): add `roles` + `status` to `UserProfileResponse` so the FE doesn't
-   have to decode the JWT.
+### Docs
+- `docs/testing-flow.md` — API-only E2E (Postman), Flows 1–22, per-step auth tags.
+- `docs/integrated-testing-flow.md` — UI-driven E2E companion: wired-vs-mock matrix per screen +
+  browser walkthroughs. **Needs a refresh** to add the screens wired after Flow L (student sprint
+  board, submissions, resume/profile, trainer sprints/tasks/code-review/PIP, HR payroll, shared
+  Settings, D2 register, OAuth fragment flow).
+- `docs/API-Documentation.md` regenerated 2026-09-03; `docs/openapi.json` still predates Flows
+  12–22 (needs a running-app re-export).
 
----
 
 ## Contract cheatsheet (from gap report Part C)
 - Roles: `student↔STUDENT`, `trainer↔TRAINER_PM`, `developer↔DEVELOPER`, `lead_generator↔LEAD_GEN`,
@@ -269,14 +252,13 @@ Ends with an 11-point regression checklist. Update it as more services migrate.
 ---
 
 ## Next session starts with
-Continue **Frontend Part A**. Nothing tested in a browser yet — all migrations are build-verified
-only (`npm run build` green, 2796 modules). Next targets in order (details in "STILL TO DO —
-services (next session)"):
-1. **trainer sprint/task planning** — the interlocked `/api/v1/sprints` + `/api/v1/tasks` rewrite
-   (also unblocks `student/Tasks.jsx` + `Submissions.jsx`).
-2. **trainer CodeReview** — `getReviewQueue` is done; add submission lookup + `POST /reviews`.
-3. HR leave/payroll/attendance.
-4. trainer analytics / PIP / graduation; Register wizard reorder; OAuth backend redirect; delete
-   the mock layer.
-Keep `docs/integrated-testing-flow.md` current as services migrate.
-Frontend HEAD: `9b41df3`. Backend HEAD: `<this commit>` (docs; code HEAD `1761ae9`).
+**FE integration against the current backend is as complete as it can be** — everything left is
+BLOCKED on missing endpoints (see the "BLOCKED" list in the FRONTEND section). Two paths:
+- **Build Part B round 2** (the 5 endpoints listed under "Recommended Part B round 2"), starting
+  with `GET /api/v1/batches/{id}/students` — that one alone unblocks task assignment, graduation,
+  standups and batch enrolment.
+- OR decide the placement pipeline + a few others stay FE-only, then do the mock-layer cleanup.
+Also outstanding, low-risk: wire `student/Assessments.jsx` to `/api/v1/assessments` (the quiz
+engine that predates this session).
+Frontend HEAD `fd63107`. Backend code HEAD `bb09501` (OAuth fragment redirect). `README.md` still
+has the user's uncommitted Razorpay-test-key edit — never `git add -A`.
