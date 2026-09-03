@@ -14,8 +14,8 @@ import { Input, Select, Textarea } from "../../components/ui/FormField";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import {
   getLeads, createLead, updateLead, updateLeadStage, deleteLead,
-  logInteraction, checkDuplicateLead, bulkImportLeads,
-  PREAPPROVED_WHATSAPP_TEMPLATES, saveLeadsToStorage
+  logInteraction, checkDuplicateLead, bulkImportLeads, getLeadActivities,
+  isBackwardStage, PREAPPROVED_WHATSAPP_TEMPLATES
 } from "../../services/crmService";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required, isPhone, isEmail } from "../../utils/validators";
@@ -30,14 +30,13 @@ const PIPELINE_STAGES = [
   "Won / Enrolled"
 ];
 
+// The five sources the backend LeadSource enum supports.
 const LEAD_SOURCES = [
   "Landing Page",
   "College Outreach",
   "Corporate Inquiry",
-  "Instagram Ads",
-  "Google Search",
-  "LinkedIn Campaign",
-  "Referral"
+  "Referral",
+  "Walk-in"
 ].map((s) => ({ value: s, label: s }));
 
 const LEAD_TYPES = [
@@ -79,6 +78,8 @@ export default function LeadPipeline() {
   // Interaction History / Call Logging Drawer Modal
   const [interactionOpen, setInteractionOpen] = useState(false);
   const [interactionLead, setInteractionLead] = useState(null);
+  const [activityHistory, setActivityHistory] = useState([]);
+  const [activityLoading, setActivityLoading] = useState(false);
   const [logChannel, setLogChannel] = useState("Call");
   const [callOutcome, setCallOutcome] = useState("Connected");
   const [interactionNotes, setInteractionNotes] = useState("");
@@ -101,13 +102,41 @@ export default function LeadPipeline() {
     load();
   }, []);
 
-  // Stage change
+  // Stage change (Kanban drag). The backend enforces: no stage-skipping, a
+  // reason for any backward move, and the converted student's account for
+  // "Won / Enrolled" — so gather those before firing the request.
   const move = async (leadId, targetStage) => {
-    const updated = leads.map((l) => (l.id === leadId ? { ...l, stage: targetStage, updatedAt: new Date().toISOString().slice(0, 10) } : l));
-    setLeads(updated);
-    saveLeadsToStorage(updated);
-    await updateLeadStage(leadId, targetStage);
-    notify(`Lead moved to "${targetStage}".`, { type: "success" });
+    const lead = leads.find((l) => l.id === leadId);
+    if (!lead || lead.stage === targetStage) return;
+
+    const opts = {};
+    if (isBackwardStage(lead.stage, targetStage)) {
+      const reason = window.prompt(`Moving "${lead.name}" back to "${targetStage}". Reason for the move?`);
+      if (!reason || !reason.trim()) {
+        notify("A reason is required to move a lead backward.", { type: "warning" });
+        return;
+      }
+      opts.reason = reason.trim();
+    }
+    if (targetStage === "Won / Enrolled") {
+      const email = window.prompt(
+        `Mark "${lead.name}" as enrolled.\nEnter the email address the student registered their account with:`,
+        lead.email || ""
+      );
+      if (!email || !email.trim()) return;
+      opts.convertedUserEmail = email.trim();
+    }
+
+    const prev = leads;
+    setLeads((cur) => cur.map((l) => (l.id === leadId ? { ...l, stage: targetStage } : l)));
+    try {
+      const saved = await updateLeadStage(leadId, targetStage, opts);
+      setLeads((cur) => cur.map((l) => (l.id === leadId ? { ...l, ...saved } : l)));
+      notify(`Lead moved to "${targetStage}".`, { type: "success" });
+    } catch (err) {
+      setLeads(prev); // roll back the optimistic move
+      notify(err.message || "Could not move the lead.", { type: "error", title: "Move failed" });
+    }
   };
 
   // Realtime Deduplication check on typing
@@ -134,7 +163,7 @@ export default function LeadPipeline() {
   // Create Lead Submit
   const handleCreateSubmit = async (e) => {
     e.preventDefault();
-    const validation = validateForm(values, { name: [required], phone: [required, isPhone] });
+    const validation = validateForm(values, { name: [required], phone: [required, isPhone], email: [required, isEmail] });
     setErrors(validation);
     if (Object.keys(validation).length) return;
 
@@ -231,6 +260,14 @@ export default function LeadPipeline() {
   };
 
   // Interaction Drawer
+  const loadActivityHistory = (leadId) => {
+    setActivityLoading(true);
+    getLeadActivities(leadId)
+      .then(setActivityHistory)
+      .catch(() => setActivityHistory([]))
+      .finally(() => setActivityLoading(false));
+  };
+
   const openInteractionModal = (lead) => {
     setInteractionLead(lead);
     setLogChannel("Call");
@@ -238,6 +275,8 @@ export default function LeadPipeline() {
     setInteractionNotes("");
     setFollowUpDate(lead.followUpDate || "");
     setZoomLink("");
+    setActivityHistory([]);
+    loadActivityHistory(lead.id);
     setInteractionOpen(true);
   };
 
@@ -258,7 +297,8 @@ export default function LeadPipeline() {
     });
 
     notify(`Interaction logged for ${interactionLead.name}.`, { type: "success" });
-    setInteractionOpen(false);
+    setInteractionNotes("");
+    loadActivityHistory(interactionLead.id);
     load();
   };
 
@@ -284,25 +324,50 @@ export default function LeadPipeline() {
     setErrors(validation);
     if (Object.keys(validation).length) return;
 
-    await updateLead(editingLead.id, {
-      name: editValues.name,
-      phone: editValues.phone,
-      email: editValues.email,
-      type: editValues.type,
-      source: editValues.source,
-      stage: editValues.stage,
-      dealValue: editValues.dealValue ? Number(editValues.dealValue) : null
-    });
+    // Moving to "Won / Enrolled" from the edit modal needs the student's account,
+    // same as the board drag.
+    const stageChanged = editValues.stage && editValues.stage !== editingLead.stage;
+    const opts = {};
+    if (stageChanged && editValues.stage === "Won / Enrolled") {
+      const email = window.prompt(
+        `Mark "${editingLead.name}" as enrolled.\nEnter the email the student registered with:`,
+        editingLead.email || ""
+      );
+      if (!email || !email.trim()) return;
+      opts.convertedUserEmail = email.trim();
+    }
+    if (stageChanged && isBackwardStage(editingLead.stage, editValues.stage)) {
+      const reason = window.prompt("Reason for moving this lead backward?");
+      if (!reason || !reason.trim()) return;
+      opts.reason = reason.trim();
+    }
 
-    notify("Lead updated successfully.", { type: "success" });
-    setEditModalOpen(false);
-    load();
+    try {
+      await updateLead(editingLead.id, {
+        name: editValues.name,
+        type: editValues.type,
+        stage: stageChanged ? editValues.stage : undefined,
+        dealValue: editValues.dealValue ? Number(editValues.dealValue) : null,
+        ...opts,
+      });
+      notify("Lead updated successfully.", { type: "success" });
+      setEditModalOpen(false);
+      load();
+    } catch (err) {
+      notify(err.message || "Could not update the lead.", { type: "error", title: "Update failed" });
+    }
   };
 
   const handleDelete = async (id) => {
     const l = leads.find((x) => x.id === id);
-    await deleteLead(id);
-    notify(`Lead "${l?.name}" removed.`, { type: "success" });
+    if (!window.confirm(`Archive lead "${l?.name}"? It drops off the board but its history is kept.`)) return;
+    try {
+      await deleteLead(id);
+      notify(`Lead "${l?.name}" archived.`, { type: "success" });
+    } catch (err) {
+      notify(err.message || "Could not archive the lead.", { type: "error" });
+      return;
+    }
     load();
   };
 
@@ -724,10 +789,12 @@ export default function LeadPipeline() {
             <div>
               <h4 className="text-xs font-bold uppercase tracking-wider text-ink-700 mb-2">Past Interaction Timeline</h4>
               <div className="flex flex-col divide-y divide-border border border-border rounded-xl max-h-[220px] overflow-y-auto bg-white">
-                {(!interactionLead.interactions || interactionLead.interactions.length === 0) ? (
+                {activityLoading ? (
+                  <p className="text-xs text-ink-400 p-4 text-center">Loading history…</p>
+                ) : activityHistory.length === 0 ? (
                   <p className="text-xs text-ink-400 p-4 text-center">No interactions recorded yet. Log your first call above.</p>
                 ) : (
-                  interactionLead.interactions.map((it, idx) => (
+                  activityHistory.map((it, idx) => (
                     <div key={idx} className="p-3 flex items-start gap-3 hover:bg-cream-50/50">
                       <div className="flex h-7 w-7 rounded-full bg-primary-50 text-primary-700 items-center justify-center shrink-0 mt-0.5">
                         {it.channel === "Call" ? <Phone size={12} /> : it.channel === "WhatsApp" ? <MessageCircle size={12} /> : it.channel === "Zoom Demo" ? <Video size={12} /> : <Mail size={12} />}
@@ -763,12 +830,12 @@ export default function LeadPipeline() {
         <form className="flex flex-col gap-4 text-left font-sans" onSubmit={handleEditSave}>
           <Input label="Name" required value={editValues.name} onChange={(e) => setEditValues((v) => ({ ...v, name: e.target.value }))} error={errors.name} />
           <div className="grid sm:grid-cols-2 gap-4">
-            <Input label="Phone" required value={editValues.phone} onChange={(e) => setEditValues((v) => ({ ...v, phone: e.target.value }))} error={errors.phone} />
-            <Input label="Email" value={editValues.email} onChange={(e) => setEditValues((v) => ({ ...v, email: e.target.value }))} error={errors.email} />
+            <Input label="Phone" value={editValues.phone} disabled hint="Contact details identify the lead — re-capture to change." />
+            <Input label="Email" value={editValues.email} disabled />
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
             <Select label="Type" options={LEAD_TYPES} value={editValues.type} onChange={(e) => setEditValues((v) => ({ ...v, type: e.target.value }))} />
-            <Select label="Source" options={LEAD_SOURCES} value={editValues.source} onChange={(e) => setEditValues((v) => ({ ...v, source: e.target.value }))} />
+            <Input label="Source" value={editValues.source} disabled hint="Set at capture." />
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
             <Select label="Stage" options={PIPELINE_STAGES.map((s) => ({ value: s, label: s }))} value={editValues.stage} onChange={(e) => setEditValues((v) => ({ ...v, stage: e.target.value }))} />

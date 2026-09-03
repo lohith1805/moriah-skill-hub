@@ -1,15 +1,18 @@
-import { mockRequest, apiClient } from "./apiClient";
-
-const DEFAULT_LEADS = [];
+import { apiClient } from "./apiClient";
 
 // ---------------------------------------------------------------------------
-// Lead campaigns — WIRED to the backend (B1.7: GET/POST/PUT/DELETE
-// /api/v1/leads/campaigns, LEAD_GEN / ADMIN). DELETE deactivates (status =
-// CANCELLED), it never row-deletes. The rest of this file (lead pipeline,
-// targets, interaction logging) is still the localStorage mock — the backend
-// lead endpoints exist but expose no per-lead detail / activity-list / delete
-// yet, so the Pipeline page can't be fully migrated without a Part B add.
+// CRM — fully WIRED to the backend crm/ module.
+//   Campaigns : GET/POST/PUT/DELETE /api/v1/leads/campaigns   (DELETE = deactivate)
+//   Leads     : GET/POST /api/v1/leads, GET/PUT/DELETE /api/v1/leads/{id},
+//               PUT /api/v1/leads/{id}/status, GET/POST /api/v1/leads/{id}/activities
+//               (DELETE = soft archive; the row + its history stay)
+//   Targets   : GET /api/v1/leads/targets/me, GET /api/v1/leads/targets/leaderboard
+// All lead endpoints are LEAD_GEN / ADMIN only. The public landing-page capture
+// form on pages/public/Home.jsx still writes localStorage — there is no
+// unauthenticated inbound-lead endpoint yet.
 // ---------------------------------------------------------------------------
+
+const asRows = (res) => (Array.isArray(res) ? res : res?.content ?? []);
 
 // Backend LeadCampaignChannel — the UI shows the label, stores the enum.
 export const CAMPAIGN_CHANNELS = [
@@ -114,32 +117,127 @@ export const PREAPPROVED_WHATSAPP_TEMPLATES = [
   }
 ];
 
-export function readLeadsFromStorage() {
-  try {
-    const raw = localStorage.getItem("msh_crm_leads");
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    // fallback
-  }
-  localStorage.setItem("msh_crm_leads", JSON.stringify(DEFAULT_LEADS));
-  return DEFAULT_LEADS;
+// ---- FE <-> backend enum mapping -----------------------------------------
+// The Kanban board's stage labels and the backend LeadStatus enum.
+const STAGE_TO_STATUS = {
+  "New Lead": "NEW",
+  Contacted: "CONTACTED",
+  "Demo Scheduled": "DEMO_SCHEDULED",
+  "Plan Selected": "COUNSELLING_DONE",
+  "Payment Pending": "PAYMENT_PENDING",
+  "Won / Enrolled": "ENROLLED",
+  Lost: "LOST",
+};
+const STATUS_TO_STAGE = {
+  NEW: "New Lead",
+  CONTACTED: "Contacted",
+  DEMO_SCHEDULED: "Demo Scheduled",
+  COUNSELLING_DONE: "Plan Selected",
+  PAYMENT_PENDING: "Payment Pending",
+  ENROLLED: "Won / Enrolled",
+  LOST: "Lost",
+};
+// Ordinal order used to detect a backward pipeline move (which the backend
+// requires a reason for).
+const STAGE_ORDER = ["New Lead", "Contacted", "Demo Scheduled", "Plan Selected", "Payment Pending", "Won / Enrolled"];
+
+const FE_SOURCE_TO_ENUM = {
+  "Landing Page": "LANDING_PAGE",
+  "College Outreach": "COLLEGE",
+  "Corporate Inquiry": "CORPORATE",
+  Referral: "REFERRAL",
+  "Walk-in": "WALK_IN",
+};
+const ENUM_TO_FE_SOURCE = {
+  LANDING_PAGE: "Landing Page",
+  COLLEGE: "College Outreach",
+  CORPORATE: "Corporate Inquiry",
+  REFERRAL: "Referral",
+  WALK_IN: "Walk-in",
+};
+export const LEAD_SOURCES = Object.keys(FE_SOURCE_TO_ENUM).map((s) => ({ value: s, label: s }));
+
+const FE_CHANNEL_TO_ACT = {
+  Call: "CALL",
+  Email: "EMAIL",
+  WhatsApp: "WHATSAPP",
+  "Zoom Demo": "MEETING",
+  Meeting: "MEETING",
+  "In-Person Meeting": "MEETING",
+  Note: "NOTE",
+};
+const ACT_TO_FE_CHANNEL = {
+  CALL: "Call",
+  EMAIL: "Email",
+  WHATSAPP: "WhatsApp",
+  MEETING: "Meeting",
+  NOTE: "Note",
+  STATUS_CHANGE: "Status Change",
+  WHATSAPP_INBOUND: "WhatsApp (inbound)",
+};
+
+// Backend LeadResponse -> the flat shape every leadgen page already reads.
+function toFeLead(r) {
+  return {
+    id: r.id,
+    name: r.name,
+    email: r.email || "",
+    phone: r.phone || "",
+    type: r.leadType || "B2C",
+    source: ENUM_TO_FE_SOURCE[r.source] || r.source,
+    stage: STATUS_TO_STAGE[r.status] || "New Lead",
+    status: r.status,
+    assignedAgent: r.assignedAgentName || "Unassigned",
+    assignedAgentUuid: r.assignedAgentUuid || null,
+    dealValue: r.dealValue != null ? Number(r.dealValue) : null,
+    lostReason: r.lostReason || "",
+    convertedUserUuid: r.convertedUserUuid || null,
+    followUpDate: r.nextFollowUpAt ? r.nextFollowUpAt.slice(0, 10) : null,
+    createdAt: r.createdAt ? r.createdAt.slice(0, 10) : "",
+    updatedAt: r.updatedAt ? r.updatedAt.slice(0, 10) : "",
+    interactions: [], // hydrated on demand via getLeadActivities()
+  };
 }
 
-export function saveLeadsToStorage(leads) {
-  localStorage.setItem("msh_crm_leads", JSON.stringify(leads));
+function toFeActivity(a) {
+  return {
+    id: a.id,
+    channel: ACT_TO_FE_CHANNEL[a.activityType] || a.activityType,
+    outcome: a.outcome || "",
+    notes: a.notes || "",
+    timestamp: a.occurredAt,
+    followUpDate: a.nextFollowUpAt ? a.nextFollowUpAt.slice(0, 10) : null,
+    agent: a.agentName || "System",
+  };
 }
 
-export async function getLeads() {
-  const leads = readLeadsFromStorage();
-  return mockRequest(leads);
+// A small cache of the last list, so the create form's live duplicate hint can
+// stay synchronous (the backend also dedupes on POST — this is just UX).
+let _leadCache = [];
+
+export async function getLeads({ stage, source, agentUuid, page = 0, size = 100 } = {}) {
+  const params = { page, size };
+  if (stage && STAGE_TO_STATUS[stage]) params.status = STAGE_TO_STATUS[stage];
+  if (source && FE_SOURCE_TO_ENUM[source]) params.source = FE_SOURCE_TO_ENUM[source];
+  if (agentUuid) params.agentUuid = agentUuid;
+  const rows = asRows(await apiClient.get("/leads", params)).map(toFeLead);
+  _leadCache = rows;
+  return rows;
 }
 
+export async function getLead(id) {
+  return toFeLead(await apiClient.get(`/leads/${id}`));
+}
+
+export async function getLeadActivities(id) {
+  return asRows(await apiClient.get(`/leads/${id}/activities`, { size: 100 })).map(toFeActivity);
+}
+
+// Synchronous pre-submit hint. `identifier` is { phone } or { email }.
 export function checkDuplicateLead(identifier) {
-  const leads = readLeadsFromStorage();
   const phoneClean = identifier.phone ? identifier.phone.replace(/[^0-9]/g, "") : "";
   const emailClean = identifier.email ? identifier.email.trim().toLowerCase() : "";
-
-  return leads.find((l) => {
+  return _leadCache.find((l) => {
     const lPhone = (l.phone || "").replace(/[^0-9]/g, "");
     const lEmail = (l.email || "").trim().toLowerCase();
     return (phoneClean && lPhone && lPhone === phoneClean) || (emailClean && lEmail && lEmail === emailClean);
@@ -147,173 +245,146 @@ export function checkDuplicateLead(identifier) {
 }
 
 export async function createLead(payload) {
-  const leads = readLeadsFromStorage();
-  const duplicate = checkDuplicateLead({ phone: payload.phone, email: payload.email });
-  if (duplicate) {
-    throw new Error(`Duplicate Lead found: "${duplicate.name}" (${duplicate.phone || duplicate.email}) already exists in stage "${duplicate.stage}".`);
-  }
-
-  const newLead = {
-    id: `l_${Date.now()}`,
+  const email = (payload.email || "").trim();
+  if (!email) throw new Error("An email address is required to capture a lead.");
+  const body = {
     name: payload.name,
+    email,
     phone: payload.phone,
-    email: payload.email || "",
-    type: payload.type || "Student (B2C)",
-    source: payload.source || "Landing Page",
-    stage: payload.stage || "New Lead",
-    assignedAgent: payload.assignedAgent || "Unassigned",
-    dealValue: payload.dealValue ? Number(payload.dealValue) : null,
-    createdAt: new Date().toISOString().slice(0, 10),
-    updatedAt: new Date().toISOString().slice(0, 10),
-    followUpDate: payload.followUpDate || null,
-    interactions: []
+    source: FE_SOURCE_TO_ENUM[payload.source] || "LANDING_PAGE",
+    leadType: (payload.type || "B2C").slice(0, 50),
+    institution: payload.institution || payload.college || null,
+    dealValue: payload.dealValue === "" || payload.dealValue == null ? null : Number(payload.dealValue),
   };
-
-  const updated = [newLead, ...leads];
-  saveLeadsToStorage(updated);
-  return mockRequest(newLead, { delay: 400 });
+  // POST /leads upserts on the email+phone dedupe hash — a second submit for the
+  // same person updates that lead in place, it never creates a duplicate.
+  return toFeLead(await apiClient.post("/leads", body));
 }
 
 export async function bulkImportLeads(leadList) {
-  const existing = readLeadsFromStorage();
   let added = 0;
   let skipped = 0;
-  const newItems = [];
-
   for (const item of leadList) {
-    const isDup = existing.some((l) => {
-      const p1 = (l.phone || "").replace(/[^0-9]/g, "");
-      const p2 = (item.phone || "").replace(/[^0-9]/g, "");
-      const e1 = (l.email || "").trim().toLowerCase();
-      const e2 = (item.email || "").trim().toLowerCase();
-      return (p1 && p2 && p1 === p2) || (e1 && e2 && e1 === e2);
-    });
-
-    if (isDup) {
-      skipped++;
-    } else {
-      const lead = {
-        id: `l_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-        name: item.name,
-        phone: item.phone,
-        email: item.email || "",
-        type: item.type || "Student (B2C)",
-        source: item.source || "Bulk CSV Ingestion",
-        stage: "New Lead",
-        assignedAgent: "Unassigned",
-        dealValue: item.dealValue ? Number(item.dealValue) : null,
-        createdAt: new Date().toISOString().slice(0, 10),
-        updatedAt: new Date().toISOString().slice(0, 10),
-        followUpDate: null,
-        interactions: []
-      };
-      newItems.push(lead);
-      existing.unshift(lead);
+    try {
+      if (!item.email) {
+        skipped++;
+        continue;
+      }
+      await createLead(item);
       added++;
+    } catch {
+      skipped++;
     }
   }
-
-  saveLeadsToStorage(existing);
-  return mockRequest({ added, skipped, total: existing.length });
+  return { added, skipped, total: added + skipped };
 }
 
-export async function updateLead(leadId, updates) {
-  const leads = readLeadsFromStorage();
-  const idx = leads.findIndex((l) => l.id === leadId);
-  if (idx === -1) throw new Error("Lead not found");
-
-  leads[idx] = {
-    ...leads[idx],
-    ...updates,
-    updatedAt: new Date().toISOString().slice(0, 10)
-  };
-
-  saveLeadsToStorage(leads);
-  return mockRequest(leads[idx]);
+// Field edit (name / type / institution / dealValue) via PUT /leads/{id};
+// a `stage` change is routed to the status endpoint. `source` and contact
+// details are not editable server-side and are ignored here.
+export async function updateLead(leadId, changes) {
+  if (changes.stage) {
+    await updateLeadStage(leadId, changes.stage, {
+      reason: changes.reason,
+      lostReason: changes.lostReason,
+      convertedUserUuid: changes.convertedUserUuid,
+      convertedUserEmail: changes.convertedUserEmail,
+    });
+  }
+  const body = {};
+  if (changes.name != null) body.name = changes.name;
+  if (changes.type != null) body.leadType = String(changes.type).slice(0, 50);
+  if (changes.institution != null) body.institution = changes.institution;
+  if (changes.dealValue !== undefined) {
+    body.dealValue = changes.dealValue === "" || changes.dealValue == null ? null : Number(changes.dealValue);
+  }
+  if (Object.keys(body).length === 0) return getLead(leadId);
+  return toFeLead(await apiClient.put(`/leads/${leadId}`, body));
 }
 
-export async function updateLeadStage(leadId, stage) {
-  return updateLead(leadId, { stage });
+// opts: { reason, lostReason, convertedUserUuid, convertedUserEmail }
+export async function updateLeadStage(leadId, feStage, opts = {}) {
+  const newStatus = STAGE_TO_STATUS[feStage];
+  if (!newStatus) throw new Error(`Unknown pipeline stage: ${feStage}`);
+  const body = { newStatus };
+  if (opts.reason) body.reason = opts.reason;
+  if (newStatus === "LOST") body.lostReason = opts.lostReason || opts.reason || "Marked lost";
+  if (newStatus === "ENROLLED") {
+    if (!opts.convertedUserUuid && !opts.convertedUserEmail) {
+      throw new Error(
+        "Marking a lead as enrolled needs the student's account. Enter the email they registered with when prompted."
+      );
+    }
+    if (opts.convertedUserUuid) body.convertedUserUuid = opts.convertedUserUuid;
+    if (opts.convertedUserEmail) body.convertedUserEmail = opts.convertedUserEmail;
+  }
+  return toFeLead(await apiClient.put(`/leads/${leadId}/status`, body));
 }
 
+// True forward/backward detection so a backward drag can carry the reason the
+// backend requires.
+export function isBackwardStage(fromStage, toStage) {
+  const a = STAGE_ORDER.indexOf(fromStage);
+  const b = STAGE_ORDER.indexOf(toStage);
+  return a > -1 && b > -1 && b < a;
+}
+
+// DELETE = soft archive server-side.
 export async function deleteLead(leadId) {
-  const leads = readLeadsFromStorage();
-  const updated = leads.filter((l) => l.id !== leadId);
-  saveLeadsToStorage(updated);
-  return mockRequest(true);
+  await apiClient.del(`/leads/${leadId}`);
+  return true;
 }
 
 export async function logInteraction(leadId, interaction) {
-  const leads = readLeadsFromStorage();
-  const idx = leads.findIndex((l) => l.id === leadId);
-  if (idx === -1) throw new Error("Lead not found");
-
-  const logEntry = {
-    id: `i_${Date.now()}`,
-    channel: interaction.channel, // Call, WhatsApp, Zoom Demo, Email, Note
-    outcome: interaction.outcome || "Logged",
-    notes: interaction.notes || "",
-    timestamp: new Date().toISOString()
+  const activityType = FE_CHANNEL_TO_ACT[interaction.channel] || "NOTE";
+  const body = {
+    activityType,
+    outcome: interaction.outcome || null,
+    notes: interaction.notes || null,
+    nextFollowUpAt: interaction.followUpDate
+      ? new Date(`${interaction.followUpDate}T09:00:00`).toISOString()
+      : null,
+    occurredAt: new Date().toISOString(),
+    templateCode:
+      activityType === "WHATSAPP"
+        ? interaction.templateCode || interaction.templateId || "generic_followup"
+        : null,
   };
-
-  const currentInteractions = leads[idx].interactions || [];
-  leads[idx] = {
-    ...leads[idx],
-    interactions: [logEntry, ...currentInteractions],
-    updatedAt: new Date().toISOString().slice(0, 10),
-    ...(interaction.followUpDate !== undefined ? { followUpDate: interaction.followUpDate } : {})
-  };
-
-  saveLeadsToStorage(leads);
-  return mockRequest(leads[idx]);
+  return toFeActivity(await apiClient.post(`/leads/${leadId}/activities`, body));
 }
 
 export async function getTargets() {
-  const leads = readLeadsFromStorage();
-  const wonLeads = leads.filter((l) => l.stage === "Won / Enrolled" || l.stage === "Enrolled");
+  const rows = await apiClient.get("/leads/targets/leaderboard");
 
-  // Compute tier-based commission: 5% up to 1L, 8% between 1-3L, 10% above 3L
+  // Tier-based commission on realised pipeline value: 5% up to 1L, 8% 1-3L, 10% above.
   const commissionFor = (revenue) => {
     if (revenue <= 100000) return revenue * 0.05;
     if (revenue <= 300000) return 100000 * 0.05 + (revenue - 100000) * 0.08;
-    return 100000 * 0.05 + 200000 * 0.08 + (revenue - 300000) * 0.10;
+    return 100000 * 0.05 + 200000 * 0.08 + (revenue - 300000) * 0.1;
   };
 
-  // Group leads by their real assigned agent so the leaderboard reflects
-  // actual data rather than fabricated names.
-  const agentNames = Array.from(new Set(leads.map((l) => l.assignedAgent).filter(Boolean)));
-
-  const targets = agentNames.map((agent) => {
-    const agentLeads = leads.filter((l) => l.assignedAgent === agent);
-    const agentWon = agentLeads.filter((l) => l.stage === "Won / Enrolled" || l.stage === "Enrolled");
-    const revenue = agentWon.reduce((acc, l) => acc + (l.dealValue || 0), 0);
-
-    let totalDays = 0;
-    agentWon.forEach((l) => {
-      const created = new Date(l.createdAt || new Date()).getTime();
-      const updated = new Date(l.updatedAt || new Date()).getTime();
-      const diffDays = Math.max(1, Math.round((updated - created) / (1000 * 60 * 60 * 24)));
-      totalDays += diffDays;
-    });
-    const avgVelocityDays = agentWon.length > 0 ? (totalDays / agentWon.length).toFixed(1) : "0";
-
+  return asRows(rows).map((r) => {
+    const revenue = Number(r.pipelineValue || 0);
     return {
-      agent,
+      agent: r.agentName || "—",
       role: "Lead Generator",
-      targetRevenue: 0,
+      targetRevenue: r.revenueTarget != null ? Number(r.revenueTarget) : 0,
       revenue,
-      targetEnrolled: 0,
-      closed: agentWon.length,
+      targetEnrolled: r.conversionsTarget ?? 0,
+      closed: Number(r.converted || 0),
+      totalLeads: Number(r.totalLeads || 0),
       commissionEarned: Math.round(commissionFor(revenue)),
-      callsDone: 0,
-      callsQuota: 0,
+      callsDone: r.callsMade ?? 0,
+      callsQuota: r.callsTarget ?? 0,
       whatsappDone: 0,
       whatsappQuota: 0,
       demosDone: 0,
       demosQuota: 0,
-      conversionVelocity: `${avgVelocityDays} days`
+      conversionVelocity: "—",
     };
   });
+}
 
-  return mockRequest(targets);
+export async function getMyTarget() {
+  return apiClient.get("/leads/targets/me");
 }
