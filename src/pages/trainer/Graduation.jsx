@@ -1,152 +1,83 @@
 import { useEffect, useState } from "react";
-import { GraduationCap, CheckCircle2 } from "lucide-react";
+import { GraduationCap, CheckCircle2, Award } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
 import Table from "../../components/ui/Table";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
+import { Select } from "../../components/ui/FormField";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import { useToast } from "../../context/ToastContext";
-import { approveGraduation, ensureGraduationExitHandoff } from "../../services/trainerService";
-import { useSearchParams } from "react-router-dom";
+import { getBatches, getStudentsForBatch, graduateStudent, issueCertificate } from "../../services/trainerService";
 
-const CANDIDATES = [];
-
-// Real attendance % for a student — the same "msh_attendance_logs" log
-// Standups & Attendance reads/writes to. A student with no logged days yet
-// (just joined, no standup taken) has no signal, so we return null rather
-// than a fabricated number — the table shows "No data yet" instead of a
-// misleading percentage.
-function computeAttendance(studentName) {
-  try {
-    const raw = localStorage.getItem("msh_attendance_logs");
-    const logs = raw ? JSON.parse(raw) : [];
-    const mine = logs.filter((l) => l.name.toLowerCase() === studentName.toLowerCase());
-    if (!mine.length) return null;
-    const present = mine.filter((l) => l.status === "Present").length;
-    return Math.round((present / mine.length) * 100);
-  } catch (e) {
-    return null;
-  }
-}
-
-// Real task completion % — mirrors the same calculation Performance
-// Analytics uses (completed / assigned tasks for that student). No tasks
-// assigned yet means no signal, so we return null instead of guessing.
-function computeTaskCompletion(studentName) {
-  try {
-    const raw = localStorage.getItem("msh_sprint_tasks");
-    const tasks = raw ? JSON.parse(raw) : [];
-    const mine = tasks.filter((t) => t.assignee === studentName);
-    if (!mine.length) return null;
-    const completed = mine.filter((t) => t.status === "Completed").length;
-    return Math.round((completed / mine.length) * 100);
-  } catch (e) {
-    return null;
-  }
-}
-
-// A student already has a certificate on record once a trainer has approved
-// their graduation (see approveGraduation in trainerService). Checking this
-// on load — instead of only tracking "cleared" in local component state —
-// means the "Cleared" badge survives a page refresh instead of reverting to
-// "Pending Review" for a student who was already approved. Returns the
-// certificate itself (or null) so the caller can also read its track/id.
-function findIssuedCertificate(studentName) {
-  try {
-    const raw = localStorage.getItem("msh_certificates");
-    const certs = raw ? JSON.parse(raw) : [];
-    return certs.find((c) => c.studentName?.toLowerCase() === studentName.toLowerCase()) || null;
-  } catch (e) {
-    return null;
-  }
-}
+const STATUS_TONE = {
+  ACTIVE: "info",
+  ON_PIP: "warning",
+  GRADUATED: "success",
+  TERMINATED: "error",
+  REASSIGNED: "neutral",
+};
+const canGraduate = (s) => s.status === "ACTIVE" || s.status === "ON_PIP";
 
 export default function TrainerGraduation() {
-  const [candidates, setCandidates] = useState(() => {
-    const rawList = localStorage.getItem("mORIAH_REGISTERED_USERS");
-    let students = [];
-    if (rawList) {
-      try {
-        const parsed = JSON.parse(rawList);
-        students = parsed.filter((u) => u.role === "student" && u.email !== "ananya.student@moriah.io");
-      } catch (e) {
-        students = [];
-      }
-    }
-    const dynamicCandidates = [...CANDIDATES];
-    students.forEach((s) => {
-      if (!dynamicCandidates.some((c) => c.name.toLowerCase() === s.name.toLowerCase())) {
-        const cert = findIssuedCertificate(s.name);
-        dynamicCandidates.push({
-          id: s.id,
-          name: s.name,
-          batch: s.batch || "FS-Batch-14",
-          attendance: computeAttendance(s.name),
-          taskCompletion: computeTaskCompletion(s.name),
-          cleared: !!cert
-        });
-      }
-    });
-    return dynamicCandidates;
-  });
-  const [confirmId, setConfirmId] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
   const { notify } = useToast();
-  const [searchParams] = useSearchParams();
-  const query = searchParams.get("search")?.toLowerCase() || "";
-  const filteredCandidates = candidates.filter(
-    (c) => c.name.toLowerCase().includes(query) || c.batch.toLowerCase().includes(query)
-  );
+  const [batches, setBatches] = useState([]);
+  const [batchId, setBatchId] = useState("");
+  const [roster, setRoster] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [target, setTarget] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  // Backfill: a student can already be "Cleared" (certificate on record)
-  // from an approval that happened before the HR handoff existed, or from
-  // any other path that issued a certificate without going through this
-  // page's approve button. Without this, that student's certificate exists
-  // but HR's Exit Management never received a record for them. Runs once
-  // on load and is a no-op for anyone already handed off.
   useEffect(() => {
-    candidates.forEach((c) => {
-      if (!c.cleared) return;
-      const cert = findIssuedCertificate(c.name);
-      if (!cert) return;
-      ensureGraduationExitHandoff({
-        studentId: c.id,
-        studentName: c.name,
-        track: cert.track,
-        certificateId: cert.id,
-      });
-    });
+    getBatches()
+      .then((b) => {
+        setBatches(b);
+        if (b.length) setBatchId(String(b[0].id));
+      })
+      .catch((e) => notify(e.message || "Could not load batches.", { type: "error" }));
+  }, [notify]);
+
+  const loadRoster = (id) => {
+    if (!id) return setRoster([]);
+    setLoading(true);
+    getStudentsForBatch(id)
+      .then(setRoster)
+      .catch((e) => notify(e.message || "Could not load the roster.", { type: "error" }))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadRoster(batchId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [batchId]);
 
   const approve = async () => {
+    const student = target;
     setSubmitting(true);
     try {
-      const candidate = candidates.find((c) => c.id === confirmId);
-      // Look up the student's registered email so the issued certificate can
-      // be matched back to their account (Certificates page filters by this).
-      let studentEmail = null;
+      await graduateStudent(batchId, student.userUuid);
+      let cert = null;
       try {
-        const raw = localStorage.getItem("mORIAH_REGISTERED_USERS");
-        const list = raw ? JSON.parse(raw) : [];
-        const match = list.find((u) => u.name.toLowerCase() === candidate?.name.toLowerCase());
-        studentEmail = match?.email || null;
-      } catch (e) {
-        studentEmail = null;
+        cert = await issueCertificate(batchId, student.userUuid, "COMPLETION");
+      } catch (certErr) {
+        // Graduation succeeded; the certificate can be issued separately if a
+        // precondition (all sprints COMPLETED, no open PIP) isn't met yet.
+        notify(
+          `${student.name} graduated. Certificate not issued yet: ${certErr.message || "check the batch's sprints and PIP status."}`,
+          { type: "warning", title: "Graduated" }
+        );
       }
-
-      const trackByBatch = {
-        "FS-Batch-14": "Full-Stack Development",
-        "DA-Batch-07": "Data Analytics",
-        "UX-Batch-05": "Product Design",
-        "BE-Batch-09": "Backend Engineering",
-      };
-
-      await approveGraduation(confirmId, candidate?.name, trackByBatch[candidate?.batch] || "Full-Stack Development", studentEmail);
-      setCandidates((prev) => prev.map((c) => (c.id === confirmId ? { ...c, cleared: true } : c)));
-      notify("Student cleared for graduation — certificate issued and handed off to HR.", { type: "success", title: "Clearance approved" });
-      setConfirmId(null);
+      if (cert) {
+        notify(
+          `${student.name} graduated — certificate ${cert.certificateNumber || ""} issued.`,
+          { type: "success", title: "Clearance approved" }
+        );
+      }
+      setTarget(null);
+      loadRoster(batchId);
+    } catch (err) {
+      notify(err.message || "Could not graduate this student.", { type: "error" });
     } finally {
       setSubmitting(false);
     }
@@ -154,32 +85,80 @@ export default function TrainerGraduation() {
 
   return (
     <div>
-      <PageHeader title="Graduation Approval" subtitle="Final sign-off to unlock certificates and HR exit clearance" breadcrumbs={[{ label: "Dashboard", to: "/trainer/dashboard" }, { label: "Graduation" }]} />
+      <PageHeader
+        title="Graduation Approval"
+        subtitle="Final sign-off — graduates the student and issues their completion certificate"
+        breadcrumbs={[{ label: "Dashboard", to: "/trainer/dashboard" }, { label: "Graduation" }]}
+      />
 
-      <Card>
-        <Table
-          data={filteredCandidates}
-          columns={[
-            { key: "name", header: "Student" },
-            { key: "batch", header: "Batch" },
-            { key: "attendance", header: "Attendance", render: (r) => r.attendance === null ? <span className="text-ink-400">No data yet</span> : `${r.attendance}%` },
-            { key: "taskCompletion", header: "Task Completion", render: (r) => r.taskCompletion === null ? <span className="text-ink-400">No data yet</span> : `${r.taskCompletion}%` },
-            { key: "status", header: "Status", render: (r) => r.cleared ? <Badge tone="success"><CheckCircle2 size={11} /> Cleared — Sent to HR</Badge> : <Badge tone="gold">Pending Review</Badge> },
-            { key: "action", header: "", render: (r) => !r.cleared && (
-              <Button size="sm" icon={GraduationCap} onClick={() => setConfirmId(r.id)}>Approve</Button>
-            ) },
-          ]}
+      <Card className="mb-4">
+        <Select
+          label="Batch"
+          value={batchId}
+          onChange={(e) => setBatchId(e.target.value)}
+          options={batches.map((b) => ({ value: String(b.id), label: `${b.name} · ${b.track}` }))}
+          placeholder={batches.length ? "Select a batch" : "No batches — create one first"}
         />
       </Card>
 
+      <Card>
+        {loading ? (
+          <div className="flex justify-center py-16"><LoadingSpinner label="Loading roster…" /></div>
+        ) : (
+          <Table
+            data={roster}
+            emptyTitle="No students in this batch"
+            emptyHint="Enrol students on the Batches page, then graduate them here."
+            columns={[
+              {
+                key: "name",
+                header: "Student",
+                className: "text-left font-medium text-ink-900",
+                render: (r) => (
+                  <div>
+                    <p className="font-semibold text-ink-900">{r.name}</p>
+                    <p className="text-xs text-ink-500">{r.email}</p>
+                  </div>
+                ),
+              },
+              {
+                key: "finalScore",
+                header: "Final Score",
+                className: "text-left",
+                render: (r) => (r.finalScore != null ? `${r.finalScore}` : <span className="text-ink-400">—</span>),
+              },
+              {
+                key: "status",
+                header: "Status",
+                className: "text-left",
+                render: (r) => <Badge tone={STATUS_TONE[r.status] || "neutral"}>{r.status}</Badge>,
+              },
+              {
+                key: "action",
+                header: "",
+                className: "text-right",
+                render: (r) =>
+                  r.status === "GRADUATED" ? (
+                    <Badge tone="success"><CheckCircle2 size={11} className="inline mr-1" />Graduated</Badge>
+                  ) : canGraduate(r) ? (
+                    <Button size="sm" icon={GraduationCap} onClick={() => setTarget(r)}>Approve</Button>
+                  ) : (
+                    <span className="text-xs text-ink-400">Not eligible</span>
+                  ),
+              },
+            ]}
+          />
+        )}
+      </Card>
+
       <ConfirmDialog
-        open={!!confirmId}
-        onClose={() => setConfirmId(null)}
+        open={!!target}
+        onClose={() => setTarget(null)}
         onConfirm={approve}
         loading={submitting}
-        title="Approve graduation?"
-        description="This unlocks the student's certificate and triggers HR exit clearance workflows."
-        confirmLabel="Approve Clearance"
+        title={target ? `Graduate ${target.name}?` : "Approve graduation?"}
+        description="This sets the student to GRADUATED and issues a completion certificate (requires every sprint in the batch COMPLETED and no open PIP). It cannot be undone."
+        confirmLabel="Approve & issue certificate"
       />
     </div>
   );
