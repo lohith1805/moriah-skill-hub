@@ -9,6 +9,7 @@ import com.moriah.skillhub.auth.dto.LogoutRequest;
 import com.moriah.skillhub.auth.dto.RefreshRequest;
 import com.moriah.skillhub.auth.dto.RegisterRequest;
 import com.moriah.skillhub.auth.dto.RegisterResponse;
+import com.moriah.skillhub.auth.dto.ResendVerificationRequest;
 import com.moriah.skillhub.auth.dto.ResetPasswordRequest;
 import com.moriah.skillhub.auth.dto.TokenPairResponse;
 import com.moriah.skillhub.auth.dto.TwoFactorDisableRequest;
@@ -112,6 +113,15 @@ public class AuthController {
     @Operation(summary = "Verify an email address with the token from the verification link")
     public ResponseEntity<ApiResponse<Void>> verifyEmail(@Valid @RequestBody VerifyEmailRequest request) {
         authService.verifyEmail(request);
+        return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
+    @PostMapping("/resend-verification")
+    @Operation(summary = "Re-send the email-verification link — always responds the same way regardless "
+            + "of whether the address maps to an account still awaiting verification")
+    public ResponseEntity<ApiResponse<Void>> resendVerification(
+            @Valid @RequestBody ResendVerificationRequest request) {
+        authService.resendVerificationEmail(request);
         return ResponseEntity.ok(ApiResponse.success(null));
     }
 

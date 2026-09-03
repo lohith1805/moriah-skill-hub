@@ -8,6 +8,7 @@ import com.moriah.skillhub.auth.dto.LogoutRequest;
 import com.moriah.skillhub.auth.dto.RefreshRequest;
 import com.moriah.skillhub.auth.dto.RegisterRequest;
 import com.moriah.skillhub.auth.dto.RegisterResponse;
+import com.moriah.skillhub.auth.dto.ResendVerificationRequest;
 import com.moriah.skillhub.auth.dto.ResetPasswordRequest;
 import com.moriah.skillhub.auth.dto.TokenPairResponse;
 import com.moriah.skillhub.auth.dto.TwoFactorVerifyRequest;
@@ -278,6 +279,23 @@ public class AuthService {
     public void forgotPassword(ForgotPasswordRequest request) {
         // Same response regardless of whether the email exists — no account-enumeration signal.
         userRepository.findByEmail(request.email()).ifPresent(this::issuePasswordResetToken);
+    }
+
+    /**
+     * Re-sends the email-verification link for an account still in {@link UserStatus#PENDING_VERIFICATION}.
+     * Same non-enumeration contract as {@link #forgotPassword}: silently does nothing when the
+     * address is unknown or already verified, so the caller can't tell the difference. Any earlier
+     * unused link is burned first so only the newest one works. Rate-limiting is the shared
+     * IP-scoped {@code /api/v1/auth/**} bucket (RateLimitFilter) — no per-endpoint throttle here.
+     */
+    @Transactional
+    public void resendVerificationEmail(ResendVerificationRequest request) {
+        userRepository.findByEmail(request.email())
+                .filter(user -> user.getStatus() == UserStatus.PENDING_VERIFICATION)
+                .ifPresent(user -> {
+                    emailVerificationTokenRepository.markAllUnusedAsUsedForUser(user.getId(), Instant.now());
+                    issueEmailVerificationToken(user);
+                });
     }
 
     /**

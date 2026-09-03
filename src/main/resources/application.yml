@@ -73,21 +73,31 @@ spring:
       client:
         registration:
           # "google"/"github" are Spring Boot's recognized CommonOAuth2Provider ids — only
-          # client-id/secret/scope need setting; authorization-uri/token-uri/user-info-uri/
-          # jwk-set-uri all come from the built-in provider defaults. redirect-uri is left at
-          # Spring's own default ({baseUrl}/login/oauth2/code/{registrationId}) internally, but
-          # SecurityConfig's .redirectionEndpoint().baseUri(...) overrides the path the filter
-          # actually matches to build-plan.md feature 05's custom one.
+          # client-id/secret/scope/redirect-uri need setting; authorization-uri/token-uri/
+          # user-info-uri/jwk-set-uri all come from the built-in provider defaults.
+          #
+          # redirect-uri MUST be spelled out here: SecurityConfig's
+          # .redirectionEndpoint().baseUri("/api/v1/auth/oauth2/callback/*") moves the path the
+          # login filter listens on, but it does NOT change the redirect_uri Spring sends to the
+          # provider — that still comes from this property, whose default is
+          # {baseUrl}/login/oauth2/code/{registrationId}. Left at the default, the provider bounces
+          # the browser to /login/oauth2/code/google, which no filter handles, so the callback
+          # dies as a raw 401 "UNAUTHENTICATED" JSON page instead of completing. Pin it to the
+          # custom path so the two halves line up. {baseUrl} expands from the incoming request
+          # (scheme://host:port/context) at authorize time — whatever it resolves to is what must
+          # be listed as an "Authorized redirect URI" in the Google / GitHub OAuth app.
           google:
             client-id: ${GOOGLE_CLIENT_ID}
             client-secret: ${GOOGLE_CLIENT_SECRET}
             scope: openid, profile, email
+            redirect-uri: "{baseUrl}/api/v1/auth/oauth2/callback/google"
           github:
             client-id: ${GITHUB_CLIENT_ID}
             client-secret: ${GITHUB_CLIENT_SECRET}
             # user:email is required to read GithubOAuth2UserService's /user/emails call —
             # GitHub's default profile response omits email when it's set private.
             scope: read:user, user:email
+            redirect-uri: "{baseUrl}/api/v1/auth/oauth2/callback/github"
 
 server:
   port: ${SERVER_PORT:8080}

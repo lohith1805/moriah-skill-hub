@@ -90,7 +90,12 @@ public class SecurityConfig {
             // Marketing landing page: aggregate stats + the anonymous lead-capture form. Both
             // GET-or-single-POST only, non-personal / self-submitted, rate-limited per IP.
             "/api/v1/public/**",
-            "/api/v1/leads/inbound"
+            "/api/v1/leads/inbound",
+            // Spring Security's DEFAULT OAuth2 redirect endpoint. The real one is at
+            // /api/v1/auth/oauth2/callback/* (see oauth2Login below); this path only exists so
+            // OAuth2DefaultCallbackFallbackController can turn a provider that still points at the
+            // old default URI into a friendly SPA redirect instead of a raw 401 JSON page.
+            "/login/oauth2/code/**"
     };
 
     private final CorsProperties corsProperties;

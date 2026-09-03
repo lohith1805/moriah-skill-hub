@@ -96,6 +96,13 @@ The OAuth redirect URI the app expects is always:
 
 Local `baseUrl` = `http://localhost:8080`.
 
+`application.yml` pins each registration's `redirect-uri` to this path. If you instead register
+the Spring-default `{baseUrl}/login/oauth2/code/{google|github}` in the provider console, the
+provider bounces the browser to a path the login filter no longer listens on —
+`OAuth2DefaultCallbackFallbackController` catches it and redirects to the SPA sign-in screen with
+an `oauth_callback_misrouted` error instead of completing the login. Fix the registered URI to the
+`/api/v1/auth/oauth2/callback/...` form above.
+
 ---
 
 ### 3.1 Google OAuth2 — "Sign in with Google"
