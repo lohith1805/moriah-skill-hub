@@ -131,7 +131,7 @@ admin services. `npm install` done (`node_modules` gitignored). **Every commit v
   `getCoupons`/`createCoupon`/`updateCoupon`/`deleteCoupon` → `/admin/coupons` (B1.12).
   Backend enum codes translated; `PageResponse.content` unwrapped.
 
-### FRONTEND — Part A integration status (branch `master`, HEAD `4435d11`)
+### FRONTEND — Part A integration status (branch `master`, HEAD `c33ddb7`)
 
 `npm run build` green after every commit (2796 modules, Node v24). **Nothing browser-tested yet.**
 Commit trail (…`fd63107` student resume+profile) → **BE `04368c0` `GET /batches/{id}/students`
@@ -237,11 +237,22 @@ drop the dead Register plan/payment handlers.
 3. ~~`GET /api/v1/hr/documents`~~ **DONE** (`a689457`).
 4. ~~`POST /subscriptions/checkout`~~ — already existed, now wired (`f8619e5`).
 5. ~~client placement-pipeline module~~ **DONE** (BE `60e58d3`, FE `4435d11`).
-6. Still to do: `student/Assessments.jsx` → server-graded rewrite (endpoints exist; drop the
-   in-browser code runner) — a product call + ~400-line page.
-7. Mock-layer cleanup: `mockData.js` / `pipEngine.js` are still imported by student/trainer
-   services (getPerformanceSummary etc.); `placementPipeline.js` is now backend-backed but keeps
-   its display helpers. Delete once the last mock readers go.
+6. ~~`student/Assessments.jsx`~~ **DONE** (FE `b4d82e9`): server-graded quiz engine —
+   `getAssessments` / `startAssessmentAttempt` / `getAssessmentAttempt` /
+   `submitAssessmentAttempt` vs `/api/v1/assessments*`; the in-browser CODE runner is gone
+   (CODE → textarea → PENDING_MANUAL_GRADING).
+7. **Mock layer — pruned, NOT deletable** (FE `c33ddb7`). Removed the dead trainerService
+   snapshot helpers + `mockData`/`pipEngine` imports there; trimmed student/client imports.
+   `mockData.js` + `pipEngine.js` stay — still-mock features with **no backend at all**:
+   BA documents (file upload) + resource plans, client project briefs
+   (`clientService.getClientProjects`/`submitProjectRequirement`/…), the lead pipeline
+   (`crmService` — `/leads` has no detail/activity-list/delete), developer projects + bug
+   challenges (file upload + in-browser runner), HR staff biometric attendance
+   (`hrService.getClockinLogs`/`logCheckin`), trainer student management
+   (`getAllStudents`/`updateStudentBatch`/`createStudent`), student `getPerformanceSummary` +
+   the `pipEngine` auto-PIP rule engine. Each needs its own Part-B module before the layer goes.
+   Minor leftover: `auth/Register.jsx` still has unreachable step-2/3 plan+payment code
+   (dead since the D2 flow) — safe to strip in a follow-up.
 
 ### Docs
 - `docs/testing-flow.md` — API-only E2E (Postman), Flows 1–22, per-step auth tags.
