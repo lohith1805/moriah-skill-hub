@@ -7,8 +7,7 @@ import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
-import { getDocuments } from "../../services/baService";
-import { getDocReviews, markDocReviewed } from "../../services/developerService";
+import { getDevRequirementDocs, getDocReviews, markDocReviewed } from "../../services/developerService";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
 
@@ -54,7 +53,7 @@ export default function DeveloperClientRequirements() {
 
   const load = () => {
     setLoading(true);
-    Promise.all([getDocuments(), getDocReviews()]).then(([d, r]) => {
+    Promise.all([getDevRequirementDocs(), getDocReviews()]).then(([d, r]) => {
       // Developers build off signed-off requirements — surface Approved
       // docs first, but still show ones still Under Review so nothing is
       // a surprise once BA verifies them.

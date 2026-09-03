@@ -1,4 +1,4 @@
-import { mockRequest } from "./apiClient";
+import { mockRequest, apiClient } from "./apiClient";
 import { PROJECTS } from "./mockData";
 
 const BANK_KEY = "msh_assessment_bank";
@@ -28,26 +28,59 @@ export async function getProjects() {
 // still live under "msh_ba_documents" (owned by baService); this only adds
 // a developer-side "reviewed" flag per doc so BA can see it was checked.
 // ---------------------------------------------------------------------------
-const DEV_DOC_REVIEWS_KEY = "msh_dev_doc_reviews";
+// Backend gap B1.16 — GET /api/v1/dev/requirement-documents + POST /{id}/acknowledge.
+// The document list AND the per-developer "reviewed" flag come from the same
+// endpoint (RequirementDocumentResponse.devReviewedAt / devReviewedByFullName).
 
-export async function getDocReviews() {
-  try {
-    const raw = localStorage.getItem(DEV_DOC_REVIEWS_KEY);
-    return mockRequest(raw ? JSON.parse(raw) : {});
-  } catch (e) {
-    return mockRequest({});
-  }
+const DOC_STATUS_TO_FE = { DRAFT: "Draft", IN_REVIEW: "Under Review", APPROVED: "Approved" };
+
+function toFeRequirementDoc(d) {
+  return {
+    id: d.id,
+    clientProjectId: d.clientProjectId,
+    docType: d.docType,
+    title: d.title,
+    version: d.version,
+    status: DOC_STATUS_TO_FE[d.status] || d.status,
+    backendStatus: d.status,
+    authoredBy: d.authoredByFullName,
+    approvedBy: d.approvedByFullName,
+    devReviewed: !!d.devReviewedAt,
+    devReviewedBy: d.devReviewedByFullName,
+    devReviewedAt: (d.devReviewedAt || "").slice(0, 10),
+  };
 }
 
-export async function markDocReviewed(docId, reviewerName = "Developer") {
-  let reviews = {};
-  try {
-    const raw = localStorage.getItem(DEV_DOC_REVIEWS_KEY);
-    reviews = raw ? JSON.parse(raw) : {};
-  } catch (e) {}
-  reviews[docId] = { reviewed: true, reviewedBy: reviewerName, reviewedAt: new Date().toISOString().slice(0, 10) };
-  localStorage.setItem(DEV_DOC_REVIEWS_KEY, JSON.stringify(reviews));
-  return mockRequest(reviews[docId]);
+export async function getDevRequirementDocs({ clientProjectId, status } = {}) {
+  const res = await apiClient.get("/dev/requirement-documents", {
+    clientProjectId,
+    status,
+    size: 100,
+  });
+  return (res && res.content ? res.content : []).map(toFeRequirementDoc);
+}
+
+export async function getRequirementDocDetail(id) {
+  const d = await apiClient.get(`/dev/requirement-documents/${id}`);
+  return { ...toFeRequirementDoc(d), content: d.content };
+}
+
+// Returns the { [docId]: {reviewed, reviewedBy, reviewedAt} } map the
+// ClientRequirements page keys off.
+export async function getDocReviews() {
+  const docs = await getDevRequirementDocs();
+  const map = {};
+  docs.forEach((d) => {
+    if (d.devReviewed) {
+      map[d.id] = { reviewed: true, reviewedBy: d.devReviewedBy, reviewedAt: d.devReviewedAt };
+    }
+  });
+  return map;
+}
+
+export async function markDocReviewed(docId) {
+  const d = await apiClient.post(`/dev/requirement-documents/${docId}/acknowledge`);
+  return { reviewed: true, reviewedBy: d.devReviewedByFullName, reviewedAt: (d.devReviewedAt || "").slice(0, 10) };
 }
 
 export async function createProject(payload) {
@@ -121,28 +154,82 @@ export async function deleteBugChallenge(id) {
   return mockRequest(null);
 }
 
-const RESOURCES_KEY = "msh_shared_resources";
+// ---------------------------------------------------------------------------
+// Resource Library (backend gap B1.6) — GET/POST/PUT/DELETE /api/v1/resources.
+// One shared library read by developer/, trainer/ and student/ Resources pages.
+// Backend row: { id, title, description, category, url, tags[], active,
+// createdByUuid, createdAt, updatedAt }. The UI wants { id, title, type, link,
+// updatedAt } — the FE's free-text "type" label is stored verbatim as tags[0]
+// so it round-trips exactly.
+// ---------------------------------------------------------------------------
 
-export async function getResourceLibrary() {
-  return mockRequest(readJSON(RESOURCES_KEY, [
-    { id: "r_1", title: "Git Cheat Sheet for Teams", type: "Cheat Sheet", link: "https://education.github.com/git-cheat-sheet-education.pdf", updatedAt: "2026-08-25" },
-    { id: "r_2", title: "Standard REST API Response SDK", type: "Starter Template", link: "https://github.com/moriah-hub/rest-api-starter", updatedAt: "2026-08-28" }
-  ]));
+const RESOURCE_CATEGORY_FOR_TYPE = {
+  "cheat sheet": "OTHER",
+  "sdk documentation": "ARTICLE",
+  "starter template": "TEMPLATE",
+  "shared library": "TOOL",
+  "boilerplate": "TEMPLATE",
+  article: "ARTICLE",
+  video: "VIDEO",
+  book: "BOOK",
+  tool: "TOOL",
+  template: "TEMPLATE",
+  course: "COURSE",
+};
+
+function toFeResource(r) {
+  const tag = Array.isArray(r.tags) && r.tags.length ? r.tags[0] : null;
+  const type =
+    tag ||
+    (r.category
+      ? r.category.charAt(0) + r.category.slice(1).toLowerCase().replace(/_/g, " ")
+      : "Resource");
+  return {
+    id: r.id,
+    title: r.title,
+    description: r.description || "",
+    type,
+    category: r.category,
+    link: r.url,
+    active: r.active !== false,
+    updatedAt: (r.updatedAt || r.createdAt || "").slice(0, 10),
+    createdByUuid: r.createdByUuid,
+  };
 }
 
-export async function createResource(payload) {
-  const items = readJSON(RESOURCES_KEY, [
-    { id: "r_1", title: "Git Cheat Sheet for Teams", type: "Cheat Sheet", link: "https://education.github.com/git-cheat-sheet-education.pdf", updatedAt: "2026-08-25" },
-    { id: "r_2", title: "Standard REST API Response SDK", type: "Starter Template", link: "https://github.com/moriah-hub/rest-api-starter", updatedAt: "2026-08-28" }
-  ]);
-  const newItem = {
-    id: `r_${Date.now()}`,
-    updatedAt: new Date().toISOString().split('T')[0],
-    ...payload
-  };
-  items.unshift(newItem);
-  writeJSON(RESOURCES_KEY, items);
-  return mockRequest(newItem, { delay: 400 });
+export async function getResourceLibrary() {
+  const res = await apiClient.get("/resources", { size: 100 });
+  return (res && res.content ? res.content : []).map(toFeResource);
+}
+
+export async function createResource({ title, type, link, description }) {
+  const category = RESOURCE_CATEGORY_FOR_TYPE[String(type || "").toLowerCase()] || "OTHER";
+  const created = await apiClient.post("/resources", {
+    title,
+    description: description || undefined,
+    category,
+    url: link,
+    tags: type ? [type] : undefined,
+  });
+  return toFeResource(created);
+}
+
+export async function updateResource(id, { title, type, link, description, active }) {
+  const category = RESOURCE_CATEGORY_FOR_TYPE[String(type || "").toLowerCase()] || "OTHER";
+  const updated = await apiClient.put(`/resources/${id}`, {
+    title,
+    description: description || undefined,
+    category,
+    url: link,
+    tags: type ? [type] : undefined,
+    active: active !== false,
+  });
+  return toFeResource(updated);
+}
+
+export async function deleteResource(id) {
+  await apiClient.del(`/resources/${id}`);
+  return { id };
 }
 
 // ---------------------------------------------------------------------------
@@ -154,58 +241,134 @@ export async function createResource(payload) {
 // later doesn't silently change an assessment students already started.
 // ---------------------------------------------------------------------------
 
-export async function getAssessmentBanks() {
-  return mockRequest(readJSON(BANK_KEY));
+// ---------------------------------------------------------------------------
+// Assessment question bank (backend gap B1.15) — /api/v1/assessments/banks.
+// Bank metadata + MCQ questions live on the backend. The FE's richer CODE
+// question (starterCode + functionName + testCases for an in-browser test
+// runner) has no dedicated backend columns, so it is JSON-encoded into the
+// question's `explanation` field and decoded back on read — one field,
+// fully round-tripped, backend `correctAnswer` keys are never returned.
+// ---------------------------------------------------------------------------
+
+function toFeQuestion(q) {
+  if (q.questionType === "CODE") {
+    let spec = {};
+    try {
+      spec = q.explanation ? JSON.parse(q.explanation) : {};
+    } catch {
+      spec = {};
+    }
+    return {
+      id: q.id,
+      type: "CODE",
+      text: spec.text || q.questionText,
+      starterCode: spec.starterCode || "",
+      functionName: spec.functionName || "",
+      testCases: spec.testCases || [],
+    };
+  }
+  return {
+    id: q.id,
+    type: "MCQ",
+    text: q.questionText,
+    options: q.options || [],
+    // correctAnswer is intentionally not returned by the backend
+    marks: q.marks,
+    explanation: q.explanation || "",
+  };
 }
 
-export async function createAssessmentBank({ title, type }) {
-  const banks = readJSON(BANK_KEY);
-  const bank = { id: `bank_${Date.now()}`, title, type, questions: [], createdAt: new Date().toISOString() };
-  banks.unshift(bank);
-  writeJSON(BANK_KEY, banks);
-  return mockRequest(bank, { delay: 400 });
+function toFeBank(b, questions = []) {
+  return {
+    id: b.id,
+    title: b.name,
+    type: b.topic,
+    description: b.description || "",
+    active: b.active !== false,
+    questionCount: b.questionCount ?? questions.length,
+    questions,
+    createdAt: b.createdAt,
+  };
+}
+
+async function fetchBankQuestions(bankId) {
+  const res = await apiClient.get(`/assessments/banks/${bankId}/questions`, { size: 200 });
+  return (res && res.content ? res.content : []).map(toFeQuestion);
+}
+
+export async function getAssessmentBanks() {
+  const res = await apiClient.get("/assessments/banks", { size: 100 });
+  const banks = res && res.content ? res.content : [];
+  // Few banks in an authoring view — embed each bank's questions.
+  return Promise.all(banks.map(async (b) => toFeBank(b, await fetchBankQuestions(b.id))));
+}
+
+export async function createAssessmentBank({ title, type, description }) {
+  const b = await apiClient.post("/assessments/banks", {
+    name: title,
+    topic: type || "general",
+    description: description || undefined,
+  });
+  return toFeBank(b, []);
+}
+
+export async function updateAssessmentBank(bankId, { title, type, description, active }) {
+  const b = await apiClient.put(`/assessments/banks/${bankId}`, {
+    name: title,
+    topic: type || "general",
+    description: description || undefined,
+    active: active !== false,
+  });
+  return toFeBank(b);
 }
 
 export async function deleteAssessmentBank(bankId) {
-  const banks = readJSON(BANK_KEY).filter((b) => b.id !== bankId);
-  writeJSON(BANK_KEY, banks);
-  return mockRequest(null);
+  await apiClient.del(`/assessments/banks/${bankId}`);
+  return { id: bankId };
 }
 
-// question = { text, options, correctAnswer } for MCQ
-//          | { text, starterCode, functionName, testCases: [{ name, args, expected }] } for Code
+// question = { type:"MCQ", text, options, correctAnswer }
+//          | { type:"CODE", text, starterCode, functionName, testCases }
 export async function addQuestionToBank(bankId, question) {
-  const banks = readJSON(BANK_KEY);
-  const idx = banks.findIndex((b) => b.id === bankId);
-  if (idx === -1) throw new Error("Question bank not found.");
-  const q = { id: `q_${Date.now()}`, ...question };
-  banks[idx] = { ...banks[idx], questions: [...banks[idx].questions, q] };
-  writeJSON(BANK_KEY, banks);
-  return mockRequest(banks[idx], { delay: 300 });
+  if ((question.type || "MCQ") === "CODE") {
+    const created = await apiClient.post(`/assessments/banks/${bankId}/questions`, {
+      questionText: question.text,
+      questionType: "CODE",
+      marks: 1,
+      explanation: JSON.stringify({
+        text: question.text,
+        starterCode: question.starterCode || "",
+        functionName: question.functionName || "",
+        testCases: question.testCases || [],
+      }),
+    });
+    return toFeQuestion(created);
+  }
+  const created = await apiClient.post(`/assessments/banks/${bankId}/questions`, {
+    questionText: question.text,
+    questionType: "MCQ",
+    options: question.options,
+    correctAnswerIndices: [Number(question.correctAnswer)],
+    marks: question.marks || 1,
+    explanation: question.explanation || undefined,
+  });
+  return toFeQuestion(created);
 }
 
 export async function removeQuestionFromBank(bankId, questionId) {
-  const banks = readJSON(BANK_KEY);
-  const idx = banks.findIndex((b) => b.id === bankId);
-  if (idx === -1) throw new Error("Question bank not found.");
-  banks[idx] = { ...banks[idx], questions: banks[idx].questions.filter((q) => q.id !== questionId) };
-  writeJSON(BANK_KEY, banks);
-  return mockRequest(banks[idx]);
+  await apiClient.del(`/assessments/banks/${bankId}/questions/${questionId}`);
+  return { id: questionId };
 }
 
-// Adds many MCQ questions to a bank at once — used by the "Bulk Upload"
-// flow in Assessment Bank, where questions arrive already parsed from a
-// CSV or Word/text file (see utils/questionFileParser.js). Each question
-// must already be in the { text, options, correctAnswer } shape used
-// elsewhere in this file.
+// Bulk MCQ import (CSV / Word / text — parsed by utils/questionFileParser.js).
+// Each question is { text, options, correctAnswer }.
 export async function bulkAddQuestionsToBank(bankId, questions) {
-  const banks = readJSON(BANK_KEY);
-  const idx = banks.findIndex((b) => b.id === bankId);
-  if (idx === -1) throw new Error("Question bank not found.");
-  const withIds = questions.map((q, i) => ({ id: `q_${Date.now()}_${i}`, type: "MCQ", ...q }));
-  banks[idx] = { ...banks[idx], questions: [...banks[idx].questions, ...withIds] };
-  writeJSON(BANK_KEY, banks);
-  return mockRequest(banks[idx], { delay: 400 });
+  const added = [];
+  for (const q of questions) {
+    // Sequential so a mid-batch failure leaves a coherent partial state.
+    added.push(await addQuestionToBank(bankId, { type: "MCQ", ...q }));
+  }
+  return added;
 }
 
 export async function getPublishedAssessments() {
@@ -262,78 +425,149 @@ export async function getBatchesForAssignment() {
 // above, so a lesson isn't visible to students until explicitly published.
 // ---------------------------------------------------------------------------
 
-const VIDEO_LESSONS_KEY = "msh_dev_video_lessons";
+// ---------------------------------------------------------------------------
+// Video Lessons (backend gap B1.4) — /api/v1/lessons + /api/v1/lessons/{id}/quiz.
+// Backend lesson: { id, title, description, moduleName, videoUrl,
+// durationSeconds, published, ... }. The FE splits youtube vs upload by
+// videoType, derived here from the URL. Quiz questions come from the
+// dedicated /quiz endpoints and are embedded as `quiz` for the authoring UI.
+// ---------------------------------------------------------------------------
+
+const YT_HOST = /(?:youtube\.com|youtu\.be)/i;
+
+function secondsToClock(s) {
+  if (!s || s < 0) return "";
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${String(sec).padStart(2, "0")}`;
+}
+
+function clockToSeconds(v) {
+  if (v == null || v === "") return undefined;
+  if (typeof v === "number") return Math.round(v > 0 && v < 600 ? v * 60 : v); // bare number -> minutes if small
+  const parts = String(v).split(":").map(Number);
+  if (parts.some(Number.isNaN)) return undefined;
+  return parts.reduce((acc, n) => acc * 60 + n, 0);
+}
+
+function toFeLesson(l, quiz = []) {
+  const url = l.videoUrl || "";
+  const isYt = YT_HOST.test(url);
+  return {
+    id: l.id,
+    title: l.title,
+    module: l.moduleName,
+    description: l.description || "",
+    videoType: isYt ? "youtube" : "upload",
+    videoId: isYt ? extractYouTubeId(url) : "",
+    videoUrl: isYt ? "" : url,
+    duration: secondsToClock(l.durationSeconds),
+    durationSeconds: l.durationSeconds,
+    passingScore: 60,
+    quiz,
+    status: l.published ? "Published" : "Draft",
+    published: !!l.published,
+    progress: l.progress,
+    createdAt: l.createdAt,
+    updatedAt: l.updatedAt,
+  };
+}
+
+async function fetchLessonQuiz(lessonId) {
+  const list = await apiClient.get(`/lessons/${lessonId}/quiz`);
+  return (Array.isArray(list) ? list : []).map((q) => ({
+    id: q.id,
+    question: q.questionText,
+    options: q.options || [],
+    sortOrder: q.sortOrder,
+    // correctAnswer is not returned by the backend
+  }));
+}
 
 export async function getDevVideoLessons() {
-  return mockRequest(readJSON(VIDEO_LESSONS_KEY));
+  const res = await apiClient.get("/lessons", { includeUnpublished: true, size: 100 });
+  const lessons = res && res.content ? res.content : [];
+  return Promise.all(lessons.map(async (l) => toFeLesson(l, await fetchLessonQuiz(l.id))));
 }
 
 export async function createVideoLesson({ title, module, description, videoId, videoUrl, videoType = "youtube", duration }) {
-  const lessons = readJSON(VIDEO_LESSONS_KEY);
-  const lesson = {
-    id: `vl_${Date.now()}`,
+  const finalUrl =
+    videoType === "youtube"
+      ? `https://www.youtube.com/watch?v=${extractYouTubeId(videoId || videoUrl)}`
+      : videoUrl;
+  const created = await apiClient.post("/lessons", {
     title,
-    module,
-    description,
-    videoType,
-    // Only one of these is ever populated, based on videoType — Student >
-    // Learning picks which player to render off of videoType (see
-    // pages/student/Learning.jsx).
-    videoId: videoType === "youtube" ? videoId : "",
-    videoUrl: videoType === "upload" ? videoUrl : "",
-    duration,
-    passingScore: 60,
-    quiz: [],
-    status: "Draft",
-    createdAt: new Date().toISOString(),
-  };
-  lessons.unshift(lesson);
-  writeJSON(VIDEO_LESSONS_KEY, lessons);
-  return mockRequest(lesson, { delay: 400 });
+    description: description || undefined,
+    moduleName: module,
+    videoUrl: finalUrl,
+    durationSeconds: clockToSeconds(duration),
+    sortOrder: 0,
+    published: false,
+  });
+  return toFeLesson(created, []);
+}
+
+export async function updateVideoLesson(id, { title, module, description, videoId, videoUrl, videoType, duration, published }) {
+  const finalUrl =
+    videoType === "youtube"
+      ? `https://www.youtube.com/watch?v=${extractYouTubeId(videoId || videoUrl)}`
+      : videoUrl;
+  const updated = await apiClient.put(`/lessons/${id}`, {
+    title,
+    description: description || undefined,
+    moduleName: module,
+    videoUrl: finalUrl,
+    durationSeconds: clockToSeconds(duration),
+    sortOrder: 0,
+    published: !!published,
+  });
+  return toFeLesson(updated);
 }
 
 export async function deleteVideoLesson(id) {
-  const lessons = readJSON(VIDEO_LESSONS_KEY).filter((l) => l.id !== id);
-  writeJSON(VIDEO_LESSONS_KEY, lessons);
-  return mockRequest(null);
+  // Backend row-deletes an untouched lesson, else unpublishes it.
+  await apiClient.del(`/lessons/${id}`);
+  return { id };
 }
 
-// question = { question, options: [4], correctAnswer }
+// question = { question, options: [4], correctAnswer }  (correctAnswer = 0-based index)
 export async function addQuestionToLesson(lessonId, question) {
-  const lessons = readJSON(VIDEO_LESSONS_KEY);
-  const idx = lessons.findIndex((l) => l.id === lessonId);
-  if (idx === -1) throw new Error("Video lesson not found.");
-  const q = { id: `q_${Date.now()}`, ...question };
-  lessons[idx] = { ...lessons[idx], quiz: [...lessons[idx].quiz, q] };
-  writeJSON(VIDEO_LESSONS_KEY, lessons);
-  return mockRequest(lessons[idx], { delay: 300 });
+  const created = await apiClient.post(`/lessons/${lessonId}/quiz/questions`, {
+    questionText: question.question,
+    options: question.options,
+    correctIndex: Number(question.correctAnswer),
+    explanation: question.explanation || undefined,
+  });
+  return { id: created.id, question: created.questionText, options: created.options };
 }
 
 export async function removeQuestionFromLesson(lessonId, questionId) {
-  const lessons = readJSON(VIDEO_LESSONS_KEY);
-  const idx = lessons.findIndex((l) => l.id === lessonId);
-  if (idx === -1) throw new Error("Video lesson not found.");
-  lessons[idx] = { ...lessons[idx], quiz: lessons[idx].quiz.filter((q) => q.id !== questionId) };
-  writeJSON(VIDEO_LESSONS_KEY, lessons);
-  return mockRequest(lessons[idx]);
+  await apiClient.del(`/lessons/${lessonId}/quiz/questions/${questionId}`);
+  return { id: questionId };
 }
 
 export async function publishVideoLesson(id) {
-  const lessons = readJSON(VIDEO_LESSONS_KEY);
-  const idx = lessons.findIndex((l) => l.id === id);
-  if (idx === -1) throw new Error("Video lesson not found.");
-  if (!lessons[idx].quiz.length) throw new Error("Add at least one quiz question before publishing.");
-  lessons[idx] = { ...lessons[idx], status: "Published", publishedAt: new Date().toISOString() };
-  writeJSON(VIDEO_LESSONS_KEY, lessons);
-  return mockRequest(lessons[idx], { delay: 400 });
+  // The FE enforces "at least one quiz question" before calling this; the
+  // backend PUT just flips is_published. Re-send the lesson with published=true.
+  const lesson = await apiClient.get(`/lessons/${id}`);
+  const updated = await apiClient.put(`/lessons/${id}`, {
+    title: lesson.title,
+    description: lesson.description || undefined,
+    moduleName: lesson.moduleName,
+    videoUrl: lesson.videoUrl,
+    durationSeconds: lesson.durationSeconds ?? undefined,
+    sortOrder: lesson.sortOrder ?? 0,
+    published: true,
+  });
+  return toFeLesson(updated);
 }
 
 export async function unpublishVideoLesson(id) {
-  const lessons = readJSON(VIDEO_LESSONS_KEY);
-  const idx = lessons.findIndex((l) => l.id === id);
-  if (idx > -1) lessons[idx] = { ...lessons[idx], status: "Draft" };
-  writeJSON(VIDEO_LESSONS_KEY, lessons);
-  return mockRequest(lessons[idx]);
+  // DELETE unpublishes a lesson that has learner history (and hard-deletes
+  // an untouched one). The FE calls this only for lessons with a real
+  // Published lifecycle, so it maps to unpublish.
+  await apiClient.del(`/lessons/${id}`);
+  return { id };
 }
 
 // Accepts a full YouTube URL (watch?v=, youtu.be/, embed/) or a bare 11-char
