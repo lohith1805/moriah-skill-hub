@@ -7,21 +7,13 @@ import Modal from "../ui/Modal";
 import { Input, Select, Textarea } from "../ui/FormField";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
-import { getMyLeaveRequests, submitLeaveRequest } from "../../services/hrService";
+import { getMyLeaveRequests, submitLeaveRequest, LEAVE_TYPES } from "../../services/hrService";
 import { validateForm, required } from "../../utils/validators";
 
-const LEAVE_TYPES = [
-  { value: "Casual Leave", label: "Casual Leave" },
-  { value: "Sick Leave", label: "Sick Leave" },
-  { value: "Earned Leave", label: "Earned Leave" },
-  { value: "Work From Home", label: "Work From Home" },
-];
-
-// Drop this into any non-HR/admin/client/student dashboard (Trainer,
-// Developer, Business Analyst, Lead Generator...) to let that staff member
-// submit a leave request. It writes into the same "msh_leave_requests"
-// store HR's Attendance & Leave screen already reads and approves/rejects
-// from — no separate workflow needed.
+// Drop this into any staff dashboard (Trainer, Developer, BA, Lead Gen…) to
+// let that person submit a leave request against POST /api/v1/hr/leaves and
+// see their own via GET /api/v1/hr/leaves. Requires the caller to have an
+// employees record — the backend rejects the submit otherwise.
 export default function ApplyLeaveWidget({ role }) {
   const { user } = useAuth();
   const { notify } = useToast();
@@ -29,15 +21,16 @@ export default function ApplyLeaveWidget({ role }) {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [values, setValues] = useState({ type: "Casual Leave", from: "", to: "", reason: "" });
+  const [values, setValues] = useState({ type: "CASUAL", from: "", to: "", reason: "" });
   const [errors, setErrors] = useState({});
 
   const load = () => {
-    if (!user?.name) return;
-    getMyLeaveRequests(user.name).then((l) => {
-      setMyLeaves(l);
-      setLoading(false);
-    });
+    if (!user?.uuid) return;
+    setLoading(true);
+    getMyLeaveRequests(user.uuid)
+      .then(setMyLeaves)
+      .catch(() => setMyLeaves([]))
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {
@@ -45,7 +38,7 @@ export default function ApplyLeaveWidget({ role }) {
   }, [user]);
 
   const openModal = () => {
-    setValues({ type: "Casual Leave", from: "", to: "", reason: "" });
+    setValues({ type: "CASUAL", from: "", to: "", reason: "" });
     setErrors({});
     setModalOpen(true);
   };
@@ -59,9 +52,7 @@ export default function ApplyLeaveWidget({ role }) {
     setSubmitting(true);
     try {
       await submitLeaveRequest({
-        employee: user.name,
-        role: role || user.role,
-        type: values.type,
+        leaveType: values.type,
         from: values.from,
         to: values.to,
         reason: values.reason,
@@ -69,6 +60,8 @@ export default function ApplyLeaveWidget({ role }) {
       notify("Leave request submitted — HR will review it shortly.", { type: "success", title: "Leave Requested" });
       setModalOpen(false);
       load();
+    } catch (err) {
+      notify(err.message || "Could not submit the leave request.", { type: "error" });
     } finally {
       setSubmitting(false);
     }

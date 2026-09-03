@@ -383,67 +383,72 @@ export async function updateDisciplinaryAction(id, input) {
   return toFeDisciplinary(await apiClient.put(`/hr/disciplinary/${id}`, body));
 }
 
-export async function getLeaveRequests() {
-  try {
-    const raw = localStorage.getItem("msh_leave_requests");
-    if (raw) return mockRequest(JSON.parse(raw));
-  } catch (e) {}
-  localStorage.setItem("msh_leave_requests", JSON.stringify(DEFAULT_LEAVE_REQUESTS));
-  return mockRequest(DEFAULT_LEAVE_REQUESTS);
-}
+// --- Leave requests (WIRED) ------------------------------------------
+// GET /api/v1/hr/leaves, POST /api/v1/hr/leaves, PUT /{id}/decision.
+// An employee sees only their own; HR_MANAGER/ADMIN see all. Submitting
+// requires the caller to have an employees row (else 404 EMPLOYEE_NOT_FOUND).
+// Staff-attendance clock-in (below) has no backend and stays mock.
 
-// Lets any staff role (Trainer, Developer, BA, Lead Generator, HR itself)
-// self-submit a leave request from their own dashboard. It lands in the
-// exact same "msh_leave_requests" list HR's Attendance & Leave screen
-// reads/approves from, so no separate approval path is needed.
-export async function submitLeaveRequest({ employee, role, type, from, to, reason }) {
-  const leaves = await (async () => {
-    try {
-      const raw = localStorage.getItem("msh_leave_requests");
-      if (raw) return JSON.parse(raw);
-    } catch (e) {}
-    return DEFAULT_LEAVE_REQUESTS;
-  })();
+export const LEAVE_TYPES = [
+  { value: "SICK", label: "Sick Leave" },
+  { value: "CASUAL", label: "Casual Leave" },
+  { value: "EARNED", label: "Earned Leave" },
+  { value: "UNPAID", label: "Unpaid Leave" },
+];
+const LEAVE_TYPE_LABEL = Object.fromEntries(LEAVE_TYPES.map((t) => [t.value, t.label]));
+const LEAVE_STATUS_TO_FE = { PENDING: "Pending", APPROVED: "Approved", REJECTED: "Rejected" };
+const FE_LEAVE_DECISION = { Approved: "APPROVED", Rejected: "REJECTED" };
 
-  const entry = {
-    id: `leave_${Date.now()}`,
-    employee,
-    role: role || "Staff",
-    type: type || "Casual Leave",
-    from,
-    to,
-    reason: reason || "",
-    status: "Pending",
-    appliedAt: new Date().toISOString(),
+function toFeLeave(l) {
+  return {
+    id: l.id,
+    userUuid: l.userUuid,
+    employee: l.userFullName || "",
+    type: LEAVE_TYPE_LABEL[l.leaveType] || l.leaveType,
+    leaveType: l.leaveType,
+    from: l.fromDate || "",
+    to: l.toDate || "",
+    days: l.days != null ? Number(l.days) : null,
+    reason: l.reason || "",
+    status: LEAVE_STATUS_TO_FE[l.status] || l.status,
+    approvedByUuid: l.approvedByUuid || null,
+    decidedAt: l.decidedAt || null,
+    createdAt: l.createdAt || null,
   };
-
-  const updated = [entry, ...leaves];
-  localStorage.setItem("msh_leave_requests", JSON.stringify(updated));
-  return mockRequest(entry);
 }
 
-// Returns only the leave requests a given staff member has personally
-// submitted — used to render "My Leave Requests" on their own dashboard.
-export async function getMyLeaveRequests(employeeName) {
-  const leaves = await getLeaveRequests();
-  return leaves.filter((l) => l.employee?.toLowerCase() === (employeeName || "").toLowerCase());
+export async function getLeaveRequests({ status, userUuid } = {}) {
+  const params = { size: 100 };
+  if (status) params.status = status; // FE passes a backend enum e.g. "PENDING"
+  if (userUuid) params.userUuid = userUuid;
+  const res = await apiClient.get("/hr/leaves", params);
+  return asRows(res).map(toFeLeave);
 }
 
-export async function actionLeaveRequest(id, decision) {
-  const leaves = await (async () => {
-    try {
-      const raw = localStorage.getItem("msh_leave_requests");
-      if (raw) return JSON.parse(raw);
-    } catch (e) {}
-    return DEFAULT_LEAVE_REQUESTS;
-  })();
+// The caller's own requests. HR/ADMIN would otherwise see everyone, so pass
+// their uuid to scope it; a non-HR caller is auto-scoped server-side anyway.
+export async function getMyLeaveRequests(myUuid) {
+  return getLeaveRequests(myUuid ? { userUuid: myUuid } : {});
+}
 
-  const idx = leaves.findIndex((l) => l.id === id);
-  if (idx > -1) {
-    leaves[idx] = { ...leaves[idx], status: decision };
-    localStorage.setItem("msh_leave_requests", JSON.stringify(leaves));
-  }
-  return mockRequest(leaves[idx]);
+// POST /api/v1/hr/leaves — `type` is a backend enum value (SICK/CASUAL/…).
+export async function submitLeaveRequest({ type, leaveType, from, to, reason }) {
+  const body = {
+    leaveType: leaveType || type || "CASUAL",
+    fromDate: from,
+    toDate: to,
+    reason: reason || null,
+  };
+  return toFeLeave(await apiClient.post("/hr/leaves", body));
+}
+
+// PUT /api/v1/hr/leaves/{id}/decision — feDecision is "Approved" | "Rejected".
+export async function actionLeaveRequest(id, feDecision) {
+  return toFeLeave(
+    await apiClient.put(`/hr/leaves/${id}/decision`, {
+      decision: FE_LEAVE_DECISION[feDecision] || feDecision,
+    })
+  );
 }
 
 export async function getClockinLogs() {

@@ -27,7 +27,15 @@ export default function HrAttendanceLeave() {
   const { notify } = useToast();
 
   const load = () => {
-    Promise.all([getEmployees(), getLeaveRequests(), getClockinLogs()]).then(([e, l, c]) => {
+    setLoading(true);
+    Promise.all([
+      getEmployees().catch(() => []),
+      getLeaveRequests().catch((e) => {
+        notify(e.message || "Could not load leave requests.", { type: "error" });
+        return [];
+      }),
+      getClockinLogs().catch(() => []),
+    ]).then(([e, l, c]) => {
       setEmployees(e);
       setLeaves(l);
       setClockins(c);
@@ -40,9 +48,14 @@ export default function HrAttendanceLeave() {
   }, []);
 
   const decide = async (id, decision) => {
-    setLeaves((prev) => prev.map((l) => (l.id === id ? { ...l, status: decision } : l)));
-    await actionLeaveRequest(id, decision);
-    notify(`Leave request has been marked as "${decision}".`, { type: decision === "Approved" ? "success" : "warning" });
+    try {
+      const updated = await actionLeaveRequest(id, decision);
+      setLeaves((prev) => prev.map((l) => (l.id === id ? updated : l)));
+      notify(`Leave request ${decision.toLowerCase()}.`, { type: decision === "Approved" ? "success" : "warning" });
+    } catch (err) {
+      notify(err.message || "Could not record the decision.", { type: "error" });
+      load();
+    }
   };
 
   const handleSimulateCheckin = async (e) => {
@@ -79,7 +92,7 @@ export default function HrAttendanceLeave() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Employee Attendance & Leave"
-        subtitle="Biometric / web check-in logging, leave approval hierarchies, and staff attendance tracking"
+        subtitle="Leave approvals are live; the attendance ledger and biometric check-ins are still a local demo (no backend endpoint yet)"
         breadcrumbs={[{ label: "Dashboard", to: "/hr/dashboard" }, { label: "Attendance & Leave" }]}
         action={
           <Button icon={Fingerprint} onClick={() => setCheckinOpen(true)}>
