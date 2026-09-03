@@ -13,10 +13,14 @@ consolidated here.
 | `C:\Users\ADMIN\Desktop\Moraih Backend\moriah-skill-hub-updated` | React 19 + Vite 8 + Redux Toolkit + react-router 7 frontend | **own repo** (`git init`'d this session), no remote, branch `main` |
 | `C:\Users\ADMIN\Desktop\Moraih Backend\frontend-backend-gap-report.md` | the integration plan (Part A frontend / Part B backend) | untracked, workspace parent |
 
-Backend HEAD: `8e66041` (+ later docs commits). Frontend HEAD: `c80e0e0`.
+Backend HEAD: `6e481c8` (`22caf12` question-bank finish · `60741b3` per-lesson quiz · `1761ae9`
+batches widened to STUDENT · `6e481c8` docs). Frontend HEAD: developerService migration commit
+(after `c80e0e0`).
 Backend working tree: only `README.md` modified — **NOT mine**: someone pasted Razorpay TEST api
 keys + seeded-user rows into it. Left untouched; should be moved out of the tracked file. Never
 `git add -A` in the backend repo without checking — scope the add.
+**Migrations now V20–V32, next = V33.** Unit tests: **522, 0 failures** (last full `mvn clean
+verify` green, 1 proven-environmental IT flake).
 
 ---
 
@@ -57,9 +61,26 @@ thrashing DB pool). **Re-ran `PipFlowIT` alone → 14/14 PASS.** Environmental, 
 (V26–V31 touch nothing in `pip/`). `mvn verify` NEEDS Docker (Testcontainers). Unit tests
 (`mvn test` / `surefire:test`, ~15s) do not.
 
-### Backend — Part B still open (both optional/deferred)
-- **B1.18** installment/EMI plans at checkout — "if the product needs it".
-- **B1.4 per-lesson quiz** — needs assessment-module integration; the lessons module itself is done.
+### Backend — Part B still open
+- **B1.18** installment/EMI plans at checkout — deferred, "if the product needs it" (user: "discuss later").
+- **B1.4 per-lesson quiz — DONE** (`60741b3`, V32 `lesson_quiz_questions`/`lesson_quiz_attempts`).
+  `learning/LessonQuizService`: `GET /lessons/{id}/quiz` (any auth), `POST /{id}/quiz/questions` +
+  `DELETE /{id}/quiz/questions/{qid}` (curators), `POST /{id}/quiz/submit` (any auth). ≥60% →
+  upserts `LessonProgress` COMPLETED. `correctIndex` never serialized. 7 unit tests.
+- Optional: scope `GET /api/v1/batches` list for TRAINER_PM to owned batches only (today a PM
+  sees all). STUDENT already enrolled-scoped.
+
+### Docs (2026-09-03, commit `6e481c8`)
+- `docs/testing-flow.md`: every step now tagged `· auth: «token as ROLE»`; added "which token
+  unlocks which flow" table; new **Flows 12–22** for the post-launch endpoints (notifications,
+  resources, lessons+quiz, requirement docs, interviews, question banks, lead campaigns, BA
+  meetings, talent/recruitment, HR onboarding/disciplinary/exit, admin payments/coupons/plans);
+  Appendix C carry-over table extended; Flow 2 Step 3 documents the batches widening.
+- `docs/API-Documentation.md` regenerated (`python scripts/gen-api-doc.py`) — the `@PreAuthorize`
+  scan corrected stale Auth lines: `PUT /admin/plans/{id}` → ADMIN, `POST /ba/documents` → BA/ADMIN,
+  `GET /batches` + `/{id}` → +STUDENT.
+- **`docs/openapi.json` is stale** — 95 paths / 107 ops, predates Flows 12–22 (~35 routes). Only a
+  running-app re-export (`GET /v3/api-docs`, then `gen-api-doc.py`) refreshes it. Noted in-doc.
 
 ---
 
@@ -111,9 +132,14 @@ admin services. `npm install` done (`node_modules` gitignored). **Every commit v
   Backend enum codes translated; `PageResponse.content` unwrapped.
 
 ### FRONTEND — STILL TO DO (this is the bulk of remaining work)
-1. **10 `src/services/*Service.js` left** — studentService (556 L), trainerService (599 L),
-   developerService (351 L), hrService (301 L), crmService (239 L), clientService (202 L),
-   baService (73 L); `pipEngine.js`/`mockData.js`/`placementPipeline.js` (delete). Most use a
+1. **`src/services/*Service.js` left** — studentService (556 L), trainerService (599 L),
+   hrService (301 L), crmService (239 L), clientService (202 L), baService (73 L);
+   `pipEngine.js`/`mockData.js`/`placementPipeline.js` (delete). **developerService — DONE**
+   (committed after `c80e0e0`): resources (B1.6), assessment banks (B1.15), video lessons + quiz
+   (B1.4), dev requirement docs (B1.16) all wired; still-mock inside it: `getProjects`/
+   `createProject`/`publishProject`, bug challenges (backend is file-upload vs FE in-browser
+   runner), `developer/Assessments.jsx` publish flow. `developer/ClientRequirements.jsx` already
+   repointed to `getDevRequirementDocs`. Most other services use a
    `getX()` + `saveX(wholeList)` pattern that does NOT map to REST — each migration also means
    rewriting its consuming pages' state (load-page + per-item create/update/delete).
    **Do first (1:1 with session-3 endpoints, cleanest):** `developer/AssessmentBank` (B1.15),
