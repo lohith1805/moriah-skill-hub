@@ -172,11 +172,10 @@ public class OwnershipGuard {
         return Boolean.TRUE.equals(ownsCertificate) || isStaffWithRole(callerUuid, "TRAINER_PM", "ADMIN");
     }
 
-    /** {@code invoices/{invoiceNumber}.pdf} — only the student the invoice was billed to may sign
-     * it (invoice -> payment -> user). Same single-segment-with-{@code .pdf}-suffix shape as
-     * {@link #canAccessCertificate}; no staff-bypass, since invoice PDFs are never acted on by
-     * staff the way payslips/HR letters are (admins read payments via {@code /admin/payments},
-     * not the object store). */
+    /** {@code invoices/{invoiceNumber}.pdf} — the student the invoice was billed to
+     * (invoice -> payment -> user), or an {@code ADMIN} (the admin transactions screen downloads
+     * any student's invoice). Same single-segment-with-{@code .pdf}-suffix + staff-bypass shape as
+     * {@link #canAccessCertificate}. */
     private boolean canAccessInvoice(String invoiceNumberSegment, String callerUuid) {
         String invoiceNumber = invoiceNumberSegment.endsWith(".pdf")
                 ? invoiceNumberSegment.substring(0, invoiceNumberSegment.length() - 4)
@@ -192,7 +191,9 @@ public class OwnershipGuard {
                 (rs, rowNum) -> rs.getBoolean("is_owner"),
                 invoiceNumber, callerUuid)
                 .stream().findFirst().orElse(false);
-        return Boolean.TRUE.equals(ownsInvoice);
+        // ADMIN oversight — the admin transactions screen ({@code GET /admin/payments/{id}/invoice})
+        // pre-signs any student's invoice, same staff-bypass shape as {@link #canAccessCertificate}.
+        return Boolean.TRUE.equals(ownsInvoice) || isStaffWithRole(callerUuid, "ADMIN");
     }
 
     /** Shared "is this caller HR_MANAGER or ADMIN" check backing both {@link #canAccessPayslip}

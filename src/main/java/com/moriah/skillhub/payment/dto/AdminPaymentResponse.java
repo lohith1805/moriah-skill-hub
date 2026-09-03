@@ -10,7 +10,9 @@ import java.time.Instant;
  * Admin view of a {@code payments} row (gap B1.11). The public identifier is {@code
  * gatewayOrderId} — {@code payments} has no {@code uuid} and {@code id} never leaves the service
  * layer (architecture.md invariant). {@code gatewayPaymentId} is {@code null} until the capture
- * webhook lands.
+ * webhook lands. {@code invoiceNumber}/{@code invoiceStatus} are {@code null} until the async
+ * {@code InvoiceGenerationJob} has produced the invoice row for a captured payment; download the
+ * PDF via {@code GET /api/v1/admin/payments/{gatewayOrderId}/invoice}.
  */
 public record AdminPaymentResponse(
         String gatewayOrderId,
@@ -25,6 +27,8 @@ public record AdminPaymentResponse(
         PaymentStatus status,
         String failureReason,
         Instant capturedAt,
-        Instant createdAt
+        Instant createdAt,
+        String invoiceNumber,
+        String invoiceStatus
 ) {
 }

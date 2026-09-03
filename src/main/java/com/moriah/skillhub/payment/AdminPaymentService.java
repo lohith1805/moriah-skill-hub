@@ -5,14 +5,17 @@ import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
+import com.moriah.skillhub.common.storage.StorageService;
 import com.moriah.skillhub.payment.dto.AdminPaymentResponse;
 import com.moriah.skillhub.payment.dto.PaymentStatusAggregate;
 import com.moriah.skillhub.payment.dto.PaymentSummaryResponse;
+import com.moriah.skillhub.payment.entity.Invoice;
 import com.moriah.skillhub.payment.entity.Payment;
 import com.moriah.skillhub.payment.entity.PaymentGateway;
 import com.moriah.skillhub.payment.entity.PaymentStatus;
 import com.moriah.skillhub.payment.gateway.RazorpayService;
 import com.moriah.skillhub.payment.gateway.StripeService;
+import com.moriah.skillhub.payment.repository.InvoiceRepository;
 import com.moriah.skillhub.payment.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,9 +24,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Admin transactions list + refund (gap B1.11). Read side is straightforward paged/grouped
@@ -42,7 +48,11 @@ import java.util.Map;
 @Slf4j
 public class AdminPaymentService {
 
+    private static final Duration INVOICE_LINK_TTL = Duration.ofMinutes(10);
+
     private final PaymentRepository paymentRepository;
+    private final InvoiceRepository invoiceRepository;
+    private final StorageService storageService;
     private final RazorpayService razorpayService;
     private final StripeService stripeService;
     private final AuditLogService auditLogService;
@@ -50,13 +60,29 @@ public class AdminPaymentService {
     @Transactional(readOnly = true)
     public PageResponse<AdminPaymentResponse> list(PaymentStatus status, PaymentGateway gateway,
                                                     String userUuid, Pageable pageable) {
-        return PageResponse.from(
-                paymentRepository.search(status, gateway, userUuid, pageable).map(AdminPaymentService::toResponse));
+        var page = paymentRepository.search(status, gateway, userUuid, pageable);
+        Map<Long, Invoice> invoices = invoiceRepository
+                .findByPaymentIdIn(page.map(Payment::getId).toList())
+                .stream().collect(Collectors.toMap(i -> i.getPayment().getId(), Function.identity()));
+        return PageResponse.from(page.map(p -> toResponse(p, invoices.get(p.getId()))));
     }
 
     @Transactional(readOnly = true)
     public AdminPaymentResponse get(String gatewayOrderId) {
-        return toResponse(requirePayment(gatewayOrderId));
+        Payment payment = requirePayment(gatewayOrderId);
+        return toResponse(payment, invoiceRepository.findByPaymentId(payment.getId()).orElse(null));
+    }
+
+    /** Presigned GET for one payment's invoice PDF — {@code ADMIN} only (route-gated), and the
+     * {@code invoices/} branch in {@code OwnershipGuard} grants an ADMIN any invoice. 404 while
+     * the async invoice job hasn't produced the PDF yet. */
+    @Transactional(readOnly = true)
+    public String invoicePdfUrl(String gatewayOrderId, String callerUuid) {
+        Payment payment = requirePayment(gatewayOrderId);
+        Invoice invoice = invoiceRepository.findByPaymentId(payment.getId())
+                .filter(i -> i.getPdfKey() != null)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.INVOICE_NOT_FOUND, gatewayOrderId));
+        return storageService.presignedGetUrl(callerUuid, invoice.getPdfKey(), INVOICE_LINK_TTL).toString();
     }
 
     @Transactional(readOnly = true)
@@ -97,7 +123,7 @@ public class AdminPaymentService {
                 PaymentStatus.CAPTURED, reason);
         log.info("[admin/payments] refund issued for {} ({})", gatewayOrderId, payment.getGateway());
 
-        return toResponse(payment);
+        return toResponse(payment, invoiceRepository.findByPaymentId(payment.getId()).orElse(null));
     }
 
     private Payment requirePayment(String gatewayOrderId) {
@@ -105,7 +131,9 @@ public class AdminPaymentService {
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.PAYMENT_NOT_FOUND, gatewayOrderId));
     }
 
-    private static AdminPaymentResponse toResponse(Payment p) {
+    private static AdminPaymentResponse toResponse(Payment p, Invoice invoice) {
+        String invoiceStatus = invoice != null ? invoice.getStatus().name()
+                : (p.getStatus() == PaymentStatus.CAPTURED ? "PROCESSING" : null);
         return new AdminPaymentResponse(
                 p.getGatewayOrderId(),
                 p.getGatewayPaymentId(),
@@ -119,6 +147,8 @@ public class AdminPaymentService {
                 p.getStatus(),
                 p.getFailureReason(),
                 p.getCapturedAt(),
-                p.getCreatedAt());
+                p.getCreatedAt(),
+                invoice != null ? invoice.getInvoiceNumber() : null,
+                invoiceStatus);
     }
 }

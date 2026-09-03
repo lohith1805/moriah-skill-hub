@@ -3,6 +3,7 @@ package com.moriah.skillhub.admin;
 import com.moriah.skillhub.common.dto.ApiResponse;
 import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.common.security.CurrentUser;
+import com.moriah.skillhub.common.security.CurrentUserUuid;
 import com.moriah.skillhub.payment.AdminPaymentService;
 import com.moriah.skillhub.payment.dto.AdminPaymentResponse;
 import com.moriah.skillhub.payment.dto.PaymentSummaryResponse;
@@ -72,6 +73,20 @@ public class AdminPaymentController {
     })
     public ResponseEntity<ApiResponse<AdminPaymentResponse>> get(@PathVariable String gatewayOrderId) {
         return ResponseEntity.ok(ApiResponse.success(adminPaymentService.get(gatewayOrderId)));
+    }
+
+    @GetMapping("/{gatewayOrderId}/invoice")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "A short-lived pre-signed URL for this payment's invoice PDF")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "{ url }"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Caller is not an ADMIN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No payment, or its invoice PDF is not ready yet")
+    })
+    public ResponseEntity<ApiResponse<java.util.Map<String, String>>> invoice(
+            @PathVariable String gatewayOrderId, @CurrentUserUuid String callerUuid) {
+        return ResponseEntity.ok(ApiResponse.success(
+                java.util.Map.of("url", adminPaymentService.invoicePdfUrl(gatewayOrderId, callerUuid))));
     }
 
     @PostMapping("/{gatewayOrderId}/refund")

@@ -54,6 +54,7 @@ public enum ErrorCode {
     PLAN_NOT_FOUND(HttpStatus.NOT_FOUND, "This subscription plan does not exist or is no longer active."),
     SUBSCRIPTION_NOT_FOUND(HttpStatus.NOT_FOUND, "No active subscription was found for this account."),
     PAYMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "This payment could not be found."),
+    INVOICE_NOT_FOUND(HttpStatus.NOT_FOUND, "No invoice PDF is available for this payment yet."),
     COUPON_NOT_FOUND(HttpStatus.NOT_FOUND, "This coupon code does not exist."),
     RESUME_NOT_FOUND(HttpStatus.NOT_FOUND, "No resume has been uploaded for this account yet."),
     PORTFOLIO_NOT_FOUND(HttpStatus.NOT_FOUND, "This portfolio does not exist."),

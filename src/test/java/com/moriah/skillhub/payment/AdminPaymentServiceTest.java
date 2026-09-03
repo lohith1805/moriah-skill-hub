@@ -12,6 +12,8 @@ import com.moriah.skillhub.payment.entity.PaymentGateway;
 import com.moriah.skillhub.payment.entity.PaymentStatus;
 import com.moriah.skillhub.payment.gateway.RazorpayService;
 import com.moriah.skillhub.payment.gateway.StripeService;
+import com.moriah.skillhub.common.storage.StorageService;
+import com.moriah.skillhub.payment.repository.InvoiceRepository;
 import com.moriah.skillhub.payment.repository.PaymentRepository;
 import com.moriah.skillhub.user.entity.User;
 import org.junit.jupiter.api.Test;
@@ -37,6 +39,10 @@ class AdminPaymentServiceTest {
 
     @Mock
     private PaymentRepository paymentRepository;
+    @Mock
+    private InvoiceRepository invoiceRepository;
+    @Mock
+    private StorageService storageService;
     @Mock
     private RazorpayService razorpayService;
     @Mock
