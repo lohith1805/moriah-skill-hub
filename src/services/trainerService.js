@@ -1,6 +1,49 @@
-import { mockRequest } from "./apiClient";
+import { mockRequest, apiClient } from "./apiClient";
 import { BATCHES, SPRINTS, TASKS, PIP_RECORDS } from "./mockData";
 import { runPipAutoCheckForAll } from "./pipEngine";
+
+// ---------------------------------------------------------------------------
+// WIRED to the backend (this session): batch list + create (/api/v1/batches),
+// review queue (/api/v1/reviews/queue).
+// STILL MOCK: sprints/tasks planning (needs a coordinated batch↔sprint↔task
+// rewrite with name→uuid remapping and no epic/userStory fields on the API),
+// analytics + auto-PIP engine, graduation cert issue + HR handoff, trainer
+// student management. Track those in memory.md for the next pass.
+// ---------------------------------------------------------------------------
+
+const asRows = (res) => (Array.isArray(res) ? res : res?.content ?? []);
+const humanize = (s) => (s || "").replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+
+// FE track display names <-> backend trackCode strings.
+const TRACK_FE_TO_CODE = {
+  "Full-Stack Development": "FULL_STACK",
+  "Data Analytics": "DATA_ANALYTICS",
+  "Product Design": "PRODUCT_DESIGN",
+  "Backend Engineering": "BACKEND_ENGINEERING",
+};
+const TRACK_CODE_TO_FE = Object.fromEntries(
+  Object.entries(TRACK_FE_TO_CODE).map(([fe, code]) => [code, fe])
+);
+
+function toFeBatch(b) {
+  return {
+    id: b.id,
+    name: b.name,
+    track: TRACK_CODE_TO_FE[b.trackCode] || b.trackCode || "Full-Stack Development",
+    trackCode: b.trackCode,
+    pmName: b.pmFullName || "",
+    planTierMinCode: b.planTierMinCode || null,
+    startDate: b.startDate || null,
+    endDate: b.endDate || null,
+    capacity: b.capacity ?? null,
+    students: b.enrolledCount ?? 0,
+    // health is a FE-derived metric with no backend field; the Batches table
+    // renders null as "No activity yet".
+    health: null,
+    status: b.status === "ACTIVE" ? "Active" : b.status === "PLANNED" ? "Onboarding" : humanize(b.status),
+    backendStatus: b.status,
+  };
+}
 
 // TASKS/SPRINTS imported above are only a SNAPSHOT taken when this module
 // first loaded. Several writers (createTask, reviewSubmission, createSprint,
@@ -119,39 +162,41 @@ export async function setProjectBatches(projectId, batchIds) {
   return mockRequest(idx > -1 ? all[idx] : null);
 }
 
+// GET /api/v1/batches — TRAINER_PM/ADMIN see every batch (a STUDENT token would
+// see only enrolled). `health` is null (no backend field); the table copes.
 export async function getBatches() {
-  const attempts = getStoredAttempts();
-  let registeredUsers = [];
-  try {
-    const raw = localStorage.getItem("mORIAH_REGISTERED_USERS");
-    registeredUsers = raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    registeredUsers = [];
-  }
-
-  const allSprints = getStoredSprints();
-  const allTasks = getStoredTasks();
-  const withHealth = BATCHES.map((b) => {
-    const sprintIds = new Set(allSprints.filter((s) => s.batchId === b.id).map((s) => s.id));
-    const tasksForBatch = allTasks.filter((t) => sprintIds.has(t.sprintId));
-    const batchStudentNames = registeredUsers
-      .filter((u) => u.role === "student" && u.batch === b.name)
-      .map((u) => u.name);
-    const attemptsForBatch = attempts.filter((a) => batchStudentNames.includes(a.studentName));
-    const activePip = PIP_RECORDS.filter(
-      (p) => batchStudentNames.includes(p.student) && p.status !== "Resolved"
-    ).length;
-    return { ...b, students: batchStudentNames.length, health: computeBatchHealth(tasksForBatch, attemptsForBatch, activePip) };
-  });
-
-  return mockRequest(withHealth);
+  const res = await apiClient.get("/batches", { size: 100 });
+  return asRows(res).map(toFeBatch);
 }
 
+// POST /api/v1/batches — the caller becomes the batch PM.
 export async function createBatch(payload) {
-  const batch = { id: `b${Date.now()}`, students: 0, health: 0, status: "Onboarding", ...payload };
-  BATCHES.unshift(batch);
-  localStorage.setItem("msh_batches", JSON.stringify(BATCHES));
-  return mockRequest(batch, { delay: 700 });
+  const body = {
+    name: (payload.name || "").trim(),
+    trackCode: TRACK_FE_TO_CODE[payload.track] || payload.track || "FULL_STACK",
+    planTierMinCode: payload.planTierMinCode || null,
+    startDate: payload.startDate,
+    endDate: payload.endDate,
+    capacity:
+      payload.capacity === "" || payload.capacity == null ? 20 : Number(payload.capacity),
+  };
+  return toFeBatch(await apiClient.post("/batches", body));
+}
+
+// GET /api/v1/reviews/queue — IN_REVIEW tasks awaiting the caller's review.
+export async function getReviewQueue() {
+  const res = await apiClient.get("/reviews/queue", { size: 50 });
+  return asRows(res).map((t) => ({
+    id: t.id,
+    title: t.title,
+    description: t.description || "",
+    sprintId: t.sprintId,
+    assignee: t.assignedToName || "",
+    assigneeUuid: t.assignedToUuid || null,
+    points: t.storyPoints ?? 0,
+    status: "Review",
+    dueAt: t.dueAt || null,
+  }));
 }
 
 export async function getSprints(batchId) {
