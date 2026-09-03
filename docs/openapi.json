@@ -8722,6 +8722,9 @@
                     "completionPercent": {
                         "type": "integer",
                         "format": "int32"
+                    },
+                    "twoFactorEnabled": {
+                        "type": "boolean"
                     }
                 }
             },

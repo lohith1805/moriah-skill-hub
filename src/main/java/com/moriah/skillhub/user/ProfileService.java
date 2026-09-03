@@ -118,7 +118,8 @@ public class ProfileService {
                 profile.getResumeKey() != null,
                 profile.getPortfolioSlug(),
                 profile.isComplete(),
-                profile.getCompletionPercent());
+                profile.getCompletionPercent(),
+                user.isTwoFactorEnabled());
     }
 
     /** Package-visible — {@code UserService.getPortfolio} reuses this to parse {@code skills}

@@ -24,6 +24,7 @@ public record UserProfileResponse(
         boolean hasResume,
         String portfolioSlug,
         boolean isComplete,
-        int completionPercent
+        int completionPercent,
+        boolean twoFactorEnabled
 ) {
 }

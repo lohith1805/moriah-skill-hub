@@ -8660,7 +8660,8 @@ The caller's own profile
     "hasResume": true,
     "portfolioSlug": "string",
     "isComplete": true,
-    "completionPercent": 0
+    "completionPercent": 0,
+    "twoFactorEnabled": true
   },
   "error": null
 }
@@ -8751,7 +8752,8 @@ Update the caller's profile fields
     "hasResume": true,
     "portfolioSlug": "string",
     "isComplete": true,
-    "completionPercent": 0
+    "completionPercent": 0,
+    "twoFactorEnabled": true
   },
   "error": null
 }
@@ -8839,7 +8841,8 @@ Upload (or replace) the caller's resume PDF
     "hasResume": true,
     "portfolioSlug": "string",
     "isComplete": true,
-    "completionPercent": 0
+    "completionPercent": 0,
+    "twoFactorEnabled": true
   },
   "error": null
 }
