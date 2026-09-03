@@ -157,22 +157,39 @@ Frontend commits (branch `master`): `a86db27` baseline · `b0e4b21` auth · `c80
   **The `client/TalentPool.jsx` placement pipeline (shortlist→schedule→offer→sign→placed) is still
   localStorage** (`utils/placementPipeline.js`) — no backend for it.
 
+- **hrService** — exits / onboarding / disciplinary + employee list → `/api/v1/hr/*` (B1.10).
+  `getEmployees()` now fetches `/hr/employees` (kept back-compat no-arg; `readEmployees()` sync
+  stays for `getPayroll`). New fns: `getExits`/`createExit`/`updateExit`/`completeExit`,
+  `getOnboardings`/`createOnboarding`/`updateOnboarding`, `getDisciplinaryActions`/
+  `createDisciplinaryAction`/`updateDisciplinaryAction` + enum & default-checklist exports.
+  **`hr/ExitManagement.jsx`** rebuilt: employee picker, generic clearance-checklist editor,
+  Finalise → `POST /{id}/complete`; Disciplinary tab wired; PIP tab still local `msh_pip_records`;
+  dropped the mock "graduate→talent-pool on exit" coupling. **`hr/Onboarding.jsx`** rebuilt
+  (employee picker, checklist, status, notes) AND **wired into routing** — it was an orphan page;
+  added `/hr/onboarding` route + sidebar entry. Leave/payroll/attendance stay MOCK.
+
 **STILL TO DO — services:**
-1. **hrService** (301 L) — `hr/ExitManagement.jsx` + `hr/Onboarding.jsx` do localStorage inline
-   (no exit/onboarding/disciplinary fns in hrService yet). Backend ready (B1.10):
-   `/api/v1/hr/exits` (+ `/{id}` PUT, `POST /{id}/complete`), `/api/v1/hr/onboardings`,
-   `/api/v1/hr/disciplinary`, `GET /api/v1/hr/employees`. Needs new service fns + rewriting both
-   pages (they're large). Leave/payroll/attendance have NO 1:1 — HR leave endpoints are
-   `/api/v1/hr/leaves`, payroll `/api/v1/hr/payroll` — check shapes before touching.
-   `getEmployees` is tangled: `readEmployees()` (sync) feeds `getPayroll` — migrate together.
-2. **studentService** (556 L) — `student/interviews` page → `GET /api/v1/interviews/me` (B1.8);
-   student resources → `/api/v1/resources`; student lessons+quiz → `/api/v1/lessons` (+ `/quiz`).
-3. **trainerService** (599 L) — question banks → `/api/v1/assessments/banks` (B1.15); interviews
-   schedule side → `POST/GET/PUT/DELETE /api/v1/interviews`.
-4. Delete `mockData.js` / `pipEngine.js` / `placementPipeline.js` once nothing imports them
+1. **studentService** (556 L) — `student/interviews` → `GET /api/v1/interviews/me` (B1.8);
+   student resources → `/api/v1/resources`; student lessons+quiz → `/api/v1/lessons` (+ `/quiz`);
+   tasks/sprint board/submissions → existing `/api/v1/tasks|sprints|submissions` (STUDENT-scoped).
+2. **trainerService** (599 L) — question banks → `/api/v1/assessments/banks` (B1.15); interview
+   scheduling → `POST/GET/PUT/DELETE /api/v1/interviews` (B1.8).
+3. HR leave/payroll/attendance — check `/api/v1/hr/leaves` + `/hr/payroll` shapes, then migrate
+   `hr/AttendanceLeave.jsx` + `hr/Payroll.jsx` + `ApplyLeaveWidget.jsx`.
+4. Register wizard reorder (#3 below), OAuth backend redirect (#4 below).
+5. Delete `mockData.js` / `pipEngine.js` / `placementPipeline.js` once nothing imports them
    (`clientService.js` still imports `TALENT_POOL` unused — safe, remove later).
    **Pattern reminder:** most old services are `getX()` + `saveX(wholeList)` which does NOT map to
    REST — each migration = rewrite the consuming page's state (load + per-item create/update/delete).
+
+### Docs — integrated testing flow (2026-09-03)
+`docs/integrated-testing-flow.md` (NEW) — UI-driven E2E companion to `testing-flow.md` (which is
+API-only). Setup (backend `dev` + frontend `npm run dev` + vite proxy), a **wired-vs-mock matrix
+per screen**, then browser walkthroughs (Flows A–I) for every wired path: auth, notifications,
+admin users/plans/payments/coupons/audit, developer resources/lessons+quiz/banks/requirement-docs,
+lead campaigns, BA meetings, client talent pool, HR onboarding + exit/disciplinary — each step
+names the page, the click, the exact endpoint fired, what to verify, and an API/DB cross-check.
+Ends with an 11-point regression checklist. Update it as more services migrate.
 2. **Page data bindings** — ~90 `src/pages/**` files read mock-shaped blobs (`user.batch` string,
    `user.subscription`, invented camelCase). Remap to real DTOs (`uuid`, ISO dates, enum strings,
    `PageResponse`).
@@ -226,11 +243,11 @@ Frontend commits (branch `master`): `a86db27` baseline · `b0e4b21` auth · `c80
 
 ## Next session starts with
 Continue **Frontend Part A**. Nothing tested in a browser yet — all migrations are build-verified
-only. Next targets in order (see "STILL TO DO — services"):
-1. **hrService** — new exit/onboarding/disciplinary fns + rewrite `hr/ExitManagement.jsx` &
-   `hr/Onboarding.jsx` (B1.10). Check `/api/v1/hr/leaves` + `/hr/payroll` shapes too.
-2. **studentService** — `student/interviews` → `/interviews/me`; student resources + lessons/quiz.
-3. **trainerService** — question banks (B1.15) + interview scheduling (B1.8).
-Then: page data-binding remaps (#2), Register wizard reorder (#3), OAuth backend redirect (#4),
-delete mock layer.
-Frontend HEAD: `71de48d`. Backend HEAD: `01052ba` (docs only; code HEAD `1761ae9`).
+only (`npm run build` green, 2796 modules). Next targets in order:
+1. **studentService** — `student/interviews` → `/interviews/me` (B1.8); student resources +
+   lessons/quiz; tasks/sprints/submissions (STUDENT-scoped, already exist).
+2. **trainerService** — question banks (B1.15) + interview scheduling (B1.8).
+3. HR leave/payroll/attendance shapes → migrate those 3 screens + `ApplyLeaveWidget`.
+4. Register wizard reorder, OAuth backend redirect, delete mock layer.
+Keep `docs/integrated-testing-flow.md` current as services migrate.
+Frontend HEAD: `4662f79`. Backend HEAD: `<this commit>` (docs; code HEAD `1761ae9`).
