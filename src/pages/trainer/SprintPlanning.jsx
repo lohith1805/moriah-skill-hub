@@ -8,7 +8,7 @@ import Modal from "../../components/ui/Modal";
 import { Input, Select, Textarea } from "../../components/ui/FormField";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import EmptyState from "../../components/ui/EmptyState";
-import { getBatches, getSprints, createSprint, getStaffableClientProjects, getSprintTasks, createTask } from "../../services/trainerService";
+import { getBatches, getSprints, createSprint, getStaffableClientProjects, getSprintTasks, createTask, getStudentsForBatch, assignTask } from "../../services/trainerService";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required } from "../../utils/validators";
 
@@ -26,7 +26,8 @@ export default function TrainerSprintPlanning() {
 
   // Task creation, scoped to whichever sprint's "Add Task" was clicked.
   const [activeSprint, setActiveSprint] = useState(null);
-  const [taskValues, setTaskValues] = useState({ title: "", points: "3", dueDate: "" });
+  const [taskStudents, setTaskStudents] = useState([]);
+  const [taskValues, setTaskValues] = useState({ title: "", points: "3", dueDate: "", assigneeUuid: "" });
   const [taskErrors, setTaskErrors] = useState({});
   const [taskSubmitting, setTaskSubmitting] = useState(false);
 
@@ -75,8 +76,10 @@ export default function TrainerSprintPlanning() {
 
   const openTaskModal = (sprint) => {
     setActiveSprint(sprint);
-    setTaskValues({ title: "", points: "3", dueDate: "" });
+    setTaskValues({ title: "", points: "3", dueDate: "", assigneeUuid: "" });
     setTaskErrors({});
+    setTaskStudents([]);
+    getStudentsForBatch(sprint.batchId).then(setTaskStudents).catch(() => setTaskStudents([]));
   };
 
   const closeTaskModal = () => setActiveSprint(null);
@@ -88,8 +91,12 @@ export default function TrainerSprintPlanning() {
     if (Object.keys(validation).length) return;
     setTaskSubmitting(true);
     try {
-      await createTask({ sprintId: activeSprint.id, ...taskValues });
-      notify("Backlog item added — students pull it from their sprint board.", { type: "success", title: "Task created" });
+      const created = await createTask({ sprintId: activeSprint.id, ...taskValues });
+      if (taskValues.assigneeUuid) await assignTask(created.id, taskValues.assigneeUuid);
+      notify(
+        taskValues.assigneeUuid ? "Task created and assigned." : "Backlog item added — students pull it from their sprint board.",
+        { type: "success", title: "Task created" }
+      );
       setActiveSprint(null);
       load();
     } catch (err) {
@@ -223,7 +230,16 @@ export default function TrainerSprintPlanning() {
             <Input label="Points" type="number" min="1" value={taskValues.points} onChange={(e) => setTaskValues((v) => ({ ...v, points: e.target.value }))} />
             <Input label="Due date" type="date" required value={taskValues.dueDate} onChange={(e) => setTaskValues((v) => ({ ...v, dueDate: e.target.value }))} error={taskErrors.dueDate} />
           </div>
-          <p className="text-xs text-ink-500">Starts in the Backlog — students pull it onto their own board.</p>
+          <Select
+            label="Assign to (optional)"
+            placeholder={taskStudents.length ? "Leave unassigned — students self-pull" : "No students enrolled in this batch"}
+            value={taskValues.assigneeUuid}
+            onChange={(e) => setTaskValues((v) => ({ ...v, assigneeUuid: e.target.value }))}
+            options={taskStudents
+              .filter((s) => s.status === "ACTIVE" || s.status === "ON_PIP")
+              .map((s) => ({ value: s.userUuid, label: s.name }))}
+          />
+          <p className="text-xs text-ink-500">Unassigned items sit in the Backlog for students to pull.</p>
         </form>
       </Modal>
     </div>

@@ -9,7 +9,7 @@ import { Input, Select, Textarea } from "../../components/ui/FormField";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import EmptyState from "../../components/ui/EmptyState";
 import Breadcrumbs from "../../components/widgets/Breadcrumbs";
-import { getBatches, getSprints, createSprint, activateSprint, createTask, getSprintTasks } from "../../services/trainerService";
+import { getBatches, getSprints, createSprint, activateSprint, createTask, getSprintTasks, getStudentsForBatch, assignTask } from "../../services/trainerService";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required } from "../../utils/validators";
 import { formatDate } from "../../utils/formatters";
@@ -27,6 +27,7 @@ export default function Sprints() {
   // Selected Sprint Details & Backlog States
   const [selectedSprint, setSelectedSprint] = useState(null);
   const [sprintTasks, setSprintTasks] = useState([]);
+  const [students, setStudents] = useState([]);
   const [openTaskModal, setOpenTaskModal] = useState(false);
   const [taskSaving, setTaskSaving] = useState(false);
   const [activating, setActivating] = useState(false);
@@ -38,6 +39,7 @@ export default function Sprints() {
     acceptanceCriteria: "",
     points: "3",
     dueDate: "",
+    assigneeUuid: "",
   });
   const [taskErrors, setTaskErrors] = useState({});
 
@@ -54,12 +56,14 @@ export default function Sprints() {
 
   useEffect(() => { load(); }, []);
 
-  // Fetch tasks when the selected sprint changes.
+  // Fetch tasks + the batch roster when the selected sprint changes.
   useEffect(() => {
     if (selectedSprint) {
       getSprintTasks(selectedSprint.id).then(setSprintTasks);
+      getStudentsForBatch(selectedSprint.batchId).then(setStudents).catch(() => setStudents([]));
     } else {
       setSprintTasks([]);
+      setStudents([]);
     }
   }, [selectedSprint]);
 
@@ -120,8 +124,13 @@ export default function Sprints() {
 
     setTaskSaving(true);
     try {
-      await createTask({ ...taskValues, sprintId: selectedSprint.id });
-      notify("Backlog item added — students can pull it from their sprint board.", { type: "success" });
+      const created = await createTask({ ...taskValues, sprintId: selectedSprint.id });
+      if (taskValues.assigneeUuid) {
+        await assignTask(created.id, taskValues.assigneeUuid);
+        notify("Task created and assigned.", { type: "success" });
+      } else {
+        notify("Backlog item added — students can pull it from their sprint board.", { type: "success" });
+      }
       setOpenTaskModal(false);
       setTaskValues({
         title: "",
@@ -131,6 +140,7 @@ export default function Sprints() {
         acceptanceCriteria: "",
         points: "3",
         dueDate: "",
+        assigneeUuid: "",
       });
       const data = await getSprintTasks(selectedSprint.id);
       setSprintTasks(data);
@@ -392,8 +402,18 @@ export default function Sprints() {
                 required
               />
             </div>
+            <Select
+              label="Assign to (optional)"
+              name="assigneeUuid"
+              placeholder={students.length ? "Leave unassigned — students self-pull" : "No students enrolled in this batch"}
+              value={taskValues.assigneeUuid}
+              onChange={onTaskChange}
+              options={students
+                .filter((s) => s.status === "ACTIVE" || s.status === "ON_PIP")
+                .map((s) => ({ value: s.userUuid, label: s.name }))}
+            />
             <p className="text-xs text-ink-500">
-              New items start in the <strong>Backlog</strong> unassigned — students pull them onto their own board.
+              Unassigned items sit in the <strong>Backlog</strong> for students to pull onto their own board.
             </p>
           </form>
         </Modal>

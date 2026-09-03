@@ -335,11 +335,20 @@ export async function updateTask(taskId, current, nextStatus) {
   return toFeTask(await apiClient.put(`/tasks/${taskId}`, body));
 }
 
-// No batch-roster endpoint exists for a PM — task assignment is by uuid, or
-// students self-pull from the backlog. Returns [] so the pages fall back to
-// "create as backlog" instead of a student dropdown.
-export async function getStudentsForBatch() {
-  return [];
+// GET /api/v1/batches/{id}/students — the batch roster (PM/ADMIN, must own the
+// batch). Used to populate "assign to" dropdowns and the graduation list.
+export async function getStudentsForBatch(batchId) {
+  if (!batchId) return [];
+  const res = await apiClient.get(`/batches/${batchId}/students`);
+  return (Array.isArray(res) ? res : asRows(res)).map((s) => ({
+    userUuid: s.userUuid,
+    name: s.fullName,
+    email: s.email || "",
+    status: s.status,
+    joinedAt: s.joinedAt || null,
+    graduatedAt: s.graduatedAt || null,
+    finalScore: s.finalScore != null ? Number(s.finalScore) : null,
+  }));
 }
 
 // GET /api/v1/reviews/queue — IN_REVIEW tasks awaiting the caller's review,
