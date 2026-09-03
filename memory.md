@@ -296,15 +296,27 @@ drop the dead Register plan/payment handlers.
 ---
 
 ## Next session starts with
-`GET /batches/{id}/students` is built and its 5 dependent FE screens are wired. Remaining work,
-pick from:
-1. **`student/Assessments.jsx`** — server-graded rewrite (endpoints exist; drop the in-browser
-   runner). A product decision + ~400-line page.
-2. **`GET /api/v1/hr/leaves`** endpoint (mirror the batch-roster commit `04368c0`), then wire
-   `hr/AttendanceLeave.jsx` + `ApplyLeaveWidget`.
-3. Mock-layer cleanup (only once you accept the placement pipeline etc. stay FE-only): delete
-   `mockData.js`/`pipEngine.js`/`placementPipeline.js`, strip dead trainerService helpers, drop
-   Register's dead plan/payment code.
-4. Refresh `docs/integrated-testing-flow.md` for everything wired after Flow L.
-Frontend HEAD `fe7fb5d`. Backend code HEAD `7758f89` (`GET /hr/leaves`).
-`README.md` still has the user's uncommitted Razorpay-test-key edit — never `git add -A`.
+Frontend integration is essentially complete. Backend this session added
+`GET /batches/{id}/students`, `GET /hr/leaves`, `GET /hr/documents`, `POST` was already there for
+`/subscriptions/checkout`, and a full `placement/` module (`GET /placements`, `GET`/`PUT
+/placements/{id}`, migration `V33`, `PlacementStage` 13-value enum). All wired FE-side.
+`student/Assessments.jsx` is server-graded; Register's dead step-2/3 code is stripped
+(commit `038d67f`, FE).
+
+All four docs now cover this round's endpoints (commit `fc5a84b`): `openapi.json` (additive
+patch — keep its 4-space / LF / no-unicode-escape formatting if you patch it again),
+`postman/*` (regenerated — has a Placements folder), `API-Documentation.md` (regenerated),
+`testing-flow.md` (Flow 11 OAuth fragment-redirect + Flow 23 placement), `integrated-testing-flow.md`
+(Flows M–R, matrix re-scored). `scripts/gen-api-doc.py` was fixed — its `@PreAuthorize`→route
+association was off-by-one for this codebase's mapping-then-preauth style and dropped bare
+`@GetMapping`; now correct for all 192 handlers.
+
+**`mockData.js` / `pipEngine.js` cannot be deleted** — 7 feature areas have no backend (BA docs
++ resource plans, client project briefs, lead pipeline detail/activity/delete, developer projects
++ bug challenges, HR biometric attendance, trainer cross-batch student mgmt, student
+`getPerformanceSummary` + auto-PIP). `placementPipeline.js` stays too (now a display-helper +
+backend adapter, not a mock).
+
+Frontend HEAD `038d67f`. Backend HEAD `fc5a84b` (code HEAD `60e58d3`).
+`README.md` still has the user's uncommitted Razorpay-test-key edit — never `git add -A`; scope
+every `git add`.
