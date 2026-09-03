@@ -1,24 +1,26 @@
 import { useEffect, useState, useRef } from "react";
-import { useSearchParams, useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Loader2, XCircle } from "lucide-react";
 import { tokenStore } from "../../services/apiClient";
 import { getMe } from "../../services/authService";
 import { useAuth } from "../../context/AuthContext";
 import { ROLE_HOME } from "../../utils/roleAccess";
 
-// Where the backend's OAuth2 success handler redirects back to. It should carry
-// the token pair as query params:
-//   /auth/oauth/callback?accessToken=...&refreshToken=...&expiresIn=3600
-// or an error:
-//   /auth/oauth/callback?error=OAUTH_PROFILE_INCOMPLETE
-//
-// (The current backend handler writes a JSON envelope instead of redirecting —
-//  see memory.md: it needs to redirect here with these params for OAuth to
-//  close the loop in the SPA.)
+// The backend's OAuth2 success/failure handlers redirect here with the result
+// in the URL *fragment* (never the query string — a fragment is not sent to any
+// server and does not land in access logs / Referer headers):
+//   /auth/oauth/callback#accessToken=...&refreshToken=...&expiresIn=3600
+//   /auth/oauth/callback#twoFactorRequired=true&challengeToken=...
+//   /auth/oauth/callback#error=oauth_failed
+function readHashParams() {
+  const raw = typeof window !== "undefined" ? window.location.hash.replace(/^#/, "") : "";
+  return new URLSearchParams(raw);
+}
+
 export default function OAuthCallback() {
-  const [params] = useSearchParams();
   const navigate = useNavigate();
   const { refreshUser } = useAuth();
+  const params = useRef(readHashParams()).current;
   const [error, setError] = useState(params.get("error"));
   const ran = useRef(false);
 
@@ -26,6 +28,13 @@ export default function OAuthCallback() {
     if (ran.current) return;
     ran.current = true;
     if (params.get("error")) return;
+
+    // A 2FA-mandatory account (admin / hr) can't finish OAuth here — the SPA
+    // has no OAuth 2FA screen, so bounce to /login to complete the challenge.
+    if (params.get("twoFactorRequired") === "true") {
+      setError("TWO_FACTOR_REQUIRED");
+      return;
+    }
 
     const accessToken = params.get("accessToken") || params.get("token");
     const refreshToken = params.get("refreshToken");
@@ -35,6 +44,10 @@ export default function OAuthCallback() {
       return;
     }
     tokenStore.set({ accessToken, refreshToken, expiresInSeconds: expiresIn });
+    // Scrub the tokens out of the address bar / history now that they're stored.
+    if (typeof window !== "undefined" && window.history?.replaceState) {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
     (async () => {
       try {
         const user = (await refreshUser()) || (await getMe());
@@ -55,6 +68,8 @@ export default function OAuthCallback() {
         <p className="text-sm text-ink-500 mt-2">
           {error === "OAUTH_PROFILE_INCOMPLETE"
             ? "That provider did not share enough profile information. Try email sign-in."
+            : error === "TWO_FACTOR_REQUIRED"
+            ? "This account needs two-factor authentication. Sign in with your email and password to complete it."
             : "Something went wrong finishing the OAuth sign-in."}
         </p>
         <Link to="/login" className="inline-block mt-6 text-sm font-medium text-primary-700 hover:underline">
