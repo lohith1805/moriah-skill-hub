@@ -1,4 +1,4 @@
-import { mockRequest } from "./apiClient";
+import { mockRequest, apiClient } from "./apiClient";
 import { CLIENT_PROJECTS, TALENT_POOL, REQUIREMENT_DOCS } from "./mockData";
 import { getPersistedUser } from "./authService";
 
@@ -163,25 +163,79 @@ export async function deleteMyRequirement(id) {
   return { id };
 }
 
-export async function getTalentPool() {
-  // TALENT_POOL (from mockData) is a static, permanently-empty seed. Real
-  // candidates come from HR finalizing a graduate's exit clearance (see
-  // hrService.publishGraduateToTalentPool), which writes here — this is
-  // what makes a cleared, exited graduate actually show up for a Corporate
-  // Client to browse and recruit.
-  let dynamicPool = [];
-  try {
-    const raw = localStorage.getItem("msh_talent_pool");
-    dynamicPool = raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    dynamicPool = [];
-  }
-  return mockRequest([...dynamicPool, ...TALENT_POOL]);
+// ---------------------------------------------------------------------------
+// Talent pool + recruitment requests — WIRED to the backend (B1.9):
+//   GET  /api/v1/talent-pool            (CLIENT / ADMIN / HR_MANAGER / LEAD_GEN)
+//   POST /api/v1/recruitment-requests   (CLIENT)  -> lands PENDING
+//   GET  /api/v1/recruitment-requests   (CLIENT sees own, ADMIN/HR see all)
+// The multi-stage placement pipeline on the Talent Pool page (shortlist ->
+// schedule -> offer -> sign -> placed) has NO backend and stays on
+// localStorage via utils/placementPipeline.js.
+// ---------------------------------------------------------------------------
+
+// Backend TalentPoolCandidateResponse -> the shape the Talent Pool page reads.
+function toFeCandidate(c) {
+  const years = c.yearsExperience ?? 0;
+  return {
+    id: c.uuid,
+    uuid: c.uuid,
+    name: c.fullName,
+    track: c.currentTitle || c.experienceLevel || "—",
+    experienceLevel: c.experienceLevel || null,
+    yearsExperience: years,
+    location: c.location || "",
+    availability: "now",
+    skills: Array.isArray(c.skills) ? c.skills : [],
+    portfolioSlug: c.portfolioSlug || null,
+    bio: c.bio || "",
+    // The page's ProgressBar wants a number; approximate from experience
+    // until the backend exposes a real performance score.
+    score: Math.min(95, Math.max(45, 55 + years * 8)),
+  };
 }
 
-export async function requestRecruitment(candidateId) {
-  await mockRequest(null, { delay: 700 });
-  return { candidateId, status: "Interview Requested" };
+export async function getTalentPool({ search, skill } = {}) {
+  const params = {};
+  if (search) params.search = search;
+  if (skill) params.skill = skill;
+  const res = await apiClient.get("/talent-pool", Object.keys(params).length ? params : undefined);
+  const rows = Array.isArray(res) ? res : res?.content ?? [];
+  return rows.map(toFeCandidate);
+}
+
+const ENGAGEMENT_TYPES = ["FULL_TIME", "CONTRACT", "INTERNSHIP"];
+
+// candidateUuidOrObj: a uuid string or a candidate object ({uuid}/{id}).
+export async function requestRecruitment(candidateUuidOrObj, opts = {}) {
+  const candidateUuid =
+    typeof candidateUuidOrObj === "string"
+      ? candidateUuidOrObj
+      : candidateUuidOrObj?.uuid || candidateUuidOrObj?.id;
+  const body = {
+    candidateUuid,
+    roleTitle: opts.roleTitle || "Software Engineer",
+    engagementType: ENGAGEMENT_TYPES.includes(opts.engagementType) ? opts.engagementType : "FULL_TIME",
+    message: opts.message || null,
+  };
+  const res = await apiClient.post("/recruitment-requests", body);
+  return { candidateUuid, id: res?.id, status: res?.status || "PENDING", raw: res };
+}
+
+export async function getRecruitmentRequests({ status } = {}) {
+  const res = await apiClient.get("/recruitment-requests", status ? { status } : undefined);
+  const rows = Array.isArray(res) ? res : res?.content ?? [];
+  return rows.map((r) => ({
+    id: r.id,
+    candidateUuid: r.candidateUuid,
+    candidateName: r.candidateName,
+    roleTitle: r.roleTitle,
+    engagementType: r.engagementType,
+    message: r.message || "",
+    status: r.status,
+    decisionNote: r.decisionNote || "",
+    decidedAt: r.decidedAt || null,
+    createdAt: r.createdAt || null,
+  }));
 }
 
 // Looks up the resume a student uploaded via studentService.saveResumeFile

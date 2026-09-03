@@ -12,7 +12,7 @@ import { Input, Select, Textarea } from "../../components/ui/FormField";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required } from "../../utils/validators";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
-import { getMeetings, saveMeetings } from "../../services/baService";
+import { getMeetings, createMeeting, saveMeetingMinutes, deleteMeeting } from "../../services/baService";
 
 export default function BaMeetings() {
   const [meetings, setMeetings] = useState([]);
@@ -42,20 +42,15 @@ export default function BaMeetings() {
 
   const load = () => {
     setLoading(true);
-    getMeetings().then((m) => {
-      setMeetings(m);
-      setLoading(false);
-    });
+    getMeetings()
+      .then((m) => setMeetings(m.filter((x) => x.status !== "CANCELLED")))
+      .catch((e) => notify(e.message || "Could not load meetings.", { type: "error" }))
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {
     load();
   }, []);
-
-  const persist = (data) => {
-    setMeetings(data);
-    saveMeetings(data);
-  };
 
   const handleSchedule = async (e) => {
     e.preventDefault();
@@ -66,8 +61,7 @@ export default function BaMeetings() {
     setSubmitting(true);
     try {
       const generatedLink = values.meetLink || `https://meet.google.com/msh-${Math.random().toString(36).substr(2, 4)}-${Math.random().toString(36).substr(2, 3)}`;
-      const newMeeting = {
-        id: `m_${Date.now()}`,
+      await createMeeting({
         title: values.title,
         type: values.type,
         client: values.client || "Enterprise Client",
@@ -75,15 +69,14 @@ export default function BaMeetings() {
         time: values.time || "03:00 PM",
         meetLink: generatedLink,
         agenda: values.agenda || "Review sprint milestones and collect client sign-off.",
-        attendees: values.attendees.split(",").map((s) => s.trim()),
-        momNotes: ""
-      };
-
-      const updated = [newMeeting, ...meetings];
-      persist(updated);
-      notify("Client ceremony scheduled and calendar invites dispatched.", { type: "success", title: "Meeting Scheduled" });
+        attendees: values.attendees,
+      });
+      notify("Client ceremony scheduled.", { type: "success", title: "Meeting Scheduled" });
       setModalOpen(false);
       setValues({ title: "", type: "Sprint Demo", client: "", date: "", time: "03:00 PM", meetLink: "", agenda: "", attendees: "Client Lead, Trainer, BA, Developer Lead" });
+      load();
+    } catch (err) {
+      notify(err.message || "Could not schedule the meeting.", { type: "error" });
     } finally {
       setSubmitting(false);
     }
@@ -95,19 +88,27 @@ export default function BaMeetings() {
     setMomOpen(true);
   };
 
-  const saveMomNotes = (e) => {
+  const saveMomNotes = async (e) => {
     e.preventDefault();
-    const updated = meetings.map((m) => (m.id === activeMeeting.id ? { ...m, momNotes: momText } : m));
-    persist(updated);
-    notify("Minutes of Meeting (MOM) recorded.", { type: "success" });
-    setMomOpen(false);
+    try {
+      await saveMeetingMinutes(activeMeeting.id, momText, activeMeeting);
+      notify("Minutes of Meeting (MOM) recorded.", { type: "success" });
+      setMomOpen(false);
+      load();
+    } catch (err) {
+      notify(err.message || "Could not save the minutes.", { type: "error" });
+    }
   };
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     const target = meetings.find((m) => m.id === id);
-    const updated = meetings.filter((m) => m.id !== id);
-    persist(updated);
-    notify(`Meeting "${target?.title}" removed.`, { type: "success" });
+    try {
+      await deleteMeeting(id);
+      notify(`Meeting "${target?.title}" cancelled.`, { type: "success" });
+      load();
+    } catch (err) {
+      notify(err.message || "Could not cancel the meeting.", { type: "error" });
+    }
   };
 
   return (
