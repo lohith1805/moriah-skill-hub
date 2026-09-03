@@ -11,14 +11,32 @@ import FileUpload from "../../components/ui/FileUpload";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
-import { getPerformanceSummary, getMyTasks, getMyPipStatus, getVideoLessons, getResumeStatus, saveResumeFile } from "../../services/studentService";
+import { getPerformanceSummary, getMyTasks, getMyPipStatus, getVideoLessons, getResumeStatus, saveResumeFile, getMySubscription } from "../../services/studentService";
 import { loadRecruitments, stageTone, stageMessage, REJECTED } from "../../utils/placementPipeline";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { Input } from "../../components/ui/FormField";
 
 export default function StudentDashboard() {
   const { user } = useAuth();
   const { notify } = useToast();
+  const navigate = useNavigate();
+
+  // D2 flow: a freshly-verified student has no subscription yet — send them to
+  // pick a plan before the dashboard is useful.
+  useEffect(() => {
+    let cancelled = false;
+    getMySubscription()
+      .then((sub) => {
+        if (!cancelled && !sub) {
+          notify("Choose a plan to unlock your training dashboard.", { type: "info" });
+          navigate("/student/subscription", { replace: true });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate, notify]);
   const [summary, setSummary] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [pip, setPip] = useState(null);

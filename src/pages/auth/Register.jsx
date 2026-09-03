@@ -156,8 +156,9 @@ export default function Register() {
   const leadId = searchParams.get("leadId");
 
   const [role, setRole] = useState(ROLES.STUDENT);
-  const [step, setStep] = useState(1); // 1 = details, 2 = plan (student only), 3 = payment (student only)
+  const [step, setStep] = useState(1); // 1 = details (plan/payment now happen post-login on /student/subscription)
   const [clientSubmitted, setClientSubmitted] = useState(false);
+  const [studentSubmitted, setStudentSubmitted] = useState(false);
   const [gateway, setGateway] = useState("Razorpay");
 
   const [values, setValues] = useState({
@@ -312,10 +313,34 @@ export default function Register() {
     if (Object.keys(validation).length) return;
 
     if (isStudent) {
-      setStep(2);
+      submitStudent();
       return;
     }
     submitClient();
+  };
+
+  /* ---- Student: create the account, then send them to verify + sign in.
+     Plan selection and payment now happen after first login, on
+     /student/subscription (D2 flow) — the backend never auto-logs-in a
+     freshly-registered student and the account is PENDING_VERIFICATION. ---- */
+  const submitStudent = async () => {
+    setSubmitting(true);
+    try {
+      const res = await register({
+        name: values.name,
+        email: values.email,
+        phone: values.phone,
+        password: values.password,
+        track: values.track,
+        githubUsername: values.githubUsername || undefined,
+        notifications: { email: true, whatsapp: values.whatsappNotifications, desktop: true },
+      });
+      setStudentSubmitted(res?.needsEmailVerification !== false);
+    } catch (err) {
+      notify(err.message || "Registration failed. Please try again.", { type: "error", title: "Something went wrong" });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   /* ---- Client: no plan/payment step — submit straight to the approval queue ---- */
@@ -397,6 +422,33 @@ export default function Register() {
   };
 
   /* ------------------------------ Client: success screen ------------------------------ */
+  if (studentSubmitted) {
+    return (
+      <div className="text-center py-4">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary-100 text-primary-800">
+          <ShieldCheck size={26} />
+        </div>
+        <h2 className="font-display text-2xl font-bold text-ink-900 mt-5">Verify your email</h2>
+        <span className="block h-0.5 w-10 bg-gold-400 mt-3 mx-auto" />
+        <p className="text-sm text-ink-500 mt-4 max-w-sm mx-auto">
+          Thanks, <strong className="text-ink-700">{values.name.split(" ")[0]}</strong> — we've sent a verification
+          link to <strong className="text-ink-700">{values.email}</strong>. Confirm it, then sign in.
+        </p>
+        <div className="mt-5 rounded-lg border border-border bg-cream-50 p-4 text-left text-sm text-ink-600 max-w-sm mx-auto">
+          <p className="font-medium text-ink-900 mb-1.5">What happens next</p>
+          <ol className="list-decimal list-inside space-y-1">
+            <li>Open the verification link in your inbox.</li>
+            <li>Sign in with your email and password.</li>
+            <li>Choose a plan and pay on the Subscription page — that unlocks your dashboard.</li>
+          </ol>
+        </div>
+        <Link to="/login" className="inline-block mt-6 text-sm font-medium text-primary-700 hover:underline">
+          Go to sign in
+        </Link>
+      </div>
+    );
+  }
+
   if (clientSubmitted) {
     return (
       <div className="text-center py-4">
@@ -426,14 +478,8 @@ export default function Register() {
       <h2 className="font-display text-2xl font-bold text-ink-900">Create your account</h2>
       <span className="block h-0.5 w-10 bg-gold-400 mt-3" />
       <p className="text-sm text-ink-500 mt-3">
-        {isStudent ? "Register, choose a plan, and start learning." : "Register your company to review talent and project demos."}
+        {isStudent ? "Register and verify your email — you'll pick a plan after signing in." : "Register your company to review talent and project demos."}
       </p>
-
-      {isStudent && (
-        <div className="mt-5">
-          <Stepper steps={["Details", "Plan", "Payment"]} current={step} />
-        </div>
-      )}
 
       {/* ---------------- STEP 1: account details (both roles) ---------------- */}
       {step === 1 && (
@@ -568,8 +614,8 @@ export default function Register() {
           </label>
           <FieldError>{errors.agree}</FieldError>
 
-          <Button type="submit" fullWidth loading={submitting} icon={isStudent ? ArrowRight : UserPlus}>
-            {isStudent ? "Continue to plan selection" : "Submit for Admin approval"}
+          <Button type="submit" fullWidth loading={submitting} icon={UserPlus}>
+            {isStudent ? "Create account" : "Submit for Admin approval"}
           </Button>
 
           {isStudent && (
