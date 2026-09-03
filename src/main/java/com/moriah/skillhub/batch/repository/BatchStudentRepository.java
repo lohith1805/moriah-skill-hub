@@ -6,6 +6,7 @@ import com.moriah.skillhub.batch.entity.BatchStudent;
 import com.moriah.skillhub.batch.entity.BatchStudentStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -29,6 +30,13 @@ public interface BatchStudentRepository extends JpaRepository<BatchStudent, Long
     Optional<BatchStudent> findByUserIdAndStatusIn(Long userId, List<BatchStudentStatus> statuses);
 
     Page<BatchStudent> findByBatchId(Long batchId, Pageable pageable);
+
+    /** {@code GET /api/v1/batches/{id}/students} — the full roster, {@code user} fetched in the
+     * same query (a small, bounded per-batch list, so no pagination; {@code @EntityGraph} not
+     * {@code JOIN FETCH} keeps it composable and dodges the fetch-vs-pageable trap even though
+     * there is no {@code Pageable} here). Ordered oldest-enrolment first for a stable UI. */
+    @EntityGraph(attributePaths = "user")
+    List<BatchStudent> findByBatchIdOrderByJoinedAtAscIdAsc(Long batchId);
 
     /** {@code BatchService#activeMembersOf}'s bulk read — see {@link ActiveMemberProjection}'s
      * Javadoc. One flat query across every batch a caller needs, not one lookup per batch.

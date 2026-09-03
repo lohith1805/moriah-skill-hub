@@ -255,6 +255,40 @@ class BatchServiceTest {
         assertThat(batchService.hasGraduatedFromBatch(100L, 5L)).isFalse();
     }
 
+    @Test
+    void listStudents_callerOwnsBatch_returnsMappedRoster() {
+        authenticateAs(10L, List.of("TRAINER_PM"));
+        when(batchRepository.findById(100L)).thenReturn(Optional.of(batch));
+
+        User student = new User();
+        student.setUuid("stu-uuid-1");
+        student.setFullName("Sam Student");
+        student.setEmail("sam@moriah.test");
+        BatchStudent row = new BatchStudent();
+        row.setUser(student);
+        row.setStatus(BatchStudentStatus.ACTIVE);
+        when(batchStudentRepository.findByBatchIdOrderByJoinedAtAscIdAsc(100L)).thenReturn(List.of(row));
+
+        var roster = batchService.listStudents(10L, 100L);
+
+        assertThat(roster).singleElement()
+                .satisfies(r -> {
+                    assertThat(r.userUuid()).isEqualTo("stu-uuid-1");
+                    assertThat(r.fullName()).isEqualTo("Sam Student");
+                    assertThat(r.email()).isEqualTo("sam@moriah.test");
+                    assertThat(r.status()).isEqualTo(BatchStudentStatus.ACTIVE);
+                });
+    }
+
+    @Test
+    void listStudents_callerIsNotThePm_throwsForbidden() {
+        authenticateAs(77L, List.of("TRAINER_PM"));
+        when(batchRepository.findById(100L)).thenReturn(Optional.of(batch));
+
+        assertThatThrownBy(() -> batchService.listStudents(77L, 100L))
+                .isInstanceOf(ForbiddenOperationException.class);
+    }
+
     private void authenticateAs(long userId, List<String> roles) {
         AuthenticatedPrincipal principal = new AuthenticatedPrincipal(userId, "uuid-" + userId, roles);
         SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken(principal, null));

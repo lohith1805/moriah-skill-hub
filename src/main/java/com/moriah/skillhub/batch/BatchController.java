@@ -2,6 +2,7 @@ package com.moriah.skillhub.batch;
 
 import com.moriah.skillhub.batch.dto.AddStudentRequest;
 import com.moriah.skillhub.batch.dto.BatchResponse;
+import com.moriah.skillhub.batch.dto.BatchStudentResponse;
 import com.moriah.skillhub.batch.dto.CreateBatchRequest;
 import com.moriah.skillhub.batch.dto.UpdateBatchRequest;
 import com.moriah.skillhub.certificate.GraduationService;
@@ -29,12 +30,16 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 /** Mutations ({@code create}/{@code update}/{@code addStudent}/{@code removeStudent}/{@code
  * graduate}) are {@code TRAINER_PM}/{@code ADMIN} only, with per-batch ownership enforced in
  * {@link BatchService} (it needs the loaded {@code Batch}, which a static {@code @PreAuthorize}
- * can't check). The two reads ({@code list}, {@code get}) are widened to {@code STUDENT} —
- * matching {@code SprintController}/{@code TaskController} and the published API doc — but a
- * STUDENT-only caller sees only the batches they are enrolled in. */
+ * can't check). The two list-shaped reads ({@code list}, {@code get}) are widened to {@code
+ * STUDENT} — matching {@code SprintController}/{@code TaskController} and the published API doc —
+ * but a STUDENT-only caller sees only the batches they are enrolled in. The roster read
+ * ({@code GET /{id}/students}) stays PM/ADMIN-only (it exposes classmates' emails/scores) with
+ * the same per-batch ownership check the mutations use. */
 @RestController
 @RequestMapping("/api/v1/batches")
 @RequiredArgsConstructor
@@ -67,6 +72,15 @@ public class BatchController {
     @Operation(summary = "Get one batch — a STUDENT may only read a batch they are enrolled in")
     public ResponseEntity<ApiResponse<BatchResponse>> get(@PathVariable Long id, @CurrentUser Long callerUserId) {
         return ResponseEntity.ok(ApiResponse.success(batchService.get(id, callerUserId, isStudentOnly())));
+    }
+
+    @GetMapping("/{id}/students")
+    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @Operation(summary = "The batch roster — enrolled students with their uuid + status "
+            + "(a TRAINER_PM must own the batch). Feeds task assignment, graduation and letters.")
+    public ResponseEntity<ApiResponse<List<BatchStudentResponse>>> listStudents(
+            @PathVariable Long id, @CurrentUser Long callerUserId) {
+        return ResponseEntity.ok(ApiResponse.success(batchService.listStudents(callerUserId, id)));
     }
 
     /** A caller who holds STUDENT and nothing that grants the full list (ADMIN / TRAINER_PM). */

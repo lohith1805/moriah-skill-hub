@@ -265,6 +265,12 @@ graduated + issued (Flow 6).
 ```
 (student2. `409` if the batch is full or the student's tier is below `planTierMinCode`.)
 
+**Step 2b — read the roster** · `GET {{baseUrl}}/api/v1/batches/«batchId»/students` · auth: «token as TRAINER_PM»
+→ `data[]` of `{ userUuid, fullName, email, status (ACTIVE｜ON_PIP｜GRADUATED｜TERMINATED｜REASSIGNED),
+joinedAt, graduatedAt, finalScore }`. **PM/ADMIN only** and a TRAINER_PM must own the batch (`403
+NOT_BATCH_OWNER` otherwise). Keep a `userUuid` as «studentUuid» — it feeds `POST /tasks/{id}/assign`,
+`.../students/{userUuid}/graduate`, and `POST /hr/letters/{type}`.
+
 **Step 3 — create sprint 1** · `POST {{baseUrl}}/api/v1/sprints`
 ```json
 { "batchId": «batchId», "sprintNumber": 1, "goal": "Core CRUD API",

@@ -4,6 +4,7 @@ import com.moriah.skillhub.batch.dto.ActiveEnrollmentProjection;
 import com.moriah.skillhub.batch.dto.ActiveMemberProjection;
 import com.moriah.skillhub.batch.dto.AddStudentRequest;
 import com.moriah.skillhub.batch.dto.BatchResponse;
+import com.moriah.skillhub.batch.dto.BatchStudentResponse;
 import com.moriah.skillhub.batch.dto.CreateBatchRequest;
 import com.moriah.skillhub.batch.dto.GraduationResult;
 import com.moriah.skillhub.batch.dto.UpdateBatchRequest;
@@ -99,6 +100,32 @@ public class BatchService {
         Map<Long, String> planCodes = entitlementService.planCodesById();
         return PageResponse.from(
                 batchRepository.findEnrolledByUserId(callerUserId, pageable).map(batch -> toResponse(batch, planCodes)));
+    }
+
+    /** {@code GET /api/v1/batches/{id}/students} — the batch roster. PM/ADMIN only (route-gated),
+     * and a TRAINER_PM must own the batch: {@link #requireOwnerOrAdmin} is the exact same check
+     * every batch/sprint/task mutation already uses. Returns every enrolment row (ACTIVE, ON_PIP,
+     * GRADUATED, …) so a PM screen can act on the {@code userUuid} — assign a task, graduate a
+     * student, issue a letter — without a second lookup. */
+    @Transactional(readOnly = true)
+    public List<BatchStudentResponse> listStudents(Long callerUserId, Long batchId) {
+        Batch batch = requireBatch(batchId);
+        requireOwnerOrAdmin(callerUserId, batch);
+        return batchStudentRepository.findByBatchIdOrderByJoinedAtAscIdAsc(batchId).stream()
+                .map(BatchService::toStudentResponse)
+                .toList();
+    }
+
+    private static BatchStudentResponse toStudentResponse(BatchStudent bs) {
+        User u = bs.getUser();
+        return new BatchStudentResponse(
+                u.getUuid(),
+                u.getFullName(),
+                u.getEmail(),
+                bs.getStatus(),
+                bs.getJoinedAt(),
+                bs.getGraduatedAt(),
+                bs.getFinalScore());
     }
 
     @Transactional
