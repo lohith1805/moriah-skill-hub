@@ -74,6 +74,19 @@ public class NotificationService {
         });
     }
 
+    /**
+     * Writes the row in its own fresh transaction and pushes to the queue — for callers that
+     * run with <em>no</em> ambient transaction and whose triggering event is already committed
+     * (e.g. {@code InvoiceService.renderAndUpload}, an {@code @Async AFTER_COMMIT} listener). Not
+     * {@link #enqueueAfterCommit} — there is no transaction to hang an {@code afterCommit} on;
+     * not {@link #enqueue} — that would open a REQUIRED transaction that spans nothing.
+     */
+    public void enqueueNow(Long userId, NotificationChannel channel, String templateCode,
+                            Map<String, Object> payload) {
+        requireDispatchable(channel);
+        notificationWriter.writeInNewTransaction(userId, channel, templateCode, serialize(payload));
+    }
+
     private void requireDispatchable(NotificationChannel channel) {
         if (!dispatchableChannels.contains(channel)) {
             throw new BusinessException(ErrorCode.NOTIFICATION_CHANNEL_NOT_SUPPORTED);

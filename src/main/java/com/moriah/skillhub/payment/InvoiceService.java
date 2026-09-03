@@ -4,6 +4,8 @@ import com.lowagie.text.Document;
 import com.lowagie.text.Paragraph;
 import com.lowagie.text.pdf.PdfWriter;
 import com.moriah.skillhub.common.audit.AuditLogService;
+import com.moriah.skillhub.common.notification.NotificationChannel;
+import com.moriah.skillhub.common.notification.NotificationService;
 import com.moriah.skillhub.common.storage.StorageService;
 import com.moriah.skillhub.payment.dto.InvoiceResponse;
 import com.moriah.skillhub.payment.entity.Invoice;
@@ -23,6 +25,7 @@ import java.io.ByteArrayOutputStream;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -47,6 +50,7 @@ public class InvoiceService {
     private final SubscriptionPlanRepository subscriptionPlanRepository;
     private final StorageService storageService;
     private final AuditLogService auditLogService;
+    private final NotificationService notificationService;
 
     /** Feature 23 hardening: deliberately <b>not</b> {@code @Transactional} any more — {@code
      * storageService.uploadTrusted} is an outbound S3 call, and AGENTS.md is explicit ("never make
@@ -91,6 +95,34 @@ public class InvoiceService {
         auditLogService.record(null, "INVOICE_ISSUED", "Invoice", invoice.getId(), InvoiceStatus.PENDING, InvoiceStatus.ISSUED);
 
         log.info("[invoice] rendered and uploaded {} to {}", invoice.getInvoiceNumber(), key);
+
+        sendConfirmationEmail(invoice, payment, planName, pdfBytes);
+    }
+
+    /**
+     * The subscription-confirmation email, sent here rather than from the webhook so the freshly
+     * rendered invoice PDF can be attached. {@code enqueueNow} (not {@code enqueueAfterCommit}) —
+     * this method runs with no ambient transaction, triggered by an already-committed payment.
+     * A missing / blank recipient just skips the send (nothing to email).
+     */
+    private void sendConfirmationEmail(Invoice invoice, Payment payment, String planName, byte[] pdfBytes) {
+        String to = payment.getUser().getEmail();
+        if (to == null || to.isBlank()) {
+            return;
+        }
+        notificationService.enqueueNow(payment.getUser().getId(), NotificationChannel.EMAIL,
+                "SUBSCRIPTION_CONFIRMATION", Map.of(
+                        "to", to,
+                        "subject", "Payment received — your Moriah Skill Hub subscription is active",
+                        "body", "Thanks for your payment. Your " + planName + " plan is now active.\n\n"
+                                + "Invoice " + invoice.getInvoiceNumber() + " for "
+                                + payment.getCurrency() + " " + invoice.getTotalAmount().toPlainString()
+                                + " is attached to this email.\n\n"
+                                + "Sign in to see your dashboard — if your plan includes a batch you'll be "
+                                + "placed into one automatically and we'll let you know.",
+                        "attachmentBase64", Base64.getEncoder().encodeToString(pdfBytes),
+                        "attachmentFilename", invoice.getInvoiceNumber() + ".pdf",
+                        "attachmentContentType", "application/pdf"));
     }
 
     private static final Duration PDF_LINK_TTL = Duration.ofMinutes(10);

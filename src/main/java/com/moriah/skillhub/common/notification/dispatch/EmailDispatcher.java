@@ -7,6 +7,7 @@ import com.sendgrid.Request;
 import com.sendgrid.Response;
 import com.sendgrid.SendGrid;
 import com.sendgrid.helpers.mail.Mail;
+import com.sendgrid.helpers.mail.objects.Attachments;
 import com.sendgrid.helpers.mail.objects.Content;
 import com.sendgrid.helpers.mail.objects.Email;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,10 @@ import java.util.Map;
  * anything itself): {@code to} (recipient email), {@code subject}, {@code body} (plain text).
  * Every current consumer (email verification, password reset) builds these directly since each
  * is a one-off link, not a reusable multi-variable template.
+ *
+ * <p>Optional single file attachment: {@code attachmentBase64} (the file bytes, base64), {@code
+ * attachmentFilename}, and optionally {@code attachmentContentType} (default
+ * {@code application/pdf}). Used by the subscription-confirmation email to attach the invoice PDF.
  */
 @Component
 @RequiredArgsConstructor
@@ -44,6 +49,16 @@ public class EmailDispatcher implements NotificationChannelDispatcher {
         Email from = new Email(props.fromAddress(), props.fromName());
         Mail mail = new Mail(from, subject, new Email(to), new Content("text/plain", body));
 
+        Object attachmentBase64 = payload.get("attachmentBase64");
+        if (attachmentBase64 != null) {
+            Attachments attachment = new Attachments();
+            attachment.setContent(attachmentBase64.toString());
+            attachment.setFilename(optionalString(payload, "attachmentFilename", "attachment.pdf"));
+            attachment.setType(optionalString(payload, "attachmentContentType", "application/pdf"));
+            attachment.setDisposition("attachment");
+            mail.addAttachments(attachment);
+        }
+
         Request request = new Request();
         request.setMethod(Method.POST);
         request.setEndpoint("mail/send");
@@ -62,5 +77,10 @@ public class EmailDispatcher implements NotificationChannelDispatcher {
             throw new IllegalStateException("Notification payload missing required field: " + key);
         }
         return value.toString();
+    }
+
+    private String optionalString(Map<String, Object> payload, String key, String fallback) {
+        Object value = payload.get(key);
+        return value == null ? fallback : value.toString();
     }
 }

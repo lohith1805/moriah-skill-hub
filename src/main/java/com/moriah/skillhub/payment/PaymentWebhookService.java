@@ -187,30 +187,18 @@ public class PaymentWebhookService {
         eventPublisher.publishEvent(new PaymentCapturedEvent(payment.getId()));
     }
 
-    /** Tell the student their payment landed — an in-app row (so it reaches the bell, not just a
-     * transient toast) plus an email. Fires after this transaction commits; a dispatch failure
-     * never rolls the payment back ({@code enqueueAfterCommit}). */
+    /** The instant in-app "your subscription is active" row (so it reaches the bell, not just a
+     * transient toast). Fires after this transaction commits. The <em>email</em> confirmation is
+     * sent separately from {@code InvoiceService.renderAndUpload} once the invoice PDF exists, so
+     * it can be attached. */
     private void notifySubscriber(Payment payment, UserSubscription subscription) {
-        Long userId = payment.getUser().getId();
-        String planName = Objects.toString(subscription.getPlan().getName(), "your subscription");
-        String endDate = Objects.toString(subscription.getEndDate(), "");
-
-        notificationService.enqueueAfterCommit(userId, NotificationChannel.IN_APP, "SUBSCRIPTION_ACTIVATED", Map.of(
-                "planName", planName,
-                "startDate", Objects.toString(subscription.getStartDate(), ""),
-                "endDate", endDate,
-                "amount", Objects.toString(payment.getAmount(), ""),
-                "currency", Objects.toString(payment.getCurrency(), "")));
-
-        String email = payment.getUser().getEmail();
-        if (email != null && !email.isBlank()) {
-            notificationService.enqueueAfterCommit(userId, NotificationChannel.EMAIL, "SUBSCRIPTION_ACTIVATED", Map.of(
-                    "to", email,
-                    "subject", "Your Moriah Skill Hub subscription is active",
-                    "body", "Your " + planName + " plan is now active until " + endDate
-                            + ". Sign in to see your dashboard, and if your plan includes a batch you'll be "
-                            + "placed into one automatically — we'll email you the details."));
-        }
+        notificationService.enqueueAfterCommit(payment.getUser().getId(), NotificationChannel.IN_APP,
+                "SUBSCRIPTION_ACTIVATED", Map.of(
+                        "planName", Objects.toString(subscription.getPlan().getName(), "your subscription"),
+                        "startDate", Objects.toString(subscription.getStartDate(), ""),
+                        "endDate", Objects.toString(subscription.getEndDate(), ""),
+                        "amount", Objects.toString(payment.getAmount(), ""),
+                        "currency", Objects.toString(payment.getCurrency(), "")));
     }
 
     /** @return the newly-created ACTIVE subscription, or {@code null} if the user already had one
