@@ -1,6 +1,6 @@
 # Moriah Skill Hub — API Documentation
 
-> Generated from `docs/openapi.json` (OpenAPI 3.1.0). 107 endpoints across 23 groups. Auth/role column is read from each controller's `@PreAuthorize`.
+> Generated from `docs/openapi.json` (OpenAPI 3.1.0). 113 endpoints across 24 groups. Auth/role column is read from each controller's `@PreAuthorize`.
 
 ## Conventions
 
@@ -91,14 +91,15 @@ On success the callback returns the **same `LoginResponse` envelope as `POST /ap
 - [Attendance](#attendance) — 4 endpoints
 - [Auth](#auth) — 13 endpoints
 - [BA](#ba) — 3 endpoints
-- [Batches](#batches) — 7 endpoints
+- [Batches](#batches) — 8 endpoints
 - [Bug Challenges](#bug-challenges) — 1 endpoints
 - [CRM](#crm) — 5 endpoints
 - [Certificates](#certificates) — 4 endpoints
 - [Checkout](#checkout) — 1 endpoints
 - [Clients](#clients) — 3 endpoints
-- [HR](#hr) — 8 endpoints
+- [HR](#hr) — 10 endpoints
 - [PIP](#pip) — 6 endpoints
+- [Placements](#placements) — 3 endpoints
 - [Plans](#plans) — 1 endpoints
 - [Projects](#projects) — 5 endpoints
 - [Reviews](#reviews) — 3 endpoints
@@ -118,7 +119,7 @@ On success the callback returns the **same `LoginResponse` envelope as `POST /ap
 
 Read-only audit log, optionally filtered by entity type, user, and a start date
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: ADMIN
 
 **Query parameters:**
 
@@ -168,7 +169,7 @@ Read-only audit log, optionally filtered by entity type, user, and a start date
 
 List client self-registrations awaiting review (default) or already rejected
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: ADMIN
 
 **Query parameters:**
 
@@ -292,7 +293,7 @@ Decline a client registration — account becomes REJECTED and the applicant is 
 
 Generate an XLSX export (users/revenue/audit) and return a presigned download URL
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: ADMIN
 
 **Path parameters:**
 
@@ -324,7 +325,7 @@ Generate an XLSX export (users/revenue/audit) and return a presigned download UR
 
 Admin KPI overview — attendance/task/quiz averages, recent revenue, lead funnel, batch velocity
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: ADMIN
 
 **Response `200`:**
 
@@ -454,7 +455,7 @@ Update a subscription plan's pricing/feature flags at runtime — cache evicted 
 
 List users, optionally filtered by role and/or status
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: ADMIN
 
 **Query parameters:**
 
@@ -501,7 +502,7 @@ List users, optionally filtered by role and/or status
 
 Invite a staff member — creates an INVITED account and emails an accept-invite link. roles must be staff roles (not STUDENT/CLIENT).
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: ADMIN
 
 **Request body:**
 
@@ -668,7 +669,7 @@ Change a user's status — increments token_version, invalidating every outstand
 
 List assessments for a batch
 
-**Auth:** Role: TRAINER_PM or ADMIN
+**Auth:** Role: TRAINER_PM or ADMIN or STUDENT
 
 **Query parameters:**
 
@@ -714,7 +715,7 @@ List assessments for a batch
 
 Create an assessment (quiz) with its questions
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: TRAINER_PM or ADMIN
 
 **Request body:**
 
@@ -770,7 +771,7 @@ Create an assessment (quiz) with its questions
 
 Get an attempt — its questions while in progress, its graded result once terminal
 
-**Auth:** Role: STUDENT
+**Auth:** Role: TRAINER_PM or ADMIN or STUDENT
 
 **Path parameters:**
 
@@ -827,7 +828,7 @@ Get an attempt — its questions while in progress, its graded result once termi
 
 Submit an attempt for grading
 
-**Auth:** Role: TRAINER_PM or ADMIN or STUDENT
+**Auth:** Role: STUDENT
 
 **Path parameters:**
 
@@ -900,7 +901,7 @@ Submit an attempt for grading
 
 Start (or resume) an attempt at an assessment
 
-**Auth:** Role: TRAINER_PM or ADMIN or STUDENT
+**Auth:** Role: STUDENT
 
 **Path parameters:**
 
@@ -959,7 +960,7 @@ Start (or resume) an attempt at an assessment
 
 Attendance roster for a batch
 
-**Auth:** Role: STUDENT
+**Auth:** Role: TRAINER_PM or ADMIN
 
 **Path parameters:**
 
@@ -1008,7 +1009,7 @@ Attendance roster for a batch
 
 My own attendance history
 
-**Auth:** Role: TRAINER_PM or ADMIN
+**Auth:** Role: STUDENT
 
 **Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
 
@@ -1051,7 +1052,7 @@ My own attendance history
 
 PM override of a student's attendance status
 
-**Auth:** Role: STUDENT
+**Auth:** Role: TRAINER_PM or ADMIN
 
 **Path parameters:**
 
@@ -1099,7 +1100,7 @@ PM override of a student's attendance status
 
 Self check in to a standup
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: STUDENT
 
 **Path parameters:**
 
@@ -1692,7 +1693,7 @@ Approve a requirement document — IN_REVIEW to APPROVED
 
 List batches
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: TRAINER_PM or ADMIN or STUDENT
 
 **Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
 
@@ -1735,7 +1736,7 @@ List batches
 
 Create a batch — the caller becomes its PM
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: TRAINER_PM or ADMIN
 
 **Request body:**
 
@@ -1818,7 +1819,7 @@ Get one batch
 
 Update a batch
 
-**Auth:** Role: TRAINER_PM or ADMIN or STUDENT
+**Auth:** Role: TRAINER_PM or ADMIN
 
 **Path parameters:**
 
@@ -1857,6 +1858,42 @@ Update a batch
     "enrolledCount": 0,
     "status": "PLANNED"
   },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `GET` `/api/v1/batches/{id}/students`
+
+The batch roster - enrolled students with their uuid + status (a TRAINER_PM must own the batch). Feeds task assignment, graduation and letters.
+
+**Auth:** Role: TRAINER_PM or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "userUuid": "string",
+      "fullName": "string",
+      "email": "string",
+      "status": "ACTIVE",
+      "joinedAt": "2026-01-15T10:30:00Z",
+      "graduatedAt": "2026-01-15T10:30:00Z",
+      "finalScore": 0.0
+    }
+  ],
   "error": null
 }
 ```
@@ -1977,7 +2014,7 @@ Graduate an ACTIVE student — required before a certificate can be issued
 
 Attach a bug-fix challenge — brokenCode required, testScript optional
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: DEVELOPER or ADMIN
 
 **Path parameters:**
 
@@ -2027,7 +2064,7 @@ Attach a bug-fix challenge — brokenCode required, testScript optional
 
 ### `GET` `/api/v1/leads`
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: LEAD_GEN or ADMIN
 
 **Query parameters:**
 
@@ -2080,7 +2117,7 @@ Attach a bug-fix challenge — brokenCode required, testScript optional
 
 ### `POST` `/api/v1/leads`
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: LEAD_GEN or ADMIN
 
 **Request body:**
 
@@ -2258,7 +2295,7 @@ Attach a bug-fix challenge — brokenCode required, testScript optional
 
 Issue a certificate — requires GRADUATED, no open PIP, and every sprint COMPLETED
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: TRAINER_PM or ADMIN
 
 **Request body:**
 
@@ -2301,7 +2338,7 @@ Issue a certificate — requires GRADUATED, no open PIP, and every sprint COMPLE
 
 The caller's own issued certificates
 
-**Auth:** Role: TRAINER_PM or ADMIN
+**Auth:** Role: STUDENT
 
 **Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
 
@@ -2379,7 +2416,7 @@ Public certificate verification by code — never accepts a certificate id
 
 Revoke a certificate — never deletes it, still resolves publicly as invalid
 
-**Auth:** Role: STUDENT
+**Auth:** Role: TRAINER_PM or ADMIN
 
 **Path parameters:**
 
@@ -2428,7 +2465,7 @@ Revoke a certificate — never deletes it, still resolves publicly as invalid
 
 Create a payment order/session for a plan; never activates anything directly
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Authenticated (any logged-in user)
 
 **Request body:**
 
@@ -2469,7 +2506,7 @@ Create a payment order/session for a plan; never activates anything directly
 
 Provision a client company, optionally with a portal login
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: ADMIN
 
 **Request body:**
 
@@ -2511,7 +2548,7 @@ Provision a client company, optionally with a portal login
 
 Submit a new project scope as the caller's own client company
 
-**Auth:** Role: ADMIN
+**Auth:** Role: CLIENT
 
 **Request body:**
 
@@ -2550,7 +2587,7 @@ Submit a new project scope as the caller's own client company
 
 Burndown and milestone completion for one client project — never another client's data
 
-**Auth:** Role: CLIENT
+**Auth:** Role: CLIENT or BUSINESS_ANALYST or ADMIN
 
 **Path parameters:**
 
@@ -2588,9 +2625,59 @@ Burndown and milestone completion for one client project — never another clien
 
 ## HR
 
+### `GET` `/api/v1/hr/documents`
+
+List HR documents - an employee sees only their own; HR_MANAGER / ADMIN see all, optionally filtered by status / userUuid / documentType. Each row carries a short-lived presigned downloadUrl.
+
+**Auth:** Authenticated (any logged-in user)
+
+**Query parameters:**
+
+| name | type | required | description |
+|---|---|---|---|
+| `status` | string | no |  |
+| `userUuid` | string | no |  |
+| `documentType` | string | no |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 0,
+        "userUuid": "string",
+        "documentType": "string",
+        "verificationStatus": "PENDING",
+        "verifiedByUuid": "string",
+        "verifiedAt": "2026-01-15T10:30:00Z",
+        "rejectionReason": "string",
+        "userFullName": "string",
+        "downloadUrl": "string",
+        "createdAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
 ### `POST` `/api/v1/hr/documents`
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Authenticated (any logged-in user)
 
 **Query parameters:**
 
@@ -2618,7 +2705,10 @@ Burndown and milestone completion for one client project — never another clien
     "verificationStatus": "PENDING",
     "verifiedByUuid": "string",
     "verifiedAt": "2026-01-15T10:30:00Z",
-    "rejectionReason": "string"
+    "rejectionReason": "string",
+    "userFullName": "string",
+    "downloadUrl": "string",
+    "createdAt": "2026-01-15T10:30:00Z"
   },
   "error": null
 }
@@ -2630,7 +2720,7 @@ Burndown and milestone completion for one client project — never another clien
 
 ### `PUT` `/api/v1/hr/documents/{id}/verify`
 
-**Auth:** Authenticated (any logged-in user)
+**Auth:** Role: HR_MANAGER or ADMIN
 
 **Path parameters:**
 
@@ -2659,7 +2749,10 @@ Burndown and milestone completion for one client project — never another clien
     "verificationStatus": "PENDING",
     "verifiedByUuid": "string",
     "verifiedAt": "2026-01-15T10:30:00Z",
-    "rejectionReason": "string"
+    "rejectionReason": "string",
+    "userFullName": "string",
+    "downloadUrl": "string",
+    "createdAt": "2026-01-15T10:30:00Z"
   },
   "error": null
 }
@@ -2671,7 +2764,7 @@ Burndown and milestone completion for one client project — never another clien
 
 ### `POST` `/api/v1/hr/employees`
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: HR_MANAGER or ADMIN
 
 **Request body:**
 
@@ -2717,9 +2810,60 @@ Burndown and milestone completion for one client project — never another clien
 
 ---
 
+### `GET` `/api/v1/hr/leaves`
+
+List leave requests - an employee sees only their own; HR_MANAGER / ADMIN see all, optionally filtered by status and userUuid
+
+**Auth:** Authenticated (any logged-in user)
+
+**Query parameters:**
+
+| name | type | required | description |
+|---|---|---|---|
+| `status` | string | no |  |
+| `userUuid` | string | no |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 0,
+        "userUuid": "string",
+        "leaveType": "SICK",
+        "fromDate": "2026-01-15",
+        "toDate": "2026-01-15",
+        "days": 0.0,
+        "reason": "string",
+        "status": "PENDING",
+        "approvedByUuid": "string",
+        "decidedAt": "2026-01-15T10:30:00Z",
+        "userFullName": "string",
+        "createdAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
 ### `POST` `/api/v1/hr/leaves`
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Authenticated (any logged-in user)
 
 **Request body:**
 
@@ -2747,7 +2891,9 @@ Burndown and milestone completion for one client project — never another clien
     "reason": "string",
     "status": "PENDING",
     "approvedByUuid": "string",
-    "decidedAt": "2026-01-15T10:30:00Z"
+    "decidedAt": "2026-01-15T10:30:00Z",
+    "userFullName": "string",
+    "createdAt": "2026-01-15T10:30:00Z"
   },
   "error": null
 }
@@ -2790,7 +2936,9 @@ Burndown and milestone completion for one client project — never another clien
     "reason": "string",
     "status": "PENDING",
     "approvedByUuid": "string",
-    "decidedAt": "2026-01-15T10:30:00Z"
+    "decidedAt": "2026-01-15T10:30:00Z",
+    "userFullName": "string",
+    "createdAt": "2026-01-15T10:30:00Z"
   },
   "error": null
 }
@@ -2802,7 +2950,7 @@ Burndown and milestone completion for one client project — never another clien
 
 ### `POST` `/api/v1/hr/letters/{type}`
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: HR_MANAGER or ADMIN
 
 **Path parameters:**
 
@@ -2837,7 +2985,7 @@ Burndown and milestone completion for one client project — never another clien
 
 ### `GET` `/api/v1/hr/payroll`
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: HR_MANAGER or ADMIN
 
 **Query parameters:**
 
@@ -2886,7 +3034,7 @@ Burndown and milestone completion for one client project — never another clien
 
 ### `POST` `/api/v1/hr/payroll/generate`
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: HR_MANAGER or ADMIN
 
 **Request body:**
 
@@ -2941,7 +3089,7 @@ Burndown and milestone completion for one client project — never another clien
 
 Browse PIP records
 
-**Auth:** Role: STUDENT
+**Auth:** Role: TRAINER_PM or HR_MANAGER or ADMIN
 
 **Query parameters:**
 
@@ -3007,7 +3155,7 @@ Browse PIP records
 
 The caller's own currently-open PIP record
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: STUDENT
 
 **Response `200`:**
 
@@ -3055,7 +3203,7 @@ The caller's own currently-open PIP record
 
 The six PIP rules and their current thresholds
 
-**Auth:** Role: TRAINER_PM or ADMIN
+**Auth:** Role: TRAINER_PM or HR_MANAGER or ADMIN
 
 **Response `200`:**
 
@@ -3084,7 +3232,7 @@ The six PIP rules and their current thresholds
 
 Update a PIP rule's threshold/window/severity/active flag
 
-**Auth:** Role: TRAINER_PM or HR_MANAGER or ADMIN
+**Auth:** Role: ADMIN
 
 **Path parameters:**
 
@@ -3127,7 +3275,7 @@ Update a PIP rule's threshold/window/severity/active flag
 
 Mark a PIP milestone complete
 
-**Auth:** Role: TRAINER_PM or HR_MANAGER or ADMIN
+**Auth:** Role: TRAINER_PM or ADMIN
 
 **Path parameters:**
 
@@ -3221,6 +3369,139 @@ Day-15 review — CLEARED requires task completion >= 85% and no unsatisfactory 
 
 ---
 
+## Placements
+
+### `GET` `/api/v1/placements`
+
+List placements visible to the caller - a CLIENT sees the ones they requested, a STUDENT the ones where they are the candidate, HR_MANAGER / ADMIN see all. Optional stage filter.
+
+**Auth:** Role: CLIENT or STUDENT or HR_MANAGER or ADMIN
+
+**Query parameters:**
+
+| name | type | required | description |
+|---|---|---|---|
+| `stage` | string | no |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 0,
+        "recruitmentRequestId": 0,
+        "candidateUuid": "string",
+        "candidateName": "string",
+        "clientUuid": "string",
+        "clientName": "string",
+        "stage": "SHORTLISTED",
+        "details": {},
+        "createdAt": "2026-01-15T10:30:00Z",
+        "updatedAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `GET` `/api/v1/placements/{id}`
+
+One placement
+
+**Auth:** Role: CLIENT or STUDENT or HR_MANAGER or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "recruitmentRequestId": 0,
+    "candidateUuid": "string",
+    "candidateName": "string",
+    "clientUuid": "string",
+    "clientName": "string",
+    "stage": "SHORTLISTED",
+    "details": {},
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `PUT` `/api/v1/placements/{id}`
+
+Advance a placement's stage (forward-only; REJECTED from any non-terminal) and merge stage fields into details. Per-stage ownership is enforced.
+
+**Auth:** Role: CLIENT or STUDENT or HR_MANAGER or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Request body:**
+
+```json
+{
+  "stage": "SHORTLISTED",
+  "details": {}
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "recruitmentRequestId": 0,
+    "candidateUuid": "string",
+    "candidateName": "string",
+    "clientUuid": "string",
+    "clientName": "string",
+    "stage": "SHORTLISTED",
+    "details": {},
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
 ## Plans
 
 ### `GET` `/api/v1/plans`
@@ -3263,7 +3544,7 @@ List active subscription plans
 
 Browse projects — non-admin callers always see PUBLISHED only
 
-**Auth:** Role: DEVELOPER or ADMIN
+**Auth:** Role: DEVELOPER or ADMIN or TRAINER_PM or STUDENT
 
 **Query parameters:**
 
@@ -3336,7 +3617,7 @@ Browse projects — non-admin callers always see PUBLISHED only
 
 Author a new project (always created DRAFT)
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: DEVELOPER or ADMIN
 
 **Request body:**
 
@@ -3406,7 +3687,7 @@ Author a new project (always created DRAFT)
 
 Edit a DRAFT project in place, or bump a PUBLISHED/ARCHIVED one into a new DRAFT version
 
-**Auth:** Role: DEVELOPER or ADMIN or TRAINER_PM or STUDENT
+**Auth:** Role: DEVELOPER or ADMIN
 
 **Path parameters:**
 
@@ -3593,7 +3874,7 @@ DRAFT -> PUBLISHED — only a PUBLISHED project can attach to a task
 
 Review a submission — score, verdict, comments
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: TRAINER_PM or ADMIN
 
 **Request body:**
 
@@ -3647,7 +3928,7 @@ Review a submission — score, verdict, comments
 
 IN_REVIEW tasks awaiting the caller's review
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: TRAINER_PM or ADMIN
 
 **Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
 
@@ -3737,7 +4018,7 @@ Record a student's weekly qualitative rating
 
 List assignment windows for a batch
 
-**Auth:** Role: TRAINER_PM or ADMIN
+**Auth:** Role: TRAINER_PM or ADMIN or STUDENT
 
 **Query parameters:**
 
@@ -3820,7 +4101,7 @@ Create a weekly assignment window for a batch
 
 List sprints for a batch
 
-**Auth:** Role: TRAINER_PM or ADMIN
+**Auth:** Role: TRAINER_PM or ADMIN or STUDENT
 
 **Query parameters:**
 
@@ -3867,7 +4148,7 @@ List sprints for a batch
 
 Create a sprint
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: TRAINER_PM or ADMIN
 
 **Request body:**
 
@@ -3910,7 +4191,7 @@ Create a sprint
 
 Update a sprint
 
-**Auth:** Role: TRAINER_PM or ADMIN or STUDENT
+**Auth:** Role: TRAINER_PM or ADMIN
 
 **Path parameters:**
 
@@ -3996,7 +4277,7 @@ Activate a sprint (requires the previous sprint COMPLETED)
 
 List standups for a batch, optionally scoped to one day
 
-**Auth:** Role: TRAINER_PM or ADMIN
+**Auth:** Role: TRAINER_PM or ADMIN or STUDENT
 
 **Query parameters:**
 
@@ -4043,7 +4324,7 @@ List standups for a batch, optionally scoped to one day
 
 Schedule a standup
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: TRAINER_PM or ADMIN
 
 **Request body:**
 
@@ -4084,7 +4365,7 @@ Schedule a standup
 
 Edit or cancel a SCHEDULED standup
 
-**Auth:** Role: TRAINER_PM or ADMIN or STUDENT
+**Auth:** Role: TRAINER_PM or ADMIN
 
 **Path parameters:**
 
@@ -4131,7 +4412,7 @@ Edit or cancel a SCHEDULED standup
 
 List submissions for a task
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: TRAINER_PM or ADMIN or STUDENT
 
 **Query parameters:**
 
@@ -4187,7 +4468,7 @@ List submissions for a task
 
 Submit a PR for a task
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: STUDENT
 
 **Request body:**
 
@@ -4238,7 +4519,7 @@ Submit a PR for a task
 
 The caller's current active subscription
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Authenticated (any logged-in user)
 
 **Response `200`:**
 
@@ -4267,7 +4548,7 @@ The caller's current active subscription
 
 List tasks for a sprint
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: TRAINER_PM or ADMIN or STUDENT
 
 **Query parameters:**
 
@@ -4319,7 +4600,7 @@ List tasks for a sprint
 
 Create a task
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: TRAINER_PM or ADMIN
 
 **Request body:**
 
@@ -4366,7 +4647,7 @@ Create a task
 
 Update a task, including driving its status forward
 
-**Auth:** Role: TRAINER_PM or ADMIN or STUDENT
+**Auth:** Role: TRAINER_PM or ADMIN
 
 **Path parameters:**
 
@@ -4465,7 +4746,7 @@ PM assigns a BACKLOG task to a specific student
 
 Student self-assigns a BACKLOG task
 
-**Auth:** Role: TRAINER_PM or ADMIN
+**Auth:** Role: STUDENT
 
 **Path parameters:**
 
@@ -4506,7 +4787,7 @@ Student self-assigns a BACKLOG task
 
 A student's public portfolio
 
-**Auth:** Authenticated (any logged-in user)
+**Auth:** Public — no token required
 
 **Path parameters:**
 
@@ -4553,7 +4834,7 @@ A student's public portfolio
 
 The caller's own profile
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Authenticated (any logged-in user)
 
 **Response `200`:**
 

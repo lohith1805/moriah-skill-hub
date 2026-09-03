@@ -671,16 +671,32 @@ require the student to be `GRADUATED` or cleanly `EXITED` — never terminated.
    `http://localhost:8080/api/v1/auth/oauth2/callback/google` in Google Cloud Console
    (`required-integrations.md` §3.1).
 2. Open in a browser: `http://localhost:8080/api/v1/auth/oauth2/authorize/google`
-3. Sign in → the callback returns the **same `LoginResponse` JSON** as Flow 1A
-   (`data.tokens.accessToken` …). First login for that email creates a `STUDENT`.
+3. Sign in → the backend completes the login, then **302-redirects the browser to the SPA**
+   at `moriah.security.oauth2.frontend-redirect-uri`
+   (`OAUTH2_FRONTEND_REDIRECT_URI`, default `http://localhost:5173/auth/oauth/callback`) with the
+   result in the **URL fragment** (never the query string — keeps the token out of logs/`Referer`):
+   - success → `#accessToken=…&refreshToken=…&expiresIn=…`
+   - 2FA account → `#twoFactorRequired=true&twoFactorSetupRequired=<bool>&challengeToken=…`
+     (then finish with `POST /auth/2fa/verify` as in Flow 1B)
+   - failure → `#error=<ERROR_CODE>` (e.g. `ACCOUNT_SUSPENDED`, `INTERNAL_ERROR`)
+
+   The SPA route `auth/oauth/callback` (`src/pages/auth/OAuthCallback.jsx`) parses the fragment,
+   stores the tokens and `history.replaceState`-scrubs them from the URL. First login for that
+   email creates a `STUDENT`.
 4. GitHub is identical with `…/authorize/github` and `…/callback/github`.
 
 ---
 
-# Flows 12–22 · Post-launch modules (not yet in `openapi.json` / `API-Documentation.md`)
+# Flows 12–23 · Post-launch modules
 
 Every route here is under `/api/v1`. Auth is the controller's `@PreAuthorize` verbatim.
 `«…»` values still carry over exactly as in Appendix C.
+
+> **In the generated docs:** the placement pipeline (`/api/v1/placements**`, Flow 23) plus the
+> three list endpoints wired for the frontend this round — `GET /batches/{id}/students`,
+> `GET /hr/leaves`, `GET /hr/documents` — are now in `openapi.json` / `API-Documentation.md` /
+> the Postman collection. Flows 12–22 are still hand-maintained here only (regenerate
+> `openapi.json` from a running app to fold them in).
 
 ---
 
@@ -1216,6 +1232,7 @@ prints a `whsec_…` (put it in `.env`), then `stripe trigger checkout.session.c
 | `POST /auth/refresh` | `data.accessToken` / `data.refreshToken` | replace both stored values |
 | `GET /users/me` | `data.uuid` | any `userUuid` body field for your own account |
 | `GET /batches` | `data.content[].id` | `«batchId»` — `sprints?batchId=`, `standups?batchId=`, `/batches/{id}/…` |
+| `GET /batches/{id}/students` | `data[].userUuid` | `«studentUuid»` — `POST /tasks/{id}/assign`, `.../students/{userUuid}/graduate`, `POST /hr/letters/{type}` |
 | `GET /sprints?batchId=` | `[].id` | `«sprintId»` — `tasks?sprintId=`, `/sprints/{id}/activate` |
 | `GET /tasks?sprintId=&status=BACKLOG` | `[].id` | `«taskId»` — `/tasks/{id}/pull`, `POST /submissions` |
 | `POST /submissions` | `data.id` | `«submissionId»` — `POST /reviews` |
@@ -1241,6 +1258,7 @@ prints a `whsec_…` (put it in `.env`), then `stripe trigger checkout.session.c
 | `POST /ba/meetings` | `data.id` | `«meetingId»` — `PUT` / `DELETE /ba/meetings/{id}` |
 | `GET /talent-pool` | `data.content[].uuid` | `«candidateUuid»` — `POST /recruitment-requests` body |
 | `POST /recruitment-requests` | `data.id` | `«requestId»` — `PUT /recruitment-requests/{id}/status` |
+| `GET /placements` | `data.content[].id` | `«placementId»` — `GET` / `PUT /placements/{id}` (advance stage + merge `details`) |
 | `POST /hr/employees` | `data.id` | `«employeeId»` — `/hr/onboardings`, `/hr/disciplinary`, `/hr/exits` bodies |
 | `POST /hr/onboardings` | `data.id` | `«onboardingId»` — `PUT /hr/onboardings/{id}` |
 | `POST /hr/disciplinary` | `data.id` | `«disciplinaryId»` — `PUT /hr/disciplinary/{id}` |

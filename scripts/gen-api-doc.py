@@ -108,17 +108,23 @@ for f in glob.glob(os.path.join(ROOT, "src", "main", "java", "**", "*Controller.
         if pm.start() < class_pos:
             class_preauth = pm.group(1)
 
-    pending_preauth = None
-    for tok in re.finditer(
-        PREAUTH +
-        r'|@(GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping|RequestMapping)\(([^)]*)\)',
-        src):
-        if tok.start() < class_pos:
-            continue
-        if tok.group(1) is not None:
-            pending_preauth = tok.group(1)
-            continue
-        ann, args = tok.group(2), tok.group(3) or ""
+    # Every handler in this codebase writes the mapping annotation first, then @PreAuthorize
+    # (verified: 160 handlers this way, 0 the other way). Bare @GetMapping / @PostMapping with
+    # no parens is also common. So: for each mapping, its role check is the first @PreAuthorize
+    # that appears after it and before the next mapping; none there -> class-level or public.
+    preauths = [(pm.start(), pm.group(1)) for pm in re.finditer(PREAUTH, src)
+                if pm.start() >= class_pos]
+    maps = [mm for mm in re.finditer(
+        r'@(GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping|RequestMapping)'
+        r'(?:\(([^)]*)\))?',
+        src) if mm.start() >= class_pos]
+    for i, tok in enumerate(maps):
+        here = tok.end()
+        hi = maps[i + 1].start() if i + 1 < len(maps) else len(src)
+        inside = [val for pos, val in preauths if here <= pos < hi]
+        preauth = inside[0] if inside else None
+
+        ann, args = tok.group(1), tok.group(2) or ""
         pm = re.search(r'"([^"]+)"', args)
         sub = pm.group(1) if pm else ""
         method = MAP_ANN.get(ann)
@@ -126,8 +132,7 @@ for f in glob.glob(os.path.join(ROOT, "src", "main", "java", "**", "*Controller.
             mm = re.search(r'RequestMethod\.(\w+)', args)
             method = mm.group(1) if mm else "GET"
         full = norm((base + "/" + sub).replace("//", "/")) if sub else norm(base)
-        auth_map[f"{method} {full}"] = pending_preauth or class_preauth or "(none — public)"
-        pending_preauth = None
+        auth_map[f"{method} {full}"] = preauth or class_preauth or "(none — public)"
 
 PUBLIC_PREFIXES = ("/api/v1/auth/", "/api/v1/webhooks/", "/api/v1/portfolio/",
                    "/api/v1/certificates/verify/")

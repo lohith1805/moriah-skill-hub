@@ -2905,7 +2905,7 @@
                 }
               ]
             },
-            "description": "List batches\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first."
+            "description": "List batches\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}) / STUDENT ({{studentAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first."
           },
           "response": []
         },
@@ -2987,7 +2987,7 @@
                 }
               ]
             },
-            "description": "Get one batch\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first."
+            "description": "Get one batch\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}) / STUDENT ({{studentAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first."
           },
           "response": []
         },
@@ -3040,6 +3040,45 @@
                 }
               }
             }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/batches/{id}/students",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/batches/:id/students",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "batches",
+                ":id",
+                "students"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{pmAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "The batch roster - enrolled students with their uuid + status (a TRAINER_PM must own the batch). Feeds task assignment, graduation and letters.\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first."
           },
           "response": []
         },
@@ -3890,6 +3929,72 @@
       "name": "HR",
       "item": [
         {
+          "name": "GET /api/v1/hr/documents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hr/documents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hr",
+                "documents"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "userUuid",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "documentType",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "List HR documents - an employee sees only their own; HR_MANAGER / ADMIN see all, optionally filtered by status / userUuid / documentType. Each row carries a short-lived presigned downloadUrl.\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
+          },
+          "response": []
+        },
+        {
           "name": "POST /api/v1/hr/documents",
           "request": {
             "method": "POST",
@@ -4038,6 +4143,66 @@
                 }
               }
             }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/hr/leaves",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hr/leaves",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hr",
+                "leaves"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "userUuid",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "List leave requests - an employee sees only their own; HR_MANAGER / ADMIN see all, optionally filtered by status and userUuid\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
           },
           "response": []
         },
@@ -4562,6 +4727,154 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"outcome\": \"TRIGGERED\",\n  \"reviewNotes\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Placements",
+      "item": [
+        {
+          "name": "GET /api/v1/placements",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/placements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "placements"
+              ],
+              "query": [
+                {
+                  "key": "stage",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clientAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "List placements visible to the caller - a CLIENT sees the ones they requested, a STUDENT the ones where they are the candidate, HR_MANAGER / ADMIN see all. Optional stage filter.\n\nRoles: CLIENT ({{clientAccessToken}}) / STUDENT ({{studentAccessToken}}) / HR_MANAGER ({{hrAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{clientAccessToken}} \u2014 run 'Auth / Login \u2014 Client' first."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/placements/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/placements/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "placements",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clientAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "One placement\n\nRoles: CLIENT ({{clientAccessToken}}) / STUDENT ({{studentAccessToken}}) / HR_MANAGER ({{hrAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{clientAccessToken}} \u2014 run 'Auth / Login \u2014 Client' first."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/v1/placements/{id}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/placements/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "placements",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clientAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Advance a placement's stage (forward-only; REJECTED from any non-terminal) and merge stage fields into details. Per-stage ownership is enforced.\n\nRoles: CLIENT ({{clientAccessToken}}) / STUDENT ({{studentAccessToken}}) / HR_MANAGER ({{hrAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{clientAccessToken}} \u2014 run 'Auth / Login \u2014 Client' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stage\": \"SHORTLISTED\",\n  \"details\": {}\n}",
               "options": {
                 "raw": {
                   "language": "json"
