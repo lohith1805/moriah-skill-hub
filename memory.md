@@ -335,11 +335,9 @@ items), 5 learning resources, 3 notifications, 1 graduate + certificate. Validat
 **`openapi.json` / Postman / `API-Documentation.md` RE-EXPORTED from a running app** (2026-09):
 150 paths / ~200 ops — the first complete spec (all prior exports predated flows 12-24).
 `gen-postman.py` → 36 folders / 212 requests; `gen-api-doc.py` → 199 endpoints. To refresh:
-free port 3306 (native `MySQL97` squats it — `Stop-Service MySQL97` in an admin shell), or bring
-Docker MySQL up on another port (`DB_PORT=3316 docker compose up -d`), `mvn -o spring-boot:run`
-with matching `DB_PORT` (+ `DB_REPLICA_PORT` same value), `redis-cli FLUSHALL` if `/plans` 500s
-(stale cache), then `curl :8080/v3/api-docs` + both gen scripts. Pretty-print the export to
-4-space/LF before committing.
+ensure Docker MySQL is up on 3306 (`docker compose up -d`; `MySQL97` is Stopped/Manual so 3306 is
+free), `mvn -o spring-boot:run`, `redis-cli FLUSHALL` if `/plans` 500s (stale cache), then
+`curl :8080/v3/api-docs` + both gen scripts. Pretty-print the export to 4-space/LF before committing.
 
 **`mockData.js` / `pipEngine.js` still cannot be deleted** — 6 feature areas have no backend
 (BA docs + resource plans, client project briefs, developer projects + bug challenges, HR
@@ -527,12 +525,14 @@ surefire (547) not re-run since the seed/spec work. `*IT` need Docker — a bean
 showed up only as a `BatchFlowIT` context-load failure, so run one IT (or restart the app, which
 also fails fast on a cycle) after touching bean graphs.
 
-**Local run state right now:** Docker `skillhub-mysql` / `-redis` / `-minio` are UP but MySQL is
-published on **3316** (I remapped it — native Windows service `MySQL97`, StartMode Auto, squats
-3306). A plain `mvn -o spring-boot:run` will hit MySQL97 and fail `Access denied for
-'moriah_migrate'`. Fix: `Stop-Service MySQL97` in an admin PowerShell (optionally
-`Set-Service MySQL97 -StartupType Manual`), then `docker compose up -d` restores 3306 — or keep
-passing `DB_PORT=3316` + `DB_REPLICA_PORT=3316`.
+**Local run state right now:** Docker `skillhub-mysql` (**3306:3306** — reverted 2026-09-03 at the
+user's request via `docker compose up -d --force-recreate --no-deps mysql`; the compose file was
+never edited, it's `"${DB_PORT:-3306}:3306"`, and `.env` has `DB_PORT=3306`; the named volume
+`skillhub-mysql-data` survived so all seed data is intact), `skillhub-mysql-replica` (3307:3306),
+`-redis`, `-minio` all UP. Native Windows `MySQL97` service is **Stopped / StartType Manual** so
+it no longer squats 3306 — leave it Manual. Plain `mvn -o spring-boot:run` (reads `.env`) now
+Just Works. **Do not pass `DB_PORT=3316` anymore** and do not re-remap the container.
+`application-dev.yml` already falls replica → primary, so no `DB_REPLICA_PORT` override needed.
 
 `README.md` still has the user's uncommitted Razorpay-test-key edit — never `git add -A`; scope
 every `git add`. Untracked `*_Integration*.zip` / `bun.lock` in both repos are the user's — leave them.
