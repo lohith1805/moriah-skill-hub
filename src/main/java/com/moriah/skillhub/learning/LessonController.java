@@ -3,10 +3,14 @@ package com.moriah.skillhub.learning;
 import com.moriah.skillhub.common.dto.ApiResponse;
 import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.common.security.CurrentUser;
+import com.moriah.skillhub.learning.dto.AddLessonQuizQuestionRequest;
 import com.moriah.skillhub.learning.dto.CreateVideoLessonRequest;
+import com.moriah.skillhub.learning.dto.LessonQuizQuestionResponse;
+import com.moriah.skillhub.learning.dto.LessonQuizResultResponse;
 import com.moriah.skillhub.learning.dto.ModuleSummaryResponse;
 import com.moriah.skillhub.learning.dto.MyLessonProgressItem;
 import com.moriah.skillhub.learning.dto.RecordLessonProgressRequest;
+import com.moriah.skillhub.learning.dto.SubmitLessonQuizRequest;
 import com.moriah.skillhub.learning.dto.UpdateVideoLessonRequest;
 import com.moriah.skillhub.learning.dto.VideoLessonResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -46,6 +50,7 @@ public class LessonController {
     static final String CURATOR_ROLES = "hasAnyRole('DEVELOPER','TRAINER_PM','ADMIN')";
 
     private final LessonService lessonService;
+    private final LessonQuizService lessonQuizService;
 
     @GetMapping
     @Operation(summary = "Browse lessons — optional module filter. Each row carries the caller's progress. "
@@ -139,5 +144,61 @@ public class LessonController {
             @CurrentUser Long callerUserId) {
 
         return ResponseEntity.ok(ApiResponse.success(lessonService.recordProgress(id, request, callerUserId)));
+    }
+
+    // ---- per-lesson quiz (gap B1.4) ---------------------------------------
+
+    @GetMapping("/{id}/quiz")
+    @Operation(summary = "The lesson's quiz questions (correct-answer keys are never returned)")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Question list (may be empty)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No lesson with this id")
+    })
+    public ResponseEntity<ApiResponse<List<LessonQuizQuestionResponse>>> quiz(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success(lessonQuizService.listQuestions(id)));
+    }
+
+    @PostMapping("/{id}/quiz/questions")
+    @PreAuthorize(CURATOR_ROLES)
+    @Operation(summary = "Add an MCQ to the lesson quiz — creator or ADMIN only")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "Question added"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "correctIndex out of range"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Not the creator and not an ADMIN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No lesson with this id")
+    })
+    public ResponseEntity<ApiResponse<LessonQuizQuestionResponse>> addQuizQuestion(
+            @PathVariable Long id, @Valid @RequestBody AddLessonQuizQuestionRequest request,
+            @CurrentUser Long callerUserId) {
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success(lessonQuizService.addQuestion(id, request, callerUserId)));
+    }
+
+    @DeleteMapping("/{id}/quiz/questions/{questionId}")
+    @PreAuthorize(CURATOR_ROLES)
+    @Operation(summary = "Remove a quiz question — creator or ADMIN only")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Question removed"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Not the creator and not an ADMIN"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No such question on this lesson")
+    })
+    public ResponseEntity<ApiResponse<Void>> removeQuizQuestion(
+            @PathVariable Long id, @PathVariable Long questionId, @CurrentUser Long callerUserId) {
+        lessonQuizService.removeQuestion(id, questionId, callerUserId);
+        return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
+    @PostMapping("/{id}/quiz/submit")
+    @Operation(summary = "Submit quiz answers — grades against the key; >= 60% marks the lesson COMPLETED")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Graded result"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Lesson has no quiz, or no lesson with this id")
+    })
+    public ResponseEntity<ApiResponse<LessonQuizResultResponse>> submitQuiz(
+            @PathVariable Long id, @Valid @RequestBody SubmitLessonQuizRequest request,
+            @CurrentUser Long callerUserId) {
+
+        return ResponseEntity.ok(ApiResponse.success(lessonQuizService.submit(id, request, callerUserId)));
     }
 }
