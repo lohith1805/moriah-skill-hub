@@ -8275,6 +8275,57 @@
                 }
             }
         },
+        "/api/v1/admin/payments/{gatewayOrderId}/invoice": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "A short-lived pre-signed URL for this payment's invoice PDF",
+                "operationId": "invoice",
+                "parameters": [
+                    {
+                        "name": "gatewayOrderId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{ url }",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseMapStringString"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an ADMIN",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseMapStringString"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No payment, or its invoice PDF is not ready yet",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseMapStringString"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/payments/summary": {
             "get": {
                 "tags": [
@@ -15684,6 +15735,12 @@
                     "createdAt": {
                         "type": "string",
                         "format": "date-time"
+                    },
+                    "invoiceNumber": {
+                        "type": "string"
+                    },
+                    "invoiceStatus": {
+                        "type": "string"
                     }
                 }
             },
@@ -18388,6 +18445,27 @@
                     },
                     "last": {
                         "type": "boolean"
+                    }
+                }
+            },
+            "ApiResponseMapStringString": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        }
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ErrorDetail"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
                     }
                 }
             },

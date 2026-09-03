@@ -2290,6 +2290,46 @@
           "response": []
         },
         {
+          "name": "GET /api/v1/admin/payments/{gatewayOrderId}/invoice",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/payments/:gatewayOrderId/invoice",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "payments",
+                ":gatewayOrderId",
+                "invoice"
+              ],
+              "variable": [
+                {
+                  "key": "gatewayOrderId",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "A short-lived pre-signed URL for this payment's invoice PDF\n\nRoles: ADMIN ({{adminAccessToken}}).  Using {{adminAccessToken}} \u2014 run 'Auth / Login \u2014 Admin' first."
+          },
+          "response": []
+        },
+        {
           "name": "POST /api/v1/admin/payments/{gatewayOrderId}/refund",
           "request": {
             "method": "POST",

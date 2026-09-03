@@ -1,6 +1,6 @@
 # Moriah Skill Hub — API Documentation
 
-> Generated from `docs/openapi.json` (OpenAPI 3.1.0). 205 endpoints across 32 groups. Auth/role column is read from each controller's `@PreAuthorize`.
+> Generated from `docs/openapi.json` (OpenAPI 3.1.0). 206 endpoints across 32 groups. Auth/role column is read from each controller's `@PreAuthorize`.
 
 ## Conventions
 
@@ -86,7 +86,7 @@ On success the callback returns the **same `LoginResponse` envelope as `POST /ap
 
 ## Contents
 
-- [Admin](#admin) — 25 endpoints
+- [Admin](#admin) — 26 endpoints
 - [Assessments](#assessments) — 12 endpoints
 - [Attendance](#attendance) — 4 endpoints
 - [Auth](#auth) — 14 endpoints
@@ -599,7 +599,9 @@ List payments, newest first — optional status / gateway / userUuid filters
         "status": "CREATED",
         "failureReason": "string",
         "capturedAt": "2026-01-15T10:30:00Z",
-        "createdAt": "2026-01-15T10:30:00Z"
+        "createdAt": "2026-01-15T10:30:00Z",
+        "invoiceNumber": "string",
+        "invoiceStatus": "string"
       }
     ],
     "page": 0,
@@ -677,7 +679,37 @@ One payment's detail
     "status": "CREATED",
     "failureReason": "string",
     "capturedAt": "2026-01-15T10:30:00Z",
-    "createdAt": "2026-01-15T10:30:00Z"
+    "createdAt": "2026-01-15T10:30:00Z",
+    "invoiceNumber": "string",
+    "invoiceStatus": "string"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `403`, `404`
+
+---
+
+### `GET` `/api/v1/admin/payments/{gatewayOrderId}/invoice`
+
+A short-lived pre-signed URL for this payment's invoice PDF
+
+**Auth:** Role: ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `gatewayOrderId` | string |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "key": "string"
   },
   "error": null
 }
@@ -725,7 +757,9 @@ Issue a full refund through the original gateway — only for a CAPTURED payment
     "status": "CREATED",
     "failureReason": "string",
     "capturedAt": "2026-01-15T10:30:00Z",
-    "createdAt": "2026-01-15T10:30:00Z"
+    "createdAt": "2026-01-15T10:30:00Z",
+    "invoiceNumber": "string",
+    "invoiceStatus": "string"
   },
   "error": null
 }

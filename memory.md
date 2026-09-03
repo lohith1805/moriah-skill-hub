@@ -497,9 +497,14 @@ enrolment. Fixed: `studentService.getMyBatch()` → `GET /api/v1/batches` (stude
 subscription goes ACTIVE in the SAME webhook tx as the capture (payment `CAPTURED` + `user_subscriptions`
 ACTIVE are two rows/tables); the invoice PDF is downstream/async and gates nothing.
 
+**#3 admin invoice list + PDF DONE** (BE `ff95117` / FE `b7aff9e`): `AdminPaymentResponse` gains
+`invoiceNumber` + `invoiceStatus` (ISSUED/PENDING/FAILED/PROCESSING/null, joined per page). New
+`GET /api/v1/admin/payments/{gatewayOrderId}/invoice` (ADMIN) → `{ url }` (10-min presigned PDF),
+404 `INVOICE_NOT_FOUND` until the async job issues it. `OwnershipGuard`'s `invoices/` branch now
+grants ADMIN any invoice. FE `admin/Transactions.jsx`: invoice column + Download prefers the
+server PDF (falls back to the client jsPDF for rows without one).
+
 **Still-open items the user flagged (NOT yet done):**
-- **#3 admin invoice list + PDF download** — no admin invoice endpoint (student has
-  `/subscriptions/me/invoices`); add an admin-scoped variant + a column in admin Payments.
 - **#7 client "view projects" → 403 "no access to this document"** — `GET /api/v1/projects` excludes
   CLIENT by design (internal training catalogue); there is **no `GET /clients/projects` list**
   endpoint (only `POST /clients/projects` + `GET /clients/projects/{id}/progress`). `clientService`
@@ -515,8 +520,9 @@ ACTIVE are two rows/tables); the invoice PDF is downstream/async and gates nothi
   delivery succeed (tunnel up, MinIO up, `RAZORPAY_WEBHOOK_SECRET` set). `WebhookReconciliationJob`
   (every 10 min) is the backstop.
 
-**HEADs:** Frontend `6415425` (branch `master`). Backend `035dc3b` on top of `a36f9f5` / `70645f1`
-/ `9e4e8b7`. Targeted unit slices green each pass (invoice/payment/notification/batch); full
+**HEADs:** Frontend `b7aff9e` (branch `master`). Backend `ff95117` on top of `035dc3b` / `a36f9f5`
+/ `70645f1`. openapi/postman: 157 paths / 206 ops. Targeted unit slices green each pass
+(invoice/payment/notification/batch/adminpayment); full
 surefire (547) not re-run since the seed/spec work. `*IT` need Docker — a bean-wiring change once
 showed up only as a `BatchFlowIT` context-load failure, so run one IT (or restart the app, which
 also fails fast on a cycle) after touching bean graphs.
