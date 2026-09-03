@@ -357,8 +357,32 @@ auto-PIP). `placementPipeline.js` stays too (display-helper + backend adapter).
    + `ProfileService.toResponse` now carry `twoFactorEnabled` (backend `32e81ac`, openapi patched);
    `Settings.jsx` also self-heals on the 409 (FE `b7abb1e`). FE `toFeUser` already read the field.
 
-**HEADs:** Frontend `b7abb1e`. Backend `5c80beb` on top of `25f3dd4` (docs re-export) / `6351d26`
-(public `site/` endpoints + inbound lead + big seed). Full surefire = **547 tests green**
+**Auth-entry UX pass (2026-09-03, verified: FE build + BE compile + `*Auth*/*OAuth*` unit tests all green):**
+1. **Google OAuth showed a raw `UNAUTHENTICATED` JSON page instead of ever logging in.** Root
+   cause: `application.yml` never set each registration's `redirect-uri`, so it defaulted to
+   Spring's `{baseUrl}/login/oauth2/code/{id}` — but `SecurityConfig` moved the login filter to
+   `/api/v1/auth/oauth2/callback/*`, so the provider's callback hit an unmapped path →
+   `anyRequest().authenticated()` → `authenticationEntryPoint` JSON. Fix (BE `496e67b`):
+   pinned `redirect-uri: "{baseUrl}/api/v1/auth/oauth2/callback/{google|github}"`; added
+   `OAuth2DefaultCallbackFallbackController` (`GET /login/oauth2/code/**`, in `PUBLIC_PATHS`) that
+   302s to `frontendRedirectUri()#error=oauth_callback_misrouted` so a provider still pointed at
+   the old default URI degrades to a friendly SPA bounce, not JSON.
+2. **`POST /api/v1/auth/resend-verification`** (NEW, public, IP-rate-limited via the shared
+   `/api/v1/auth/**` bucket). `AuthService.resendVerificationEmail` mirrors `forgotPassword`:
+   non-enumerating, only acts for `PENDING_VERIFICATION`, burns prior unused tokens first
+   (`EmailVerificationTokenRepository.markAllUnusedAsUsedForUser`). New DTO `ResendVerificationRequest`.
+3. **Frontend (FE `0d25ebb`):** Register page — Google button now actually redirects (was a stub
+   toast) + a GitHub button beside it (matches Login). `OAuthCallback.jsx` — any failure bounces
+   to `/login` with a readable reason in router state instead of a dead-end card; `Login.jsx`
+   surfaces `location.state.authError` as a toast + inline banner then clears it. `VerifyEmail.jsx`
+   — "resend verification email" form (own email input) on the failed/missing states; Register
+   student-success screen — inline "resend the verification link". `authService.resendVerificationEmail()`.
+
+⚠️ **`openapi.json` / Postman / `API-Documentation.md` NOT yet regenerated** for
+`POST /auth/resend-verification` — needs the live-app re-export procedure below.
+
+**HEADs:** Frontend `0d25ebb` (branch is `master`, not `main`). Backend `496e67b` on top of
+`5c80beb` / `25f3dd4` (docs re-export) / `6351d26`. Full surefire = **547 tests green**
 (Testcontainers `*IT` still need Docker; `mvn -o test` alone is unit-only, ~15s).
 
 **Local run state right now:** Docker `skillhub-mysql` / `-redis` / `-minio` are UP but MySQL is
