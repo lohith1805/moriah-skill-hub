@@ -494,72 +494,54 @@ async function reviewSubmissionMock(taskId, { score, decision, comment, inlineCo
 // Nothing here is hardcoded demo data: every chart starts empty and fills
 // in as batches run sprints, students submit tasks, and students take
 // assessments — same philosophy as the rest of this app.
+// Derived client-side from real sprints + tasks + roster + PIP for one batch —
+// there is no aggregate analytics endpoint. `quiz` per student stays 0: a PM
+// has no endpoint for another user's assessment scores. Pass a batchId.
 export async function getAnalytics(batchId) {
-  const allSprints = getStoredSprints();
-  const allTasks = getStoredTasks();
-  const sprintsForBatch = batchId ? allSprints.filter((s) => s.batchId === batchId) : allSprints;
-  const relevantSprintIds = new Set(sprintsForBatch.map((s) => s.id));
+  if (!batchId) return { velocity: [], quizTrend: [], studentRows: [] };
 
-  const velocity = sprintsForBatch
-    .slice()
-    .sort((a, b) => new Date(a.startDate || 0) - new Date(b.startDate || 0))
+  const [sprints, roster, pipCases] = await Promise.all([
+    getSprints(batchId),
+    getStudentsForBatch(batchId).catch(() => []),
+    getPipCases({ batchId }).catch(() => []),
+  ]);
+  const sprintsAsc = sprints.slice().sort((a, b) => new Date(a.startDate || 0) - new Date(b.startDate || 0));
+
+  const tasksBySprint = await Promise.all(
+    sprintsAsc.map((s) => getSprintTasks(s.id).then((t) => [s.id, t]).catch(() => [s.id, []]))
+  );
+  const taskMap = new Map(tasksBySprint);
+  const allTasks = [...taskMap.values()].flat();
+
+  const velocity = sprintsAsc.map((s) => ({
+    sprint: `Sprint ${s.number}`,
+    points: (taskMap.get(s.id) || [])
+      .filter((t) => t.status === "Completed")
+      .reduce((sum, t) => sum + (Number(t.points) || 0), 0),
+  }));
+
+  const onPipUuids = new Set(
+    pipCases.filter((p) => p.backendStatus === "TRIGGERED" || p.backendStatus === "IN_PROGRESS").map((p) => p.studentUuid)
+  );
+
+  const studentRows = roster
+    .filter((s) => s.status === "ACTIVE" || s.status === "ON_PIP")
     .map((s) => {
-      const sprintTasks = allTasks.filter((t) => t.sprintId === s.id);
-      const points = sprintTasks
-        .filter((t) => t.status === "Completed")
-        .reduce((sum, t) => sum + (Number(t.points) || 0), 0);
-      return { sprint: `Sprint ${s.number}`, points };
+      const mine = allTasks.filter((t) => t.assigneeUuid === s.userUuid);
+      const completion = mine.length
+        ? Math.round((mine.filter((t) => t.status === "Completed").length / mine.length) * 100)
+        : 0;
+      return {
+        name: s.name,
+        completion,
+        quiz: 0,
+        onPip: onPipUuids.has(s.userUuid) || s.status === "ON_PIP",
+        hasTasks: mine.length > 0,
+        hasQuizzes: false,
+      };
     });
 
-  const attempts = getStoredAttempts();
-
-  // Group attempts into calendar weeks for the trend line.
-  const weekBuckets = new Map();
-  attempts.forEach((a) => {
-    const d = new Date(a.submittedAt);
-    if (Number.isNaN(d.getTime())) return;
-    const weekKey = Math.floor(d.getTime() / (7 * 24 * 60 * 60 * 1000));
-    const label = d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
-    if (!weekBuckets.has(weekKey)) weekBuckets.set(weekKey, { key: weekKey, label, total: 0, count: 0 });
-    const bucket = weekBuckets.get(weekKey);
-    bucket.total += a.score;
-    bucket.count += 1;
-  });
-  const quizTrend = Array.from(weekBuckets.values())
-    .sort((a, b) => a.key - b.key)
-    .map((b) => ({ week: b.label, avg: Math.round(b.total / b.count) }));
-
-  const roster = getStudentRosterWithBatch(attempts);
-  // Auto-PIP rule engine: re-checks every student's real tasks/quiz attempts
-  // against the thresholds each time Analytics is loaded, so a crossed
-  // threshold gets flagged even before anyone opens PIP Management.
-  runPipAutoCheckForAll({ studentBatchMap: roster, tasks: allTasks, quizAttempts: attempts });
-
-  // roster maps student name -> batch NAME (see getStudentRosterWithBatch),
-  // while batchId is the batch's id — resolve the selected batch's name so
-  // the table only lists students actually enrolled in it, instead of every
-  // registered student regardless of which batch is selected.
-  const activeBatchName = batchId ? BATCHES.find((b) => b.id === batchId)?.name : null;
-
-  const studentRows = Object.keys(roster)
-    .filter((name) => !batchId || roster[name] === activeBatchName)
-    .map((name) => {
-    const myTasks = allTasks.filter((t) => t.assignee === name && (!batchId || relevantSprintIds.has(t.sprintId)));
-    const completion = myTasks.length ? Math.round((myTasks.filter((t) => t.status === "Completed").length / myTasks.length) * 100) : 0;
-    const myAttempts = attempts.filter((a) => a.studentName === name);
-    const quiz = myAttempts.length ? Math.round(myAttempts.reduce((sum, a) => sum + a.score, 0) / myAttempts.length) : 0;
-    const onPip = PIP_RECORDS.some((p) => p.student === name && p.status !== "Resolved");
-    return { 
-      name, 
-      completion, 
-      quiz, 
-      onPip,
-      hasTasks: myTasks.length > 0,
-      hasQuizzes: myAttempts.length > 0
-    };
-  });
-
-  return mockRequest({ velocity, quizTrend, studentRows });
+  return { velocity, quizTrend: [], studentRows };
 }
 
 // --- PIP (WIRED, read + day-15 review) --------------------------------
