@@ -510,104 +510,90 @@ export async function getAnalytics(batchId) {
   return mockRequest({ velocity, quizTrend, studentRows });
 }
 
-export async function getPipCases() {
-  const attempts = getStoredAttempts();
-  const roster = getStudentRosterWithBatch(attempts);
-  
-  // Load tasks from localStorage dynamically for auto check
-  let allTasks = TASKS;
-  try {
-    const raw = localStorage.getItem("msh_sprint_tasks");
-    if (raw) allTasks = JSON.parse(raw);
-  } catch (e) {}
+// --- PIP (WIRED, read + day-15 review) --------------------------------
+// GET /api/v1/pip, POST /api/v1/pip/{id}/review. PIP records are RAISED by
+// the nightly rule-engine job, not by an API — so there is no "create" or
+// "delete" here.
 
-  runPipAutoCheckForAll({ studentBatchMap: roster, tasks: allTasks, quizAttempts: attempts });
+const PIP_STATUS_TO_FE = {
+  TRIGGERED: "In Progress",
+  IN_PROGRESS: "In Progress",
+  CLEARED: "Resolved",
+  TERMINATED: "Terminated",
+  REASSIGNED: "Repeat Foundation",
+};
+const FE_PIP_ACTION_TO_OUTCOME = {
+  Resolved: "CLEARED",
+  Terminated: "TERMINATED",
+  "Repeat Foundation": "REASSIGNED",
+};
 
-  let allRecords = PIP_RECORDS;
-  try {
-    const raw = localStorage.getItem("msh_pip_records");
-    if (raw) allRecords = JSON.parse(raw);
-  } catch (e) {}
-
-  return mockRequest(allRecords);
+function toFePipCase(p) {
+  return {
+    id: p.id,
+    student: p.studentFullName || "",
+    studentUuid: p.studentUuid || null,
+    batch: p.batchName || "",
+    batchId: p.batchId ?? null,
+    reason: p.triggerReason || (p.ruleCode || "").replace(/_/g, " "),
+    ruleCode: p.ruleCode,
+    severity: humanize(p.severity),
+    triggeredOn: p.triggeredAt ? p.triggeredAt.slice(0, 10) : "",
+    startDate: p.startDate || null,
+    endDate: p.endDate || null,
+    status: PIP_STATUS_TO_FE[p.status] || p.status,
+    backendStatus: p.status,
+    note: p.reviewNotes || "",
+    blocksTaskPull: !!p.blocksTaskPull,
+    milestones: p.milestones || [],
+  };
 }
 
-export async function triggerManualPip(payload) {
-  let allRecords = PIP_RECORDS;
-  try {
-    const raw = localStorage.getItem("msh_pip_records");
-    if (raw) allRecords = JSON.parse(raw);
-  } catch (e) {}
-
-  const record = { id: `p${Date.now()}`, status: "In Recovery", daysRemaining: 15, triggeredOn: new Date().toISOString().slice(0, 10), ...payload };
-  allRecords.unshift(record);
-  localStorage.setItem("msh_pip_records", JSON.stringify(allRecords));
-  return mockRequest(record, { delay: 700 });
+export async function getPipCases({ batchId, status } = {}) {
+  const params = { size: 100 };
+  if (batchId) params.batchId = batchId;
+  if (status) params.status = status;
+  const res = await apiClient.get("/pip", params);
+  return asRows(res).map(toFePipCase);
 }
 
-export async function removePipCase(id) {
-  let allRecords = PIP_RECORDS;
-  try {
-    const raw = localStorage.getItem("msh_pip_records");
-    if (raw) allRecords = JSON.parse(raw);
-  } catch (e) {}
-
-  const idx = allRecords.findIndex((p) => p.id === id);
-  if (idx > -1) allRecords.splice(idx, 1);
-  localStorage.setItem("msh_pip_records", JSON.stringify(allRecords));
-  await mockRequest(null, { delay: 500 });
-  return { id };
+// PIP is raised by the nightly job — there is no manual-create endpoint.
+export async function triggerManualPip() {
+  throw new Error("PIP cases are raised automatically by the nightly rule engine — there is no manual trigger.");
 }
 
-export async function updatePipCaseStatus(id, newStatus, repeatBatchName = "") {
-  let allRecords = PIP_RECORDS;
-  try {
-    const raw = localStorage.getItem("msh_pip_records");
-    if (raw) allRecords = JSON.parse(raw);
-  } catch (e) {}
+// No delete endpoint — a case is closed by the day-15 review instead.
+export async function removePipCase() {
+  throw new Error("PIP cases can't be deleted — resolve one with the day-15 recovery review.");
+}
 
-  const idx = allRecords.findIndex((p) => p.id === id);
-  if (idx > -1) {
-    const studentName = allRecords[idx].student;
-    allRecords[idx] = { 
-      ...allRecords[idx], 
-      status: newStatus,
-      resolvedOn: new Date().toISOString().slice(0, 10)
-    };
-    localStorage.setItem("msh_pip_records", JSON.stringify(allRecords));
+// POST /api/v1/pip/{id}/review — CLEARED is server-gated on task completion
+// >= 85% and no unsatisfactory reviews; a failing student can't be cleared.
+export async function updatePipCaseStatus(id, newStatus, _repeatBatchName = "", reviewNotes = "") {
+  const outcome = FE_PIP_ACTION_TO_OUTCOME[newStatus];
+  if (!outcome) throw new Error(`Unsupported PIP outcome: ${newStatus}`);
+  return apiClient.post(`/pip/${id}/review`, {
+    outcome,
+    reviewNotes: reviewNotes || `Day-15 review — outcome ${outcome}.`,
+  });
+}
 
-    // Handle student user context updates (termination / repeat module assignment)
-    try {
-      const rawUsers = localStorage.getItem("mORIAH_REGISTERED_USERS");
-      if (rawUsers) {
-        const users = JSON.parse(rawUsers);
-        const uIdx = users.findIndex(u => u.name === studentName);
-        if (uIdx > -1) {
-          if (newStatus === "Terminated") {
-            users[uIdx].role = "terminated"; 
-            users[uIdx].batch = "Terminated";
-          } else if (newStatus === "Repeat Foundation" && repeatBatchName) {
-            users[uIdx].batch = repeatBatchName; 
-          }
-          localStorage.setItem("mORIAH_REGISTERED_USERS", JSON.stringify(users));
-          
-          // If active user is the student, update their context too!
-          const activeUser = JSON.parse(localStorage.getItem("msh_user"));
-          if (activeUser && activeUser.name === studentName) {
-            const updatedActive = { 
-              ...activeUser, 
-              role: newStatus === "Terminated" ? "terminated" : activeUser.role,
-              batch: newStatus === "Repeat Foundation" && repeatBatchName ? repeatBatchName : activeUser.batch 
-            };
-            localStorage.setItem("msh_user", JSON.stringify(updatedActive));
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("Failed to propagate PIP updates to student details:", e);
-    }
-  }
-  return mockRequest(allRecords[idx]);
+export async function completePipMilestone(pipId, milestoneId) {
+  return apiClient.post(`/pip/${pipId}/milestones/${milestoneId}/complete`, {});
+}
+
+// --- Graduation (backend-ready helpers) -------------------------------
+// POST /api/v1/batches/{batchId}/students/{userUuid}/graduate, then
+// POST /api/v1/certificates/issue. NOTE: trainer/Graduation.jsx still builds
+// its candidate list from the localStorage roster because there is NO
+// PM-visible "students in a batch" endpoint yet (same Part B gap that blocks
+// task assignment). Once that lands, switch the page to these two calls.
+export async function graduateStudent(batchId, userUuid) {
+  return apiClient.post(`/batches/${batchId}/students/${userUuid}/graduate`, {});
+}
+
+export async function issueCertificate(batchId, userUuid, certificateType = "COMPLETION") {
+  return apiClient.post("/certificates/issue", { batchId, userUuid, certificateType });
 }
 
 // Approving graduation now actually issues a certificate — writes into the

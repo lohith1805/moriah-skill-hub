@@ -94,8 +94,8 @@ export default function PIPManagement() {
       setOpen(false);
       setValues({ student: "", batch: "", reason: "", severity: "Medium", note: "" });
       load();
-    } catch {
-      notify("Couldn't submit the PIP recommendation.", { type: "error" });
+    } catch (err) {
+      notify(err.message || "Couldn't submit the PIP recommendation.", { type: "error" });
     } finally {
       setSaving(false);
     }
@@ -109,8 +109,8 @@ export default function PIPManagement() {
       notify(`${removeTarget.student} has been taken off the PIP list.`, { type: "success", title: "PIP removed" });
       setRemoveTarget(null);
       load();
-    } catch {
-      notify("Couldn't remove the PIP case.", { type: "error" });
+    } catch (err) {
+      notify(err.message || "Couldn't remove the PIP case.", { type: "error" });
     } finally {
       setRemoving(false);
     }
@@ -129,8 +129,8 @@ export default function PIPManagement() {
       setReviewTarget(null);
       setRepeatBatchName("");
       load();
-    } catch {
-      notify("Failed to record PIP action.", { type: "error" });
+    } catch (err) {
+      notify(err.message || "Failed to record PIP action.", { type: "error" });
     } finally {
       setClearingProgress(false);
     }
