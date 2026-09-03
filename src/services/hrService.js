@@ -1,4 +1,4 @@
-import { mockRequest } from "./apiClient";
+import { mockRequest, apiClient } from "./apiClient";
 
 const DEFAULT_EMPLOYEES = [];
 
@@ -137,8 +137,250 @@ export function saveEmployees(emps) {
   localStorage.setItem("msh_employees", JSON.stringify(emps));
 }
 
-export async function getEmployees() {
-  return mockRequest(readEmployees());
+// ---------------------------------------------------------------------------
+// Employees / exits / onboarding / disciplinary — WIRED to the backend (B1.10):
+//   GET  /api/v1/hr/employees            (HR_MANAGER / ADMIN)
+//   /api/v1/hr/exits         GET, POST, PUT /{id}, POST /{id}/complete
+//   /api/v1/hr/onboardings   GET, POST, GET /{id}, PUT /{id}
+//   /api/v1/hr/disciplinary  GET, POST, GET /{id}, PUT /{id}
+// Leave / attendance / payroll below stay on the localStorage mock — their
+// backend shapes (`/hr/leaves`, `/hr/payroll`) differ and need their own pass.
+// `readEmployees()` / `saveEmployees()` stay mock: getPayroll() still uses them.
+// ---------------------------------------------------------------------------
+
+export const EMPLOYMENT_TYPES = ["FULL_TIME", "PART_TIME", "INTERN", "CONTRACT"];
+export const EXIT_TYPES = ["RESIGNATION", "TERMINATION", "RETIREMENT", "CONTRACT_END"];
+export const EXIT_STATUSES = ["INITIATED", "IN_PROGRESS", "COMPLETED"];
+export const ONBOARDING_STATUSES = ["NOT_STARTED", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
+export const DISCIPLINARY_ACTION_TYPES = [
+  "VERBAL_WARNING",
+  "WRITTEN_WARNING",
+  "PIP",
+  "SUSPENSION",
+  "TERMINATION_RECOMMENDATION",
+  "OTHER",
+];
+export const DISCIPLINARY_SEVERITIES = ["LOW", "MEDIUM", "HIGH"];
+export const DISCIPLINARY_STATUSES = ["OPEN", "ACKNOWLEDGED", "RESOLVED", "ESCALATED"];
+
+export const DEFAULT_EXIT_CHECKLIST = [
+  "IT asset return",
+  "Accounts no-dues",
+  "Knowledge transfer",
+  "Exit interview",
+  "Final settlement",
+];
+export const DEFAULT_ONBOARDING_CHECKLIST = [
+  "KYC / ID proof verified",
+  "Education documents verified",
+  "NDA signed",
+  "Background check",
+  "Welcome kit dispatched",
+  "Workstation / access provisioned",
+];
+
+const asRows = (res) => (Array.isArray(res) ? res : res?.content ?? []);
+const asChecklist = (list, fallbackLabels = []) => {
+  if (Array.isArray(list) && list.length) {
+    return list.map((c) => ({ label: c.label, done: !!c.done }));
+  }
+  return fallbackLabels.map((label) => ({ label, done: false }));
+};
+
+function toFeEmployee(e) {
+  return {
+    id: e.id,
+    userUuid: e.userUuid,
+    name: e.fullName,
+    employeeCode: e.employeeCode,
+    department: e.department || "",
+    designation: e.designation || "",
+    employmentType: e.employmentType,
+    dateOfJoining: e.dateOfJoining || null,
+    dateOfExit: e.dateOfExit || null,
+    baseSalary: e.baseSalary != null ? Number(e.baseSalary) : null,
+    hourlyRate: e.hourlyRate != null ? Number(e.hourlyRate) : null,
+    reportingManagerId: e.reportingManagerId ?? null,
+    status: e.status,
+  };
+}
+
+export async function getEmployees({ status, department, search } = {}) {
+  const params = {};
+  if (status) params.status = status;
+  if (department) params.department = department;
+  if (search) params.search = search;
+  const res = await apiClient.get("/hr/employees", Object.keys(params).length ? params : undefined);
+  return asRows(res).map(toFeEmployee);
+}
+
+// -- Exits ------------------------------------------------------------------
+
+function toFeExit(x) {
+  return {
+    id: x.id,
+    employeeId: x.employeeId,
+    employeeCode: x.employeeCode || "",
+    name: x.employeeName || "",
+    exitType: x.exitType,
+    lastWorkingDay: x.lastWorkingDay || null,
+    reason: x.reason || "",
+    noticePeriodDays: x.noticePeriodDays ?? null,
+    status: x.status,
+    clearanceChecklist: asChecklist(x.clearanceChecklist),
+    exitInterviewNotes: x.exitInterviewNotes || "",
+    completedAt: x.completedAt || null,
+    createdAt: x.createdAt || null,
+  };
+}
+
+export async function getExits({ status, employeeId } = {}) {
+  const params = {};
+  if (status) params.status = status;
+  if (employeeId) params.employeeId = employeeId;
+  const res = await apiClient.get("/hr/exits", Object.keys(params).length ? params : undefined);
+  return asRows(res).map(toFeExit);
+}
+
+export async function createExit(input) {
+  const body = {
+    employeeId: Number(input.employeeId),
+    exitType: input.exitType || "RESIGNATION",
+    lastWorkingDay: input.lastWorkingDay,
+    reason: input.reason || null,
+    noticePeriodDays:
+      input.noticePeriodDays === "" || input.noticePeriodDays == null
+        ? null
+        : Number(input.noticePeriodDays),
+  };
+  return toFeExit(await apiClient.post("/hr/exits", body));
+}
+
+// PUT accepts INITIATED / IN_PROGRESS only — COMPLETED goes through completeExit.
+export async function updateExit(id, input) {
+  const body = {
+    exitType: input.exitType,
+    lastWorkingDay: input.lastWorkingDay,
+    reason: input.reason || null,
+    noticePeriodDays:
+      input.noticePeriodDays === "" || input.noticePeriodDays == null
+        ? null
+        : Number(input.noticePeriodDays),
+    status: input.status === "COMPLETED" ? "IN_PROGRESS" : input.status || "IN_PROGRESS",
+    clearanceChecklist: (input.clearanceChecklist || []).map((c) => ({
+      label: c.label,
+      done: !!c.done,
+    })),
+    exitInterviewNotes: input.exitInterviewNotes || null,
+  };
+  return toFeExit(await apiClient.put(`/hr/exits/${id}`, body));
+}
+
+export async function completeExit(id) {
+  return toFeExit(await apiClient.post(`/hr/exits/${id}/complete`, {}));
+}
+
+// -- Onboarding -----------------------------------------------------------
+
+function toFeOnboarding(o) {
+  return {
+    id: o.id,
+    employeeId: o.employeeId,
+    employeeCode: o.employeeCode || "",
+    name: o.employeeName || "",
+    buddyId: o.buddyId ?? null,
+    startDate: o.startDate || null,
+    status: o.status,
+    checklist: asChecklist(o.checklist),
+    notes: o.notes || "",
+    completedAt: o.completedAt || null,
+    createdAt: o.createdAt || null,
+  };
+}
+
+export async function getOnboardings({ status, employeeId } = {}) {
+  const params = {};
+  if (status) params.status = status;
+  if (employeeId) params.employeeId = employeeId;
+  const res = await apiClient.get("/hr/onboardings", Object.keys(params).length ? params : undefined);
+  return asRows(res).map(toFeOnboarding);
+}
+
+export async function createOnboarding(input) {
+  const body = {
+    employeeId: Number(input.employeeId),
+    startDate: input.startDate,
+    buddyUuid: input.buddyUuid || null,
+  };
+  return toFeOnboarding(await apiClient.post("/hr/onboardings", body));
+}
+
+export async function updateOnboarding(id, input) {
+  const body = {
+    startDate: input.startDate,
+    buddyUuid: input.buddyUuid || null,
+    status: input.status || "IN_PROGRESS",
+    checklist: (input.checklist || []).map((c) => ({ label: c.label, done: !!c.done })),
+    notes: input.notes || null,
+  };
+  return toFeOnboarding(await apiClient.put(`/hr/onboardings/${id}`, body));
+}
+
+// -- Disciplinary -------------------------------------------------------
+
+function toFeDisciplinary(d) {
+  return {
+    id: d.id,
+    employeeId: d.employeeId,
+    employeeCode: d.employeeCode || "",
+    name: d.employeeName || "",
+    actionType: d.actionType,
+    severity: d.severity,
+    incidentDate: d.incidentDate || null,
+    description: d.description || "",
+    actionTaken: d.actionTaken || "",
+    status: d.status,
+    acknowledgedAt: d.acknowledgedAt || null,
+    resolvedAt: d.resolvedAt || null,
+    resolutionNotes: d.resolutionNotes || "",
+    createdAt: d.createdAt || null,
+  };
+}
+
+export async function getDisciplinaryActions({ status, severity, employeeId } = {}) {
+  const params = {};
+  if (status) params.status = status;
+  if (severity) params.severity = severity;
+  if (employeeId) params.employeeId = employeeId;
+  const res = await apiClient.get(
+    "/hr/disciplinary",
+    Object.keys(params).length ? params : undefined
+  );
+  return asRows(res).map(toFeDisciplinary);
+}
+
+export async function createDisciplinaryAction(input) {
+  const body = {
+    employeeId: Number(input.employeeId),
+    actionType: input.actionType || "WRITTEN_WARNING",
+    severity: input.severity || "MEDIUM",
+    incidentDate: input.incidentDate,
+    description: input.description,
+  };
+  return toFeDisciplinary(await apiClient.post("/hr/disciplinary", body));
+}
+
+export async function updateDisciplinaryAction(id, input) {
+  const body = {
+    actionType: input.actionType,
+    severity: input.severity,
+    incidentDate: input.incidentDate,
+    description: input.description,
+    actionTaken: input.actionTaken || null,
+    status: input.status || "OPEN",
+    resolutionNotes: input.resolutionNotes || null,
+  };
+  return toFeDisciplinary(await apiClient.put(`/hr/disciplinary/${id}`, body));
 }
 
 export async function getLeaveRequests() {

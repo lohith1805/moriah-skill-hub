@@ -1,10 +1,7 @@
 import { useEffect, useState } from "react";
-import {
-  LogOut, CheckCircle2, Plus, Edit, Trash2, AlertTriangle,
-  FileWarning, ShieldAlert, Laptop, Key, Award, FileText
-} from "lucide-react";
+import { CheckCircle2, Plus, Trash2, FileWarning, ShieldAlert, Edit } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
-import Card, { CardHeader } from "../../components/ui/Card";
+import Card from "../../components/ui/Card";
 import Table from "../../components/ui/Table";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
@@ -14,217 +11,207 @@ import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { Input, Select, Textarea } from "../../components/ui/FormField";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required } from "../../utils/validators";
-import { trySyncGraduateToTalentPool, hasUploadedResume } from "../../services/hrService";
+import {
+  getEmployees,
+  getExits,
+  createExit,
+  updateExit,
+  completeExit,
+  getDisciplinaryActions,
+  createDisciplinaryAction,
+  updateDisciplinaryAction,
+  EXIT_TYPES,
+  DISCIPLINARY_ACTION_TYPES,
+  DISCIPLINARY_SEVERITIES,
+  DISCIPLINARY_STATUSES,
+  DEFAULT_EXIT_CHECKLIST,
+} from "../../services/hrService";
 
-const INITIAL_EXITS = [
-  {
-    id: "x1",
-    name: "Vikram Sethi",
-    type: "Staff Member",
-    department: "Engineering",
-    itClearance: "Complete",
-    accountsClearance: "Complete",
-    exitInterview: "Completed",
-    clearance: "Complete",
-    exitDate: "2026-08-30",
-    reason: "Higher studies abroad"
-  },
-  {
-    id: "x2",
-    name: "Pooja Hegde",
-    type: "Intern",
-    department: "Incubation",
-    itClearance: "Pending",
-    accountsClearance: "Complete",
-    exitInterview: "Scheduled",
-    clearance: "Pending",
-    exitDate: "2026-09-10",
-    reason: "Completion of internship tenure"
-  }
-];
-
-const INITIAL_DISCIPLINARY = [
-  {
-    id: "d1",
-    name: "Ritesh Agarwal",
-    type: "Student / Intern",
-    level: "Level 1 Warning",
-    reason: "Consecutive missed sprint deadlines & standup absenteeism",
-    actionRequired: "Submit 2 pending PRs within 72 hours under PIP oversight",
-    issuedDate: "2026-08-25",
-    status: "Active"
-  }
-];
+const EXIT_STATUS_TONE = { INITIATED: "gold", IN_PROGRESS: "warning", COMPLETED: "success" };
+const DISC_STATUS_TONE = { OPEN: "danger", ACKNOWLEDGED: "warning", RESOLVED: "success", ESCALATED: "danger" };
+const humanize = (s) => (s || "").replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+const checklistProgress = (list) => {
+  if (!list?.length) return "0 / 0";
+  return `${list.filter((c) => c.done).length} / ${list.length}`;
+};
 
 export default function HrExitManagement() {
+  const [employees, setEmployees] = useState([]);
   const [exits, setExits] = useState([]);
-  const [pipRecords, setPipRecords] = useState([]);
   const [disciplinary, setDisciplinary] = useState([]);
+  const [pipRecords, setPipRecords] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [confirmId, setConfirmId] = useState(null);
-
-  // Record Exit modal
-  const [createOpen, setCreateOpen] = useState(false);
-  const [values, setValues] = useState({
-    name: "",
-    type: "Staff Member",
-    department: "Engineering",
-    reason: "",
-    exitDate: "",
-    itClearance: "Pending",
-    accountsClearance: "Pending",
-    exitInterview: "Scheduled"
-  });
-
-  // Issue Disciplinary Notice modal
-  const [noticeOpen, setNoticeOpen] = useState(false);
-  const [noticeValues, setNoticeValues] = useState({
-    name: "",
-    type: "Student / Intern",
-    level: "Level 1 Warning",
-    reason: "",
-    actionRequired: ""
-  });
-
+  const [confirmComplete, setConfirmComplete] = useState(null);
   const { notify } = useToast();
 
-  useEffect(() => {
-    // Load Exits
-    const savedExits = localStorage.getItem("msh_hr_exits");
-    let loadedExits = INITIAL_EXITS;
-    if (savedExits) {
-      loadedExits = JSON.parse(savedExits);
-      setExits(loadedExits);
-    } else {
-      localStorage.setItem("msh_hr_exits", JSON.stringify(INITIAL_EXITS));
-      setExits(INITIAL_EXITS);
-    }
+  // Record-exit modal
+  const [createOpen, setCreateOpen] = useState(false);
+  const [values, setValues] = useState({
+    employeeId: "",
+    exitType: "RESIGNATION",
+    lastWorkingDay: "",
+    reason: "",
+    noticePeriodDays: "30",
+  });
 
-    // Backfill: publish any graduate whose exit clearance is finalized AND
-    // who has since uploaded a resume, but who isn't in the Talent Pool yet
-    // (e.g. clearance was finalized before they uploaded, or before this
-    // resume gate existed). Idempotent, so this is harmless to run on every
-    // load — candidates without a resume are simply left out until they
-    // upload one.
-    loadedExits
-      .filter((x) => x.type === "Graduating Student" && x.clearance === "Complete")
-      .forEach((x) => trySyncGraduateToTalentPool(x.name));
+  // Update-exit (checklist) modal
+  const [editExit, setEditExit] = useState(null);
 
-    // Load Disciplinary
-    const savedDisc = localStorage.getItem("msh_hr_disciplinary");
-    if (savedDisc) {
-      setDisciplinary(JSON.parse(savedDisc));
-    } else {
-      localStorage.setItem("msh_hr_disciplinary", JSON.stringify(INITIAL_DISCIPLINARY));
-      setDisciplinary(INITIAL_DISCIPLINARY);
-    }
+  // Disciplinary modal
+  const [noticeOpen, setNoticeOpen] = useState(false);
+  const [noticeValues, setNoticeValues] = useState({
+    employeeId: "",
+    actionType: "WRITTEN_WARNING",
+    severity: "MEDIUM",
+    incidentDate: "",
+    description: "",
+  });
+  const [editNotice, setEditNotice] = useState(null);
 
-    // Load Live PIP Records from Trainer Module
+  const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    Promise.all([getEmployees(), getExits(), getDisciplinaryActions()])
+      .then(([emps, ex, disc]) => {
+        setEmployees(emps);
+        setExits(ex);
+        setDisciplinary(disc);
+      })
+      .catch((e) => notify(e.message || "Could not load exit / disciplinary data.", { type: "error" }))
+      .finally(() => setLoading(false));
+
     try {
       const rawPip = localStorage.getItem("msh_pip_records");
       setPipRecords(rawPip ? JSON.parse(rawPip) : []);
-    } catch (e) {
+    } catch {
       setPipRecords([]);
     }
+  };
 
-    setLoading(false);
+  useEffect(() => {
+    load();
   }, []);
 
-  const persistExits = (data) => {
-    setExits(data);
-    localStorage.setItem("msh_hr_exits", JSON.stringify(data));
-  };
+  const employeeOptions = employees.map((e) => ({
+    value: String(e.id),
+    label: `${e.employeeCode} — ${e.name}`,
+  }));
 
-  const persistDisciplinary = (data) => {
-    setDisciplinary(data);
-    localStorage.setItem("msh_hr_disciplinary", JSON.stringify(data));
-  };
-
-  const handleCreateExit = (e) => {
+  const handleCreateExit = async (e) => {
     e.preventDefault();
-    const validation = validateForm(values, { name: [required], exitDate: [required] });
-    if (Object.keys(validation).length) return;
-
-    const newExit = {
-      id: `x_${Date.now()}`,
-      name: values.name,
-      type: values.type,
-      department: values.department,
-      reason: values.reason || "Resignation",
-      exitDate: values.exitDate,
-      itClearance: values.itClearance,
-      accountsClearance: values.accountsClearance,
-      exitInterview: values.exitInterview,
-      clearance: "Pending"
-    };
-
-    const updated = [newExit, ...exits];
-    persistExits(updated);
-    notify(`Exit clearance workflow initialized for ${values.name}.`, { type: "success" });
-    setCreateOpen(false);
+    const v = validateForm(values, { employeeId: [required], lastWorkingDay: [required] });
+    setErrors(v);
+    if (Object.keys(v).length) return;
+    setSaving(true);
+    try {
+      await createExit(values);
+      notify("Exit clearance workflow initialised.", { type: "success" });
+      setCreateOpen(false);
+      setValues({ employeeId: "", exitType: "RESIGNATION", lastWorkingDay: "", reason: "", noticePeriodDays: "30" });
+      load();
+    } catch (err) {
+      notify(err.message || "Could not create the exit record.", { type: "error" });
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const finalizeClearance = () => {
-    const target = exits.find((r) => r.id === confirmId);
-    const updated = exits.map((r) =>
-      r.id === confirmId
-        ? { ...r, clearance: "Complete", itClearance: "Complete", accountsClearance: "Complete", exitInterview: "Completed" }
-        : r
-    );
-    persistExits(updated);
+  const openEditExit = (row) => {
+    setEditExit({
+      ...row,
+      clearanceChecklist: row.clearanceChecklist?.length
+        ? row.clearanceChecklist
+        : DEFAULT_EXIT_CHECKLIST.map((label) => ({ label, done: false })),
+      noticePeriodDays: row.noticePeriodDays ?? "",
+    });
+  };
 
-    // A graduating student becomes recruitable once their exit clearance is
-    // finalized AND they've uploaded a resume — not before. See
-    // hrService.trySyncGraduateToTalentPool.
-    if (target?.type === "Graduating Student") {
-      const nowVisible = trySyncGraduateToTalentPool(target.name);
+  const toggleExitItem = (idx) =>
+    setEditExit((s) => ({
+      ...s,
+      clearanceChecklist: s.clearanceChecklist.map((c, i) => (i === idx ? { ...c, done: !c.done } : c)),
+    }));
+
+  const handleSaveExit = async () => {
+    setSaving(true);
+    try {
+      await updateExit(editExit.id, editExit);
+      notify("Exit clearance updated.", { type: "success" });
+      setEditExit(null);
+      load();
+    } catch (err) {
+      notify(err.message || "Could not update the exit record.", { type: "error" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleComplete = async () => {
+    const row = confirmComplete;
+    setConfirmComplete(null);
+    try {
+      await completeExit(row.id);
       notify(
-        nowVisible
-          ? "Departmental clearance complete. Experience and relieving certificate unlocked — candidate is now visible to Clients in the Talent Pool."
-          : "Departmental clearance complete. Experience and relieving certificate unlocked. Candidate stays hidden from Clients until they upload their resume.",
+        `Exit finalised — ${row.name}'s employee record is now ${row.exitType === "TERMINATION" ? "TERMINATED" : "EXITED"}.`,
         { type: "success" }
       );
-    } else {
-      notify("Departmental clearance complete. Experience and relieving certificate unlocked.", { type: "success" });
+      load();
+    } catch (err) {
+      notify(err.message || "Could not finalise the exit.", { type: "error" });
     }
-    setConfirmId(null);
   };
 
-  const handleIssueNotice = (e) => {
+  const handleIssueNotice = async (e) => {
     e.preventDefault();
-    const validation = validateForm(noticeValues, { name: [required], reason: [required] });
-    if (Object.keys(validation).length) return;
+    const v = validateForm(noticeValues, {
+      employeeId: [required],
+      incidentDate: [required],
+      description: [required],
+    });
+    setErrors(v);
+    if (Object.keys(v).length) return;
+    setSaving(true);
+    try {
+      await createDisciplinaryAction(noticeValues);
+      notify("Disciplinary action recorded.", { type: "warning", title: "Disciplinary Action" });
+      setNoticeOpen(false);
+      setNoticeValues({ employeeId: "", actionType: "WRITTEN_WARNING", severity: "MEDIUM", incidentDate: "", description: "" });
+      load();
+    } catch (err) {
+      notify(err.message || "Could not record the disciplinary action.", { type: "error" });
+    } finally {
+      setSaving(false);
+    }
+  };
 
-    const newNotice = {
-      id: `d_${Date.now()}`,
-      name: noticeValues.name,
-      type: noticeValues.type,
-      level: noticeValues.level,
-      reason: noticeValues.reason,
-      actionRequired: noticeValues.actionRequired || "Compliance required immediately.",
-      issuedDate: new Date().toISOString().slice(0, 10),
-      status: "Active"
-    };
-
-    const updated = [newNotice, ...disciplinary];
-    persistDisciplinary(updated);
-    notify(`Formal Disciplinary Notice issued to ${noticeValues.name}.`, { type: "warning", title: "Disciplinary Notice Issued" });
-    setNoticeOpen(false);
-    setNoticeValues({ name: "", type: "Student / Intern", level: "Level 1 Warning", reason: "", actionRequired: "" });
+  const handleSaveNotice = async () => {
+    setSaving(true);
+    try {
+      await updateDisciplinaryAction(editNotice.id, editNotice);
+      notify("Disciplinary action updated.", { type: "success" });
+      setEditNotice(null);
+      load();
+    } catch (err) {
+      notify(err.message || "Could not update the disciplinary action.", { type: "error" });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Performance & Exit Management"
-        subtitle="PIP performance tracking, formal disciplinary notices, and exit clearance workflows"
+        subtitle="Exit clearance workflows, PIP monitoring and formal disciplinary actions"
         breadcrumbs={[{ label: "Dashboard", to: "/hr/dashboard" }, { label: "Exit & PIP" }]}
         action={
           <div className="flex gap-2">
-            <Button variant="secondary" icon={FileWarning} onClick={() => setNoticeOpen(true)}>
-              Issue Disciplinary Notice
+            <Button variant="secondary" icon={FileWarning} onClick={() => { setErrors({}); setNoticeOpen(true); }}>
+              Record Disciplinary Action
             </Button>
-            <Button icon={Plus} onClick={() => setCreateOpen(true)}>
+            <Button icon={Plus} onClick={() => { setErrors({}); setCreateOpen(true); }}>
               Record Exit Workflow
             </Button>
           </div>
@@ -234,9 +221,9 @@ export default function HrExitManagement() {
       <Card>
         <Tabs
           tabs={[
-            { key: "clearance", label: "Exit Clearances & Interviews" },
+            { key: "clearance", label: `Exit Clearances (${exits.length})` },
             { key: "pip", label: `Active PIP Monitoring (${pipRecords.length})` },
-            { key: "disciplinary", label: `Disciplinary Notices (${disciplinary.length})` }
+            { key: "disciplinary", label: `Disciplinary Actions (${disciplinary.length})` },
           ]}
         >
           {(active) => {
@@ -245,54 +232,27 @@ export default function HrExitManagement() {
                 <Table
                   loading={loading}
                   data={exits}
+                  emptyTitle="No exit workflows"
+                  emptyHint="Start one with “Record Exit Workflow”."
                   columns={[
                     {
                       key: "name",
-                      header: "Employee / Intern",
+                      header: "Employee",
                       className: "text-left font-medium text-ink-900",
                       render: (r) => (
                         <div>
                           <p className="font-semibold text-ink-900">{r.name}</p>
-                          <p className="text-xs text-ink-500">{r.type} · {r.department}</p>
+                          <p className="text-xs text-ink-500">{r.employeeCode} · {humanize(r.exitType)}</p>
                         </div>
-                      )
+                      ),
                     },
+                    { key: "lastWorkingDay", header: "Last working day", className: "text-left", render: (r) => r.lastWorkingDay || "—" },
+                    { key: "checklist", header: "Clearance", className: "text-left", render: (r) => checklistProgress(r.clearanceChecklist) },
                     {
-                      key: "itClearance",
-                      header: "IT Asset Return",
+                      key: "status",
+                      header: "Status",
                       className: "text-left",
-                      render: (r) => <Badge tone={r.itClearance === "Complete" ? "success" : "warning"}>{r.itClearance}</Badge>
-                    },
-                    {
-                      key: "accounts",
-                      header: "Accounts No-Dues",
-                      className: "text-left",
-                      render: (r) => <Badge tone={r.accountsClearance === "Complete" ? "success" : "warning"}>{r.accountsClearance}</Badge>
-                    },
-                    {
-                      key: "interview",
-                      header: "Exit Interview",
-                      className: "text-left",
-                      render: (r) => <Badge tone={r.exitInterview === "Completed" ? "success" : "neutral"}>{r.exitInterview}</Badge>
-                    },
-                    {
-                      key: "clearance",
-                      header: "Overall Clearance",
-                      className: "text-left",
-                      render: (r) => <Badge tone={r.clearance === "Complete" ? "success" : "gold"}>{r.clearance}</Badge>
-                    },
-                    {
-                      key: "resume",
-                      header: "Resume (Client Visibility)",
-                      className: "text-left",
-                      render: (r) =>
-                        r.type === "Graduating Student" ? (
-                          <Badge tone={hasUploadedResume(r.name) ? "success" : "warning"}>
-                            {hasUploadedResume(r.name) ? "Uploaded" : "Not Uploaded"}
-                          </Badge>
-                        ) : (
-                          <span className="text-xs text-ink-400">N/A</span>
-                        )
+                      render: (r) => <Badge tone={EXIT_STATUS_TONE[r.status] || "neutral"}>{humanize(r.status)}</Badge>,
                     },
                     {
                       key: "action",
@@ -300,20 +260,15 @@ export default function HrExitManagement() {
                       className: "text-right",
                       render: (r) => (
                         <div className="flex gap-2 justify-end">
-                          {r.clearance !== "Complete" && (
-                            <Button size="sm" icon={CheckCircle2} onClick={() => setConfirmId(r.id)}>
-                              Finalize Clearance
-                            </Button>
+                          {r.status !== "COMPLETED" && (
+                            <>
+                              <Button size="sm" variant="secondary" icon={Edit} onClick={() => openEditExit(r)}>Checklist</Button>
+                              <Button size="sm" icon={CheckCircle2} onClick={() => setConfirmComplete(r)}>Finalise</Button>
+                            </>
                           )}
-                          <Button size="sm" variant="danger" icon={Trash2} onClick={() => {
-                            const updated = exits.filter(x => x.id !== r.id);
-                            persistExits(updated);
-                          }}>
-                            Delete
-                          </Button>
                         </div>
-                      )
-                    }
+                      ),
+                    },
                   ]}
                 />
               );
@@ -323,23 +278,18 @@ export default function HrExitManagement() {
               return (
                 <div className="flex flex-col gap-4 text-left">
                   <div className="p-3 bg-amber-50 rounded-lg border border-amber-200 text-amber-900 text-xs">
-                    ⚡ <strong>Live Synced with Trainer PIP Engine:</strong> Showing active Performance Improvement Plans flagged by PMs/Trainers.
+                    ⚡ <strong>Synced with the Trainer PIP engine</strong> (local) — active Performance Improvement Plans flagged by PMs/Trainers.
                   </div>
                   {pipRecords.length === 0 ? (
-                    <p className="text-sm text-ink-400 py-8 text-center">No active student or staff PIP cases currently open.</p>
+                    <p className="text-sm text-ink-400 py-8 text-center">No active PIP cases.</p>
                   ) : (
                     <Table
                       data={pipRecords}
                       columns={[
-                        { key: "studentName", header: "Student Name", className: "text-left font-medium text-ink-900" },
-                        { key: "triggerReason", header: "PIP Trigger Reason", className: "text-left" },
-                        { key: "startDate", header: "Start Date", className: "text-left" },
-                        {
-                          key: "status",
-                          header: "Status",
-                          className: "text-left",
-                          render: (r) => <Badge tone={r.status === "Active" ? "warning" : "success"}>{r.status}</Badge>
-                        }
+                        { key: "studentName", header: "Student", className: "text-left font-medium text-ink-900" },
+                        { key: "triggerReason", header: "Trigger", className: "text-left" },
+                        { key: "startDate", header: "Start date", className: "text-left" },
+                        { key: "status", header: "Status", className: "text-left", render: (r) => <Badge tone={r.status === "Active" ? "warning" : "success"}>{r.status}</Badge> },
                       ]}
                     />
                   )}
@@ -347,92 +297,236 @@ export default function HrExitManagement() {
               );
             }
 
-            if (active === "disciplinary") {
-              return (
-                <Table
-                  data={disciplinary}
-                  columns={[
-                    { key: "name", header: "Recipient", className: "text-left font-medium text-ink-900" },
-                    { key: "level", header: "Warning Level", className: "text-left", render: (r) => <Badge tone="danger">{r.level}</Badge> },
-                    { key: "reason", header: "Infraction / Reason", className: "text-left max-w-sm truncate" },
-                    { key: "actionRequired", header: "Remedial Action", className: "text-left" },
-                    { key: "issuedDate", header: "Date Issued", className: "text-left" }
-                  ]}
-                />
-              );
-            }
+            return (
+              <Table
+                loading={loading}
+                data={disciplinary}
+                emptyTitle="No disciplinary actions"
+                columns={[
+                  {
+                    key: "name",
+                    header: "Employee",
+                    className: "text-left font-medium text-ink-900",
+                    render: (r) => (
+                      <div>
+                        <p className="font-semibold text-ink-900">{r.name}</p>
+                        <p className="text-xs text-ink-500">{r.employeeCode}</p>
+                      </div>
+                    ),
+                  },
+                  { key: "actionType", header: "Action", className: "text-left", render: (r) => <Badge tone="danger">{humanize(r.actionType)}</Badge> },
+                  { key: "severity", header: "Severity", className: "text-left", render: (r) => humanize(r.severity) },
+                  { key: "incidentDate", header: "Incident", className: "text-left", render: (r) => r.incidentDate || "—" },
+                  { key: "status", header: "Status", className: "text-left", render: (r) => <Badge tone={DISC_STATUS_TONE[r.status] || "neutral"}>{humanize(r.status)}</Badge> },
+                  {
+                    key: "action",
+                    header: "",
+                    className: "text-right",
+                    render: (r) => (
+                      <Button size="sm" variant="secondary" icon={Edit} onClick={() => setEditNotice({ ...r })}>Update</Button>
+                    ),
+                  },
+                ]}
+              />
+            );
           }}
         </Tabs>
       </Card>
 
-      {/* Record Exit Workflow Modal */}
+      {/* Record Exit Modal */}
       <Modal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        title="Initialize Employee Exit Clearance Workflow (MSH-FR-HR-05)"
+        title="Record Employee Exit Workflow"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button icon={Plus} onClick={handleCreateExit}>Initialize Workflow</Button>
+            <Button variant="secondary" onClick={() => setCreateOpen(false)} disabled={saving}>Cancel</Button>
+            <Button icon={Plus} onClick={handleCreateExit} disabled={saving}>{saving ? "Saving…" : "Initialise Workflow"}</Button>
           </>
         }
       >
         <form className="flex flex-col gap-4 text-left font-sans" onSubmit={handleCreateExit}>
-          <Input label="Full Name" required value={values.name} onChange={(e) => setValues((v) => ({ ...v, name: e.target.value }))} />
+          <Select
+            label="Employee"
+            required
+            placeholder={employeeOptions.length ? "Select an employee" : "No employees on file"}
+            options={employeeOptions}
+            value={values.employeeId}
+            onChange={(e) => setValues((v) => ({ ...v, employeeId: e.target.value }))}
+            error={errors.employeeId}
+          />
           <div className="grid sm:grid-cols-2 gap-4">
             <Select
-              label="Staff / Candidate Type"
-              options={[
-                { value: "Staff Member", label: "Full-Time Staff Member" },
-                { value: "Intern", label: "Intern / Apprentice" },
-                { value: "Graduating Student", label: "Graduating Student" }
-              ]}
-              value={values.type}
-              onChange={(e) => setValues((v) => ({ ...v, type: e.target.value }))}
+              label="Exit type"
+              options={EXIT_TYPES.map((t) => ({ value: t, label: humanize(t) }))}
+              value={values.exitType}
+              onChange={(e) => setValues((v) => ({ ...v, exitType: e.target.value }))}
             />
-            <Input label="Exit / Relieving Date" type="date" required value={values.exitDate} onChange={(e) => setValues((v) => ({ ...v, exitDate: e.target.value }))} />
+            <Input
+              label="Last working day"
+              type="date"
+              required
+              value={values.lastWorkingDay}
+              onChange={(e) => setValues((v) => ({ ...v, lastWorkingDay: e.target.value }))}
+              error={errors.lastWorkingDay}
+            />
           </div>
-          <Input label="Reason for Separation" placeholder="e.g. Higher studies, Career progression" value={values.reason} onChange={(e) => setValues((v) => ({ ...v, reason: e.target.value }))} />
+          <Input
+            label="Notice period (days)"
+            type="number"
+            min="0"
+            value={values.noticePeriodDays}
+            onChange={(e) => setValues((v) => ({ ...v, noticePeriodDays: e.target.value }))}
+          />
+          <Textarea
+            label="Reason for separation"
+            rows={2}
+            value={values.reason}
+            onChange={(e) => setValues((v) => ({ ...v, reason: e.target.value }))}
+          />
         </form>
       </Modal>
 
-      {/* Issue Disciplinary Notice Modal */}
+      {/* Exit checklist modal */}
+      <Modal
+        open={!!editExit}
+        onClose={() => setEditExit(null)}
+        title={editExit ? `Exit Clearance — ${editExit.name}` : "Exit Clearance"}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditExit(null)} disabled={saving}>Cancel</Button>
+            <Button onClick={handleSaveExit} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+          </>
+        }
+      >
+        {editExit && (
+          <div className="flex flex-col gap-4 text-left font-sans">
+            <Select
+              label="Status"
+              options={[
+                { value: "INITIATED", label: "Initiated" },
+                { value: "IN_PROGRESS", label: "In progress" },
+              ]}
+              value={editExit.status === "INITIATED" ? "INITIATED" : "IN_PROGRESS"}
+              onChange={(e) => setEditExit((s) => ({ ...s, status: e.target.value }))}
+            />
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium text-ink-900">Clearance checklist</span>
+              {editExit.clearanceChecklist.map((c, i) => (
+                <label key={i} className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={c.done} onChange={() => toggleExitItem(i)} className="accent-primary-700" />
+                  {c.label}
+                </label>
+              ))}
+            </div>
+            <Textarea
+              label="Exit interview notes"
+              rows={3}
+              value={editExit.exitInterviewNotes}
+              onChange={(e) => setEditExit((s) => ({ ...s, exitInterviewNotes: e.target.value }))}
+            />
+          </div>
+        )}
+      </Modal>
+
+      {/* Record disciplinary modal */}
       <Modal
         open={noticeOpen}
         onClose={() => setNoticeOpen(false)}
-        title="Issue Formal Disciplinary Notice (MSH-FR-HR-05)"
-        description="Records a formal performance warning against the employee/intern profile."
+        title="Record Disciplinary Action"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setNoticeOpen(false)}>Cancel</Button>
-            <Button icon={ShieldAlert} onClick={handleIssueNotice}>Issue Notice</Button>
+            <Button variant="secondary" onClick={() => setNoticeOpen(false)} disabled={saving}>Cancel</Button>
+            <Button icon={ShieldAlert} onClick={handleIssueNotice} disabled={saving}>{saving ? "Saving…" : "Record"}</Button>
           </>
         }
       >
         <form className="flex flex-col gap-4 text-left font-sans" onSubmit={handleIssueNotice}>
-          <Input label="Recipient Name" required placeholder="e.g. Ritesh Agarwal" value={noticeValues.name} onChange={(e) => setNoticeValues((v) => ({ ...v, name: e.target.value }))} />
           <Select
-            label="Warning Escalation Level"
-            options={[
-              { value: "Level 1 Warning", label: "Level 1 Warning (First Advisory)" },
-              { value: "Level 2 Warning", label: "Level 2 Warning (PIP Escalation)" },
-              { value: "Final Disciplinary Notice", label: "Final Disciplinary Notice (Termination Pending)" }
-            ]}
-            value={noticeValues.level}
-            onChange={(e) => setNoticeValues((v) => ({ ...v, level: e.target.value }))}
+            label="Employee"
+            required
+            placeholder={employeeOptions.length ? "Select an employee" : "No employees on file"}
+            options={employeeOptions}
+            value={noticeValues.employeeId}
+            onChange={(e) => setNoticeValues((v) => ({ ...v, employeeId: e.target.value }))}
+            error={errors.employeeId}
           />
-          <Textarea label="Infraction Reason & Policy Breach" required rows={3} placeholder="Describe the breach (e.g. code plagiarism, unexcused absence, client NDA breach)..." value={noticeValues.reason} onChange={(e) => setNoticeValues((v) => ({ ...v, reason: e.target.value }))} />
-          <Input label="Corrective Action Required" placeholder="e.g. Submit 2 pending sprint modules by Friday" value={noticeValues.actionRequired} onChange={(e) => setNoticeValues((v) => ({ ...v, actionRequired: e.target.value }))} />
+          <div className="grid sm:grid-cols-2 gap-4">
+            <Select
+              label="Action type"
+              options={DISCIPLINARY_ACTION_TYPES.map((t) => ({ value: t, label: humanize(t) }))}
+              value={noticeValues.actionType}
+              onChange={(e) => setNoticeValues((v) => ({ ...v, actionType: e.target.value }))}
+            />
+            <Select
+              label="Severity"
+              options={DISCIPLINARY_SEVERITIES.map((t) => ({ value: t, label: humanize(t) }))}
+              value={noticeValues.severity}
+              onChange={(e) => setNoticeValues((v) => ({ ...v, severity: e.target.value }))}
+            />
+          </div>
+          <Input
+            label="Incident date"
+            type="date"
+            required
+            value={noticeValues.incidentDate}
+            onChange={(e) => setNoticeValues((v) => ({ ...v, incidentDate: e.target.value }))}
+            error={errors.incidentDate}
+          />
+          <Textarea
+            label="Description"
+            required
+            rows={3}
+            value={noticeValues.description}
+            onChange={(e) => setNoticeValues((v) => ({ ...v, description: e.target.value }))}
+            error={errors.description}
+          />
         </form>
       </Modal>
 
+      {/* Update disciplinary modal */}
+      <Modal
+        open={!!editNotice}
+        onClose={() => setEditNotice(null)}
+        title={editNotice ? `Disciplinary Action — ${editNotice.name}` : "Disciplinary Action"}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditNotice(null)} disabled={saving}>Cancel</Button>
+            <Button onClick={handleSaveNotice} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+          </>
+        }
+      >
+        {editNotice && (
+          <div className="flex flex-col gap-4 text-left font-sans">
+            <Select
+              label="Status"
+              options={DISCIPLINARY_STATUSES.map((t) => ({ value: t, label: humanize(t) }))}
+              value={editNotice.status}
+              onChange={(e) => setEditNotice((s) => ({ ...s, status: e.target.value }))}
+            />
+            <Textarea
+              label="Action taken"
+              rows={2}
+              value={editNotice.actionTaken}
+              onChange={(e) => setEditNotice((s) => ({ ...s, actionTaken: e.target.value }))}
+            />
+            <Textarea
+              label="Resolution notes"
+              rows={2}
+              value={editNotice.resolutionNotes}
+              onChange={(e) => setEditNotice((s) => ({ ...s, resolutionNotes: e.target.value }))}
+            />
+          </div>
+        )}
+      </Modal>
+
       <ConfirmDialog
-        open={!!confirmId}
-        onClose={() => setConfirmId(null)}
-        onConfirm={finalizeClearance}
-        title="Finalize Multi-Department Exit Clearance?"
-        description="This signs off IT asset recovery, accounts no-dues, and exit interview notes, immediately unlocking the Experience & Relieving Certificate."
-        confirmLabel="Finalize & Unlock Certificate"
+        open={!!confirmComplete}
+        onClose={() => setConfirmComplete(null)}
+        onConfirm={handleComplete}
+        title="Finalise exit clearance?"
+        description="This closes the workflow and flips the employee record to EXITED (or TERMINATED for a termination), stamping their exit date. It cannot be undone."
+        confirmLabel="Finalise exit"
       />
     </div>
   );
