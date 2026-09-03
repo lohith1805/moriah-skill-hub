@@ -12,6 +12,10 @@ import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import Modal from "../../components/ui/Modal";
 import { getCertificates, getPerformanceSummary, saveResumeFile, getResumeStatus } from "../../services/studentService";
+import { updateProfile } from "../../services/authService";
+
+// "https://github.com/foo" / "github.com/foo" / "foo" -> "foo"
+const ghUsername = (v) => (v || "").trim().replace(/^https?:\/\/(www\.)?github\.com\//i, "").replace(/\/.*$/, "");
 
 const formatExternalUrl = (url, type) => {
   if (!url) return "#";
@@ -289,31 +293,30 @@ export default function StudentProfile() {
   const save = async (e) => {
     e.preventDefault();
     setSaving(true);
-    await new Promise((r) => setTimeout(r, 700));
-    setSaving(false);
-    setIsEditing(false);
-
-    if (user) {
-      const { resumeFile, certFiles, ...serializableDetails } = values;
-      const updatedUser = { ...user, profileDetails: serializableDetails };
+    try {
+      // Map the flat edit form onto the backend profile DTO. `education` is a
+      // free-text string here vs. the API's structured array, and `linkedin`
+      // has no profile field, so those two stay browser-local for now.
+      await updateProfile({
+        bio: values.bio,
+        githubUsername: ghUsername(values.github),
+        skills: (values.skills || "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      });
       try {
-        localStorage.setItem("msh_user", JSON.stringify(updatedUser));
-        const rawList = localStorage.getItem("mORIAH_REGISTERED_USERS");
-        if (rawList) {
-          const list = JSON.parse(rawList);
-          const idx = list.findIndex((u) => u.id === user.id);
-          if (idx > -1) {
-            list[idx] = updatedUser;
-            localStorage.setItem("mORIAH_REGISTERED_USERS", JSON.stringify(list));
-          }
-        }
-        notify("Your profile has been updated.", { type: "success", title: "Saved" });
-        setTimeout(() => {
-          window.location.reload();
-        }, 800);
-      } catch (err) {
-        console.warn("Failed to persist profile details update:", err);
+        const { resumeFile, certFiles, ...rest } = values;
+        localStorage.setItem("msh_student_profile_extra", JSON.stringify({ education: rest.education, linkedin: rest.linkedin }));
+      } catch {
+        /* non-fatal */
       }
+      notify("Your profile has been updated.", { type: "success", title: "Saved" });
+      setIsEditing(false);
+    } catch (err) {
+      notify(err.message || "Could not save your profile.", { type: "error" });
+    } finally {
+      setSaving(false);
     }
   };
 

@@ -47,51 +47,27 @@ export function getResumeStatus(resume) {
   return "Uploaded";
 }
 
-// Persists the resume (with real file content) onto the student's own user
-// record — the same "msh_user" / registered-users records every other
-// profile field lives on, and the same place hrService/clientService look
-// it up from for the HR exit → Client Talent Pool handoff. After saving, it
-// re-attempts publishing this student to the Talent Pool in case HR already
-// finalized their exit clearance and was only waiting on the resume.
+// POST /api/v1/users/me/resume — multipart, field `file` (PDF, magic-byte
+// checked server-side). `user` is accepted for call-site compatibility but the
+// backend keys off the caller's token. Returns { resumeMeta } describing the
+// upload so the page can update its status chip.
 export async function saveResumeFile(user, file) {
-  if (!user) throw new Error("No logged-in user to save a resume for.");
-  const fileData = await fileToDataURL(file);
+  if (!file) throw new Error("No file selected.");
+  await apiClient.requestMultipart("/users/me/resume", { method: "POST", files: { file } });
   const now = new Date().toISOString();
-  const existing = user?.profileDetails?.resume;
-  const resumeMeta = {
-    name: file.name,
-    size: file.size,
-    fileData,
-    uploadedAt: existing?.fileData ? existing.uploadedAt : now,
-    updatedAt: now,
-  };
+  const resumeMeta = { name: file.name, size: file.size, uploadedAt: now, updatedAt: now };
+  return { resumeMeta };
+}
 
-  const updatedUser = {
-    ...user,
-    profileDetails: { ...(user.profileDetails || {}), resume: resumeMeta },
-  };
-  localStorage.setItem("msh_user", JSON.stringify(updatedUser));
+// GET /api/v1/users/me/resume -> a presigned download URL (or null).
+export async function getMyResumeUrl() {
   try {
-    const rawList = localStorage.getItem("mORIAH_REGISTERED_USERS");
-    if (rawList) {
-      const list = JSON.parse(rawList);
-      const idx = list.findIndex((u) => u.id === user.id);
-      if (idx > -1) {
-        list[idx] = updatedUser;
-        localStorage.setItem("mORIAH_REGISTERED_USERS", JSON.stringify(list));
-      }
-    }
+    const res = await apiClient.get("/users/me/resume");
+    return res?.downloadUrl || res?.url || (typeof res === "string" ? res : null);
   } catch (e) {
-    console.warn("[studentService] Could not update registered users list:", e.message);
+    if (e?.status === 404) return null;
+    throw e;
   }
-
-  // Non-fatal — HR may not have finalized (or even started) this student's
-  // exit clearance yet, in which case there's simply nothing to sync yet.
-  try {
-    trySyncGraduateToTalentPool(user.name);
-  } catch (e) {}
-
-  return { updatedUser, resumeMeta };
 }
 
 function getStoredQuizAttempts() {
