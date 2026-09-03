@@ -1,6 +1,6 @@
 # Moriah Skill Hub — API Documentation
 
-> Generated from `docs/openapi.json` (OpenAPI 3.1.0). 202 endpoints across 32 groups. Auth/role column is read from each controller's `@PreAuthorize`.
+> Generated from `docs/openapi.json` (OpenAPI 3.1.0). 203 endpoints across 32 groups. Auth/role column is read from each controller's `@PreAuthorize`.
 
 ## Conventions
 
@@ -95,7 +95,7 @@ On success the callback returns the **same `LoginResponse` envelope as `POST /ap
 - [Bug Challenges](#bug-challenges) — 5 endpoints
 - [CRM](#crm) — 15 endpoints
 - [Certificates](#certificates) — 4 endpoints
-- [Checkout](#checkout) — 1 endpoints
+- [Checkout](#checkout) — 2 endpoints
 - [Clients](#clients) — 3 endpoints
 - [Dev](#dev) — 3 endpoints
 - [HR](#hr) — 24 endpoints
@@ -4130,6 +4130,43 @@ Create a payment order/session for a plan; never activates anything directly
     "razorpayOrderId": "string",
     "razorpayKeyId": "string",
     "stripeCheckoutUrl": "string"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `POST` `/api/v1/subscriptions/checkout/preview`
+
+Preview the payable amount for a plan + optional coupon — creates no order and reserves no coupon capacity
+
+**Auth:** Authenticated (any logged-in user)
+
+**Request body:**
+
+```json
+{
+  "planCode": "string",
+  "couponCode": "string"
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "planCode": "string",
+    "planName": "string",
+    "originalAmount": 0.0,
+    "payableAmount": 0.0,
+    "currency": "string",
+    "couponApplied": true,
+    "couponMessage": "string"
   },
   "error": null
 }

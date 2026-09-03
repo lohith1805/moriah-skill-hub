@@ -5570,6 +5570,52 @@
             }
           },
           "response": []
+        },
+        {
+          "name": "POST /api/v1/subscriptions/checkout/preview",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/subscriptions/checkout/preview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "subscriptions",
+                "checkout",
+                "preview"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Preview the payable amount for a plan + optional coupon \u2014 creates no order and reserves no coupon capacity\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planCode\": \"string\",\n  \"couponCode\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
         }
       ]
     },

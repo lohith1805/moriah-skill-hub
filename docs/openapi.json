@@ -2719,6 +2719,37 @@
                 }
             }
         },
+        "/api/v1/subscriptions/checkout/preview": {
+            "post": {
+                "tags": [
+                    "Checkout"
+                ],
+                "summary": "Preview the payable amount for a plan + optional coupon — creates no order and reserves no coupon capacity",
+                "operationId": "previewCheckout",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CheckoutPreviewRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseCheckoutPreviewResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/submissions": {
             "get": {
                 "tags": [
@@ -11999,6 +12030,67 @@
                         "type": "string"
                     },
                     "stripeCheckoutUrl": {
+                        "type": "string"
+                    }
+                }
+            },
+            "CheckoutPreviewRequest": {
+                "type": "object",
+                "properties": {
+                    "planCode": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "couponCode": {
+                        "type": "string",
+                        "maxLength": 40,
+                        "minLength": 0
+                    }
+                },
+                "required": [
+                    "planCode"
+                ]
+            },
+            "ApiResponseCheckoutPreviewResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/CheckoutPreviewResponse"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ErrorDetail"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "CheckoutPreviewResponse": {
+                "type": "object",
+                "properties": {
+                    "planCode": {
+                        "type": "string"
+                    },
+                    "planName": {
+                        "type": "string"
+                    },
+                    "originalAmount": {
+                        "type": "number"
+                    },
+                    "payableAmount": {
+                        "type": "number"
+                    },
+                    "currency": {
+                        "type": "string"
+                    },
+                    "couponApplied": {
+                        "type": "boolean"
+                    },
+                    "couponMessage": {
                         "type": "string"
                     }
                 }
