@@ -131,22 +131,48 @@ admin services. `npm install` done (`node_modules` gitignored). **Every commit v
   `getCoupons`/`createCoupon`/`updateCoupon`/`deleteCoupon` → `/admin/coupons` (B1.12).
   Backend enum codes translated; `PageResponse.content` unwrapped.
 
-### FRONTEND — STILL TO DO (this is the bulk of remaining work)
-1. **`src/services/*Service.js` left** — studentService (556 L), trainerService (599 L),
-   hrService (301 L), crmService (239 L), clientService (202 L), baService (73 L);
-   `pipEngine.js`/`mockData.js`/`placementPipeline.js` (delete). **developerService — DONE**
-   (committed after `c80e0e0`): resources (B1.6), assessment banks (B1.15), video lessons + quiz
-   (B1.4), dev requirement docs (B1.16) all wired; still-mock inside it: `getProjects`/
-   `createProject`/`publishProject`, bug challenges (backend is file-upload vs FE in-browser
-   runner), `developer/Assessments.jsx` publish flow. `developer/ClientRequirements.jsx` already
-   repointed to `getDevRequirementDocs`. Most other services use a
-   `getX()` + `saveX(wholeList)` pattern that does NOT map to REST — each migration also means
-   rewriting its consuming pages' state (load-page + per-item create/update/delete).
-   **Do first (1:1 with session-3 endpoints, cleanest):** `developer/AssessmentBank` (B1.15),
-   `developer/BugChallenges` (B1.15), `developer/ClientRequirements` (B1.16),
-   `developer/VideoLessons` (B1.4), `ba/Meetings` (B1.14), `hr/ExitManagement`+`hr/Onboarding`
-   (B1.10), `client/TalentPool` (B1.9), `leadgen/Campaigns` (B1.7), `student/interviews` (B1.8),
-   `*/Resources` (B1.6). These pages already exist in `src/pages/**`.
+### FRONTEND — service migration progress
+
+Frontend commits (branch `master`): `a86db27` baseline · `b0e4b21` auth · `c80e0e0` notif+admin ·
+`534db75` developerService · `d67633f` lead campaigns · `71de48d` BA meetings + talent pool.
+`npm run build` green after each (2795 modules, Node v24).
+
+**DONE (wired to backend):**
+- notificationService, adminService, developerService (see above list) — from earlier.
+- **crmService** — `getCampaigns`/`createCampaign`/`updateCampaign`/`deleteCampaign` →
+  `/api/v1/leads/campaigns` (B1.7). `leadgen/Campaigns.jsx` rebuilt on the backend model
+  (channel enum, start/end dates, budget, targetLeads, PLANNED/ACTIVE/COMPLETED/CANCELLED);
+  the wa.me/mailto bulk-"Send" helper stays client-side over `getLeads()`, message template in
+  `msh_campaign_templates` localStorage. **Lead pipeline / targets / logInteraction still MOCK** —
+  backend `/leads` has no per-lead detail, no activity-list GET, no DELETE → `leadgen/Pipeline.jsx`
+  can't migrate without a Part B add.
+- **baService** — meetings → `/api/v1/ba/meetings` (B1.14): `getMeetings`/`createMeeting`/
+  `updateMeeting`/`saveMeetingMinutes`/`deleteMeeting`; date+"hh:mm AM" ↔ `scheduledAt` Instant,
+  meetLink↔location, momNotes↔minutes; `type`/`client`/`attendees` in `msh_ba_meeting_meta`
+  sidecar. `ba/Meetings.jsx` updated. **Requirement docs + resource plans still MOCK** (doc API is
+  text-only `content`, no file upload; no resource-plan endpoint).
+- **clientService** — `getTalentPool` → `/api/v1/talent-pool`, `requestRecruitment` →
+  `POST /api/v1/recruitment-requests`, new `getRecruitmentRequests` (B1.9). `toFeCandidate` maps
+  the profile, **`score` is approximated from `yearsExperience`** (no real perf score on the DTO).
+  **The `client/TalentPool.jsx` placement pipeline (shortlist→schedule→offer→sign→placed) is still
+  localStorage** (`utils/placementPipeline.js`) — no backend for it.
+
+**STILL TO DO — services:**
+1. **hrService** (301 L) — `hr/ExitManagement.jsx` + `hr/Onboarding.jsx` do localStorage inline
+   (no exit/onboarding/disciplinary fns in hrService yet). Backend ready (B1.10):
+   `/api/v1/hr/exits` (+ `/{id}` PUT, `POST /{id}/complete`), `/api/v1/hr/onboardings`,
+   `/api/v1/hr/disciplinary`, `GET /api/v1/hr/employees`. Needs new service fns + rewriting both
+   pages (they're large). Leave/payroll/attendance have NO 1:1 — HR leave endpoints are
+   `/api/v1/hr/leaves`, payroll `/api/v1/hr/payroll` — check shapes before touching.
+   `getEmployees` is tangled: `readEmployees()` (sync) feeds `getPayroll` — migrate together.
+2. **studentService** (556 L) — `student/interviews` page → `GET /api/v1/interviews/me` (B1.8);
+   student resources → `/api/v1/resources`; student lessons+quiz → `/api/v1/lessons` (+ `/quiz`).
+3. **trainerService** (599 L) — question banks → `/api/v1/assessments/banks` (B1.15); interviews
+   schedule side → `POST/GET/PUT/DELETE /api/v1/interviews`.
+4. Delete `mockData.js` / `pipEngine.js` / `placementPipeline.js` once nothing imports them
+   (`clientService.js` still imports `TALENT_POOL` unused — safe, remove later).
+   **Pattern reminder:** most old services are `getX()` + `saveX(wholeList)` which does NOT map to
+   REST — each migration = rewrite the consuming page's state (load + per-item create/update/delete).
 2. **Page data bindings** — ~90 `src/pages/**` files read mock-shaped blobs (`user.batch` string,
    `user.subscription`, invented camelCase). Remap to real DTOs (`uuid`, ISO dates, enum strings,
    `PageResponse`).
@@ -199,6 +225,12 @@ admin services. `npm install` done (`node_modules` gitignored). **Every commit v
 ---
 
 ## Next session starts with
-Continue **Frontend Part A** — pick the 1:1 gap-B pages (list in "STILL TO DO" #1), migrate each
-page + its service function together, `npm run build` after each, commit per feature. Then the
-Register wizard reorder (#3) and the OAuth backend redirect (#4).
+Continue **Frontend Part A**. Nothing tested in a browser yet — all migrations are build-verified
+only. Next targets in order (see "STILL TO DO — services"):
+1. **hrService** — new exit/onboarding/disciplinary fns + rewrite `hr/ExitManagement.jsx` &
+   `hr/Onboarding.jsx` (B1.10). Check `/api/v1/hr/leaves` + `/hr/payroll` shapes too.
+2. **studentService** — `student/interviews` → `/interviews/me`; student resources + lessons/quiz.
+3. **trainerService** — question banks (B1.15) + interview scheduling (B1.8).
+Then: page data-binding remaps (#2), Register wizard reorder (#3), OAuth backend redirect (#4),
+delete mock layer.
+Frontend HEAD: `71de48d`. Backend HEAD: `01052ba` (docs only; code HEAD `1761ae9`).
