@@ -9,150 +9,185 @@ import Modal from "../../components/ui/Modal";
 import { Input, Select, Textarea } from "../../components/ui/FormField";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required } from "../../utils/validators";
-import { getLeads, logInteraction } from "../../services/crmService";
+import {
+  getLeads,
+  logInteraction,
+  getCampaigns,
+  createCampaign,
+  updateCampaign,
+  deleteCampaign,
+  CAMPAIGN_CHANNELS,
+} from "../../services/crmService";
 
-const CAMPAIGNS = [];
+const DEFAULT_TEMPLATE =
+  "Hi {{name}}! 👋 Welcome to Moriah Skill Hub. We'd love to help you kickstart your career with our project-based training tracks.";
 
-// Maps a campaign's audience label to the CRM lead "type" it targets, so a
-// campaign can pull in the actual matching leads to message.
-const AUDIENCE_TO_LEAD_TYPE = {
-  "B2C Students": "Student (B2C)",
-  "Colleges": "College Tie-up",
-  "Corporates": "Enterprise / Corporate"
+// The message template used by the client-side "Send" helper is a front-end-only
+// convenience (the backend campaign record has no template field), so it is kept
+// per-campaign in localStorage rather than sent to the API.
+const TEMPLATE_KEY = "msh_campaign_templates";
+const readTemplates = () => {
+  try {
+    return JSON.parse(localStorage.getItem(TEMPLATE_KEY) || "{}");
+  } catch {
+    return {};
+  }
+};
+const saveTemplate = (id, text) => {
+  const all = readTemplates();
+  all[id] = text;
+  localStorage.setItem(TEMPLATE_KEY, JSON.stringify(all));
 };
 
-const DEFAULT_TEMPLATE = "Hi {{name}}! 👋 Welcome to Moriah Skill Hub. We'd love to help you kickstart your career with our project-based training tracks.";
+const STATUS_TONE = {
+  PLANNED: "neutral",
+  ACTIVE: "success",
+  COMPLETED: "info",
+  CANCELLED: "danger",
+};
+
+const emptyForm = {
+  name: "",
+  channel: "",
+  description: "",
+  startDate: "",
+  endDate: "",
+  budget: "",
+  targetLeads: "",
+  template: "",
+};
 
 export default function LeadCampaigns() {
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
-  
-  // Create states
+
   const [modalOpen, setModalOpen] = useState(false);
-  const [values, setValues] = useState({ name: "", channel: "", audience: "", template: "" });
-  
-  // Edit states
+  const [values, setValues] = useState(emptyForm);
+
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [editValues, setEditValues] = useState({ name: "", channel: "", audience: "", template: "", status: "" });
+  const [editValues, setEditValues] = useState({ ...emptyForm, status: "PLANNED" });
 
   const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
   const { notify } = useToast();
 
-  // Send Campaign Modal — shows matching leads (by audience -> lead type)
-  // so the agent can pick who to message, then actually sends via WhatsApp
-  // (wa.me deep link, like the per-lead flow) or Email (mailto), one per
-  // selected lead, and logs it on that lead's interaction timeline.
+  // Send Campaign modal — client-side helper: opens a WhatsApp (wa.me) or
+  // Email (mailto) compose window per selected lead and logs it on that lead's
+  // interaction timeline. Purely a convenience layered over the campaign record.
   const [sendModalOpen, setSendModalOpen] = useState(false);
   const [sendCampaign, setSendCampaign] = useState(null);
-  const [matchingLeads, setMatchingLeads] = useState([]);
+  const [leads, setLeads] = useState([]);
   const [leadsLoading, setLeadsLoading] = useState(false);
   const [selectedLeadIds, setSelectedLeadIds] = useState(new Set());
   const [sending, setSending] = useState(false);
 
+  const load = () => {
+    setLoading(true);
+    getCampaigns()
+      .then((rows) => {
+        const templates = readTemplates();
+        setCampaigns(rows.map((c) => ({ ...c, template: templates[c.id] || "" })));
+      })
+      .catch((e) => notify(e.message || "Could not load campaigns.", { type: "error" }))
+      .finally(() => setLoading(false));
+  };
+
   useEffect(() => {
-    const saved = localStorage.getItem("msh_campaigns");
-    if (saved) {
-      setCampaigns(JSON.parse(saved));
-    } else {
-      localStorage.setItem("msh_campaigns", JSON.stringify(CAMPAIGNS));
-      setCampaigns(CAMPAIGNS);
-    }
-    setLoading(false);
+    load();
   }, []);
 
-  const handleCreate = (e) => {
+  const handleCreate = async (e) => {
     e.preventDefault();
-    const validation = validateForm(values, { name: [required], channel: [required], audience: [required] });
+    const validation = validateForm(values, { name: [required], channel: [required] });
     setErrors(validation);
     if (Object.keys(validation).length) return;
 
-    const created = {
-      id: `c_${Date.now()}`,
-      name: values.name,
-      channel: values.channel === "whatsapp" ? "WhatsApp" : "Email",
-      audience: values.audience === "b2c" ? "B2C Students" : values.audience === "colleges" ? "Colleges" : "Corporates",
-      sent: 0,
-      replied: 0,
-      status: "Active",
-      template: values.template || ""
-    };
-
-    const updated = [created, ...campaigns];
-    setCampaigns(updated);
-    localStorage.setItem("msh_campaigns", JSON.stringify(updated));
-    notify(`Campaign "${values.name}" created and launched.`, { type: "success" });
-    setModalOpen(false);
-    setValues({ name: "", channel: "", audience: "", template: "" });
+    setSaving(true);
+    try {
+      const created = await createCampaign(values);
+      if (values.template) saveTemplate(created.id, values.template);
+      notify(`Campaign "${created.name}" created.`, { type: "success" });
+      setModalOpen(false);
+      setValues(emptyForm);
+      load();
+    } catch (err) {
+      notify(err.message || "Could not create the campaign.", { type: "error" });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const openEdit = (c) => {
     setEditingId(c.id);
     setEditValues({
       name: c.name,
-      channel: c.channel === "WhatsApp" ? "whatsapp" : "email",
-      audience: c.audience === "B2C Students" ? "b2c" : c.audience === "Colleges" ? "colleges" : "corporates",
+      channel: c.channel,
+      description: c.description || "",
+      startDate: c.startDate || "",
+      endDate: c.endDate || "",
+      budget: c.budget ?? "",
+      targetLeads: c.targetLeads ?? "",
+      status: c.status || "PLANNED",
       template: c.template || "",
-      status: c.status,
     });
     setErrors({});
     setEditModalOpen(true);
   };
 
-  const handleEditSave = (e) => {
+  const handleEditSave = async (e) => {
     e.preventDefault();
-    const validation = validateForm(editValues, { name: [required], channel: [required], audience: [required] });
+    const validation = validateForm(editValues, { name: [required], channel: [required] });
     setErrors(validation);
     if (Object.keys(validation).length) return;
 
-    const updated = campaigns.map((c) => {
-      if (c.id === editingId) {
-        return {
-          ...c,
-          name: editValues.name,
-          channel: editValues.channel === "whatsapp" ? "WhatsApp" : "Email",
-          audience: editValues.audience === "b2c" ? "B2C Students" : editValues.audience === "colleges" ? "Colleges" : "Corporates",
-          template: editValues.template,
-          status: editValues.status,
-        };
-      }
-      return c;
-    });
-
-    setCampaigns(updated);
-    localStorage.setItem("msh_campaigns", JSON.stringify(updated));
-    notify("Campaign updated successfully.", { type: "success", title: "Campaign Updated" });
-    setEditModalOpen(false);
-    setEditingId(null);
+    setSaving(true);
+    try {
+      const updated = await updateCampaign(editingId, editValues);
+      saveTemplate(editingId, editValues.template || "");
+      notify("Campaign updated.", { type: "success", title: "Campaign Updated" });
+      setEditModalOpen(false);
+      setEditingId(null);
+      load();
+      return updated;
+    } catch (err) {
+      notify(err.message || "Could not update the campaign.", { type: "error" });
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleDelete = (id) => {
-    const campaign = campaigns.find(c => c.id === id);
-    const updated = campaigns.filter((c) => c.id !== id);
-    setCampaigns(updated);
-    localStorage.setItem("msh_campaigns", JSON.stringify(updated));
-    notify(`Campaign "${campaign?.name}" deleted successfully.`, { type: "success", title: "Deleted" });
+  const handleDelete = async (c) => {
+    try {
+      await deleteCampaign(c.id);
+      notify(`Campaign "${c.name}" cancelled.`, { type: "success", title: "Cancelled" });
+      load();
+    } catch (err) {
+      notify(err.message || "Could not cancel the campaign.", { type: "error" });
+    }
   };
 
-  const handleComplete = (id) => {
-    const nextCampaigns = campaigns.map((c) => (c.id === id ? { ...c, status: "Completed" } : c));
-    setCampaigns(nextCampaigns);
-    localStorage.setItem("msh_campaigns", JSON.stringify(nextCampaigns));
-    notify("Campaign marked as completed.", { type: "success", title: "Campaign Completed" });
+  const handleComplete = async (c) => {
+    try {
+      await updateCampaign(c.id, { ...c, status: "COMPLETED" });
+      notify("Campaign marked complete.", { type: "success", title: "Campaign Completed" });
+      load();
+    } catch (err) {
+      notify(err.message || "Could not update the campaign.", { type: "error" });
+    }
   };
 
-  // Open the Send modal — loads leads and pre-selects everyone whose type
-  // matches this campaign's target audience.
   const openSendModal = async (campaign) => {
     setSendCampaign(campaign);
     setSendModalOpen(true);
     setLeadsLoading(true);
-    const allLeads = await getLeads();
-    const targetType = AUDIENCE_TO_LEAD_TYPE[campaign.audience];
-    const matched = allLeads.filter((l) => l.type === targetType);
-    setMatchingLeads(matched);
-    setSelectedLeadIds(new Set(matched.map((l) => l.id)));
-    setLeadsLoading(false);
+    try {
+      const allLeads = await getLeads();
+      setLeads(allLeads);
+      setSelectedLeadIds(new Set(allLeads.map((l) => l.id)));
+    } finally {
+      setLeadsLoading(false);
+    }
   };
 
   const toggleLeadSelected = (id) => {
@@ -163,19 +198,18 @@ export default function LeadCampaigns() {
     });
   };
 
+  const isEmailCampaign = (c) => c?.channel === "EMAIL";
+
   const buildMessage = (lead) => {
     const template = sendCampaign?.template?.trim() || DEFAULT_TEMPLATE;
     return template
-      .replace(/{{name}}/g, lead.name)
-      .replace(/{{type}}/g, lead.type)
+      .replace(/{{name}}/g, lead.name || "there")
+      .replace(/{{type}}/g, lead.type || lead.leadType || "")
       .replace(/{{link}}/g, `${window.location.origin}/register?leadId=${lead.id}`);
   };
 
-  // Actually sends the campaign: opens a WhatsApp/Email compose window per
-  // selected lead (personalized with their name), logs the outreach on
-  // that lead's interaction timeline, and bumps the campaign's Sent count.
   const handleSendCampaign = async () => {
-    const targets = matchingLeads.filter((l) => selectedLeadIds.has(l.id));
+    const targets = leads.filter((l) => selectedLeadIds.has(l.id));
     if (targets.length === 0) {
       notify("Select at least one lead to send to.", { type: "warning" });
       return;
@@ -187,46 +221,136 @@ export default function LeadCampaigns() {
 
     for (const lead of targets) {
       const message = buildMessage(lead);
-      if (sendCampaign.channel === "WhatsApp") {
-        if (!lead.phone) { skippedCount++; continue; }
+      if (isEmailCampaign(sendCampaign)) {
+        if (!lead.email) {
+          skippedCount++;
+          continue;
+        }
+        window.open(
+          `mailto:${lead.email}?subject=${encodeURIComponent(sendCampaign.name)}&body=${encodeURIComponent(message)}`,
+          "_blank"
+        );
+      } else {
+        if (!lead.phone) {
+          skippedCount++;
+          continue;
+        }
         const clean = lead.phone.replace(/[^0-9]/g, "");
         const formatted = clean.length === 10 ? `91${clean}` : clean;
         window.open(`https://wa.me/${formatted}?text=${encodeURIComponent(message)}`, "_blank");
-      } else {
-        if (!lead.email) { skippedCount++; continue; }
-        window.open(`mailto:${lead.email}?subject=${encodeURIComponent(sendCampaign.name)}&body=${encodeURIComponent(message)}`, "_blank");
       }
 
-      await logInteraction(lead.id, {
-        channel: sendCampaign.channel,
-        outcome: "Campaign Sent",
-        notes: `[${sendCampaign.name}] ${message}`
-      });
+      try {
+        await logInteraction(lead.id, {
+          channel: isEmailCampaign(sendCampaign) ? "Email" : "WhatsApp",
+          outcome: "Campaign Sent",
+          notes: `[${sendCampaign.name}] ${message}`,
+        });
+      } catch {
+        /* interaction logging is best-effort */
+      }
       sentCount++;
     }
 
-    const updated = campaigns.map((c) => (c.id === sendCampaign.id ? { ...c, sent: (c.sent || 0) + sentCount } : c));
-    setCampaigns(updated);
-    localStorage.setItem("msh_campaigns", JSON.stringify(updated));
-
     notify(
       skippedCount > 0
-        ? `Sent to ${sentCount} lead${sentCount === 1 ? "" : "s"}, skipped ${skippedCount} missing ${sendCampaign.channel === "WhatsApp" ? "phone numbers" : "emails"}.`
-        : `Campaign sent to ${sentCount} lead${sentCount === 1 ? "" : "s"}.`,
-      { type: sentCount > 0 ? "success" : "warning", title: "Campaign Sent" }
+        ? `Opened ${sentCount} message${sentCount === 1 ? "" : "s"}, skipped ${skippedCount} missing ${isEmailCampaign(sendCampaign) ? "emails" : "phone numbers"}.`
+        : `Opened ${sentCount} message${sentCount === 1 ? "" : "s"}.`,
+      { type: sentCount > 0 ? "success" : "warning", title: "Campaign Send" }
     );
 
     setSending(false);
     setSendModalOpen(false);
   };
 
+  const channelOptions = CAMPAIGN_CHANNELS.map((c) => ({ value: c.value, label: c.label }));
+
+  const formFields = (v, set) => (
+    <>
+      <Input
+        label="Campaign name"
+        required
+        placeholder="e.g. September Enrollment Push"
+        value={v.name}
+        onChange={(e) => set((s) => ({ ...s, name: e.target.value }))}
+        error={errors.name}
+      />
+      <div className="grid sm:grid-cols-2 gap-4">
+        <Select
+          label="Channel"
+          required
+          placeholder="Select channel"
+          options={channelOptions}
+          value={v.channel}
+          onChange={(e) => set((s) => ({ ...s, channel: e.target.value }))}
+          error={errors.channel}
+        />
+        <Input
+          label="Target leads"
+          type="number"
+          min="0"
+          placeholder="e.g. 200"
+          value={v.targetLeads}
+          onChange={(e) => set((s) => ({ ...s, targetLeads: e.target.value }))}
+        />
+      </div>
+      <div className="grid sm:grid-cols-3 gap-4">
+        <Input
+          label="Start date"
+          type="date"
+          value={v.startDate}
+          onChange={(e) => set((s) => ({ ...s, startDate: e.target.value }))}
+        />
+        <Input
+          label="End date"
+          type="date"
+          value={v.endDate}
+          onChange={(e) => set((s) => ({ ...s, endDate: e.target.value }))}
+        />
+        <Input
+          label="Budget (₹)"
+          type="number"
+          min="0"
+          placeholder="e.g. 50000"
+          value={v.budget}
+          onChange={(e) => set((s) => ({ ...s, budget: e.target.value }))}
+        />
+      </div>
+      <Textarea
+        label="Description"
+        placeholder="What is this campaign for? Who does it target?"
+        rows={3}
+        value={v.description}
+        onChange={(e) => set((s) => ({ ...s, description: e.target.value }))}
+      />
+      <Textarea
+        label="Message template (used by the Send helper — not stored on the server)"
+        placeholder="Hi {{name}}, ready to kickstart your career with Moriah Skill Hub?"
+        rows={3}
+        value={v.template}
+        onChange={(e) => set((s) => ({ ...s, template: e.target.value }))}
+      />
+    </>
+  );
+
   return (
     <div>
       <PageHeader
         title="Campaigns"
-        subtitle="Pre-built rich email templates and 1-click WhatsApp messaging"
+        subtitle="Plan outreach campaigns and bulk-message leads via WhatsApp or email"
         breadcrumbs={[{ label: "Dashboard", to: "/leads/dashboard" }, { label: "Campaigns" }]}
-        action={<Button icon={Plus} onClick={() => { setErrors({}); setModalOpen(true); }}>New Campaign</Button>}
+        action={
+          <Button
+            icon={Plus}
+            onClick={() => {
+              setErrors({});
+              setValues(emptyForm);
+              setModalOpen(true);
+            }}
+          >
+            New Campaign
+          </Button>
+        }
       />
 
       <Card>
@@ -235,26 +359,80 @@ export default function LeadCampaigns() {
           data={campaigns}
           onRowClick={(r) => openSendModal(r)}
           emptyTitle="No campaigns yet"
-          emptyHint="Create a campaign to bulk-message leads matching an audience segment."
+          emptyHint="Create a campaign to plan outreach and bulk-message your leads."
           columns={[
             { key: "name", header: "Campaign", className: "text-left" },
-            { key: "channel", header: "Channel", className: "text-left", render: (r) => <Badge tone={r.channel === "WhatsApp" ? "success" : "info"}>{r.channel === "WhatsApp" ? <MessageCircle size={11} className="mr-1" /> : <Mail size={11} className="mr-1" />}{r.channel}</Badge> },
-            { key: "audience", header: "Audience", className: "text-left" },
-            { key: "sent", header: "Sent", className: "text-left" },
-            { key: "replied", header: "Replied", className: "text-left" },
-            { key: "status", header: "Status", className: "text-left", render: (r) => <Badge tone={r.status === "Active" ? "success" : "neutral"}>{r.status}</Badge> },
-            { key: "action", header: "", className: "text-right", render: (r) => (
-              <div className="flex gap-2 justify-end" onClick={(e) => e.stopPropagation()}>
-                {r.status === "Active" && (
-                  <Button size="sm" icon={Send} onClick={() => openSendModal(r)}>Send</Button>
-                )}
-                {r.status === "Active" && (
-                  <Button size="sm" variant="secondary" icon={Check} onClick={() => handleComplete(r.id)}>Complete</Button>
-                )}
-                <Button size="sm" variant="secondary" icon={Edit} onClick={() => openEdit(r)}>Edit</Button>
-                <Button size="sm" variant="danger" icon={Trash2} onClick={() => handleDelete(r.id)}>Delete</Button>
-              </div>
-            ) },
+            {
+              key: "channel",
+              header: "Channel",
+              className: "text-left",
+              render: (r) => (
+                <Badge tone={r.channel === "EMAIL" ? "info" : "success"}>
+                  {r.channel === "EMAIL" ? (
+                    <Mail size={11} className="mr-1" />
+                  ) : (
+                    <MessageCircle size={11} className="mr-1" />
+                  )}
+                  {r.channelLabel}
+                </Badge>
+              ),
+            },
+            {
+              key: "window",
+              header: "Window",
+              className: "text-left",
+              render: (r) => (
+                <span className="text-xs text-ink-500">
+                  {r.startDate || "—"}
+                  {r.endDate ? ` → ${r.endDate}` : ""}
+                </span>
+              ),
+            },
+            {
+              key: "targetLeads",
+              header: "Target",
+              className: "text-left",
+              render: (r) => (r.targetLeads != null ? r.targetLeads : "—"),
+            },
+            {
+              key: "budget",
+              header: "Budget",
+              className: "text-left",
+              render: (r) => (r.budget != null ? `₹${r.budget.toLocaleString("en-IN")}` : "—"),
+            },
+            {
+              key: "status",
+              header: "Status",
+              className: "text-left",
+              render: (r) => <Badge tone={STATUS_TONE[r.status] || "neutral"}>{r.status}</Badge>,
+            },
+            {
+              key: "action",
+              header: "",
+              className: "text-right",
+              render: (r) => (
+                <div className="flex gap-2 justify-end" onClick={(e) => e.stopPropagation()}>
+                  {(r.status === "ACTIVE" || r.status === "PLANNED") && (
+                    <Button size="sm" icon={Send} onClick={() => openSendModal(r)}>
+                      Send
+                    </Button>
+                  )}
+                  {r.status !== "COMPLETED" && r.status !== "CANCELLED" && (
+                    <Button size="sm" variant="secondary" icon={Check} onClick={() => handleComplete(r)}>
+                      Complete
+                    </Button>
+                  )}
+                  <Button size="sm" variant="secondary" icon={Edit} onClick={() => openEdit(r)}>
+                    Edit
+                  </Button>
+                  {r.status !== "CANCELLED" && (
+                    <Button size="sm" variant="danger" icon={Trash2} onClick={() => handleDelete(r)}>
+                      Cancel
+                    </Button>
+                  )}
+                </div>
+              ),
+            },
           ]}
         />
       </Card>
@@ -264,18 +442,19 @@ export default function LeadCampaigns() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         title="Create Campaign"
-        footer={<>
-          <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
-          <Button icon={Megaphone} onClick={handleCreate}>Launch Campaign</Button>
-        </>}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setModalOpen(false)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button icon={Megaphone} onClick={handleCreate} disabled={saving}>
+              {saving ? "Saving…" : "Create Campaign"}
+            </Button>
+          </>
+        }
       >
         <form className="flex flex-col gap-4 text-left font-sans" onSubmit={handleCreate}>
-          <Input label="Campaign name" required placeholder="e.g. September Enrollment Push" value={values.name} onChange={(e) => setValues((v) => ({ ...v, name: e.target.value }))} error={errors.name} />
-          <div className="grid sm:grid-cols-2 gap-4">
-            <Select label="Channel" required placeholder="Select channel" options={[{ value: "whatsapp", label: "WhatsApp" }, { value: "email", label: "Email" }]} value={values.channel} onChange={(e) => setValues((v) => ({ ...v, channel: e.target.value }))} error={errors.channel} />
-            <Select label="Audience" required placeholder="Select audience" options={[{ value: "b2c", label: "B2C Students" }, { value: "colleges", label: "Colleges" }, { value: "corporates", label: "Corporates" }]} value={values.audience} onChange={(e) => setValues((v) => ({ ...v, audience: e.target.value }))} error={errors.audience} />
-          </div>
-          <Textarea label="Message template" placeholder="Hi {{name}}, ready to kickstart your career with Moriah Skill Hub?" rows={4} value={values.template} onChange={(e) => setValues((v) => ({ ...v, template: e.target.value }))} />
+          {formFields(values, setValues)}
         </form>
       </Modal>
 
@@ -284,43 +463,56 @@ export default function LeadCampaigns() {
         open={editModalOpen}
         onClose={() => setEditModalOpen(false)}
         title="Edit Campaign"
-        footer={<>
-          <Button variant="secondary" onClick={() => setEditModalOpen(false)}>Cancel</Button>
-          <Button onClick={handleEditSave}>Save Changes</Button>
-        </>}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditModalOpen(false)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button onClick={handleEditSave} disabled={saving}>
+              {saving ? "Saving…" : "Save Changes"}
+            </Button>
+          </>
+        }
       >
         <form className="flex flex-col gap-4 text-left font-sans" onSubmit={handleEditSave}>
-          <Input label="Campaign name" required placeholder="e.g. September Enrollment Push" value={editValues.name} onChange={(e) => setEditValues((v) => ({ ...v, name: e.target.value }))} error={errors.name} />
-          <div className="grid sm:grid-cols-2 gap-4">
-            <Select label="Channel" required placeholder="Select channel" options={[{ value: "whatsapp", label: "WhatsApp" }, { value: "email", label: "Email" }]} value={editValues.channel} onChange={(e) => setEditValues((v) => ({ ...v, channel: e.target.value }))} error={errors.channel} />
-            <Select label="Audience" required placeholder="Select audience" options={[{ value: "b2c", label: "B2C Students" }, { value: "colleges", label: "Colleges" }, { value: "corporates", label: "Corporates" }]} value={editValues.audience} onChange={(e) => setEditValues((v) => ({ ...v, audience: e.target.value }))} error={errors.audience} />
-          </div>
+          {formFields(editValues, setEditValues)}
           <div className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium text-ink-900">Campaign Status</span>
+            <span className="text-sm font-medium text-ink-900">Campaign status</span>
             <select
               value={editValues.status}
               onChange={(e) => setEditValues((v) => ({ ...v, status: e.target.value }))}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100 bg-white"
             >
-              <option value="Active">Active</option>
-              <option value="Completed">Completed</option>
+              <option value="PLANNED">Planned</option>
+              <option value="ACTIVE">Active</option>
+              <option value="COMPLETED">Completed</option>
+              <option value="CANCELLED">Cancelled</option>
             </select>
           </div>
-          <Textarea label="Message template" placeholder="Hi {{name}}, ready to kickstart your career with Moriah Skill Hub?" rows={4} value={editValues.template} onChange={(e) => setEditValues((v) => ({ ...v, template: e.target.value }))} />
         </form>
       </Modal>
 
-      {/* Send Campaign Modal — pick which matching leads get messaged */}
+      {/* Send Campaign Modal — client-side WhatsApp/email compose per lead */}
       <Modal
         open={sendModalOpen}
-        onClose={() => { if (!sending) setSendModalOpen(false); }}
+        onClose={() => {
+          if (!sending) setSendModalOpen(false);
+        }}
         title={sendCampaign ? `Send: ${sendCampaign.name}` : "Send Campaign"}
         size="lg"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setSendModalOpen(false)} disabled={sending}>Cancel</Button>
-            <Button icon={sending ? Loader2 : Send} onClick={handleSendCampaign} disabled={sending || matchingLeads.length === 0}>
-              {sending ? "Sending…" : `Send to ${selectedLeadIds.size} lead${selectedLeadIds.size === 1 ? "" : "s"}`}
+            <Button variant="secondary" onClick={() => setSendModalOpen(false)} disabled={sending}>
+              Cancel
+            </Button>
+            <Button
+              icon={sending ? Loader2 : Send}
+              onClick={handleSendCampaign}
+              disabled={sending || leads.length === 0}
+            >
+              {sending
+                ? "Sending…"
+                : `Send to ${selectedLeadIds.size} lead${selectedLeadIds.size === 1 ? "" : "s"}`}
             </Button>
           </>
         }
@@ -329,51 +521,66 @@ export default function LeadCampaigns() {
           <div className="flex flex-col gap-4 text-left font-sans">
             <div className="flex items-center gap-2 text-xs text-ink-500 bg-cream-50 border border-border rounded-lg px-3 py-2">
               <Users size={14} />
-              Targeting <strong className="text-ink-900">{sendCampaign.audience}</strong> via{" "}
-              <strong className="text-ink-900">{sendCampaign.channel}</strong> — matched by lead type "{AUDIENCE_TO_LEAD_TYPE[sendCampaign.audience]}"
+              Sending via{" "}
+              <strong className="text-ink-900">
+                {isEmailCampaign(sendCampaign) ? "Email" : "WhatsApp"}
+              </strong>{" "}
+              — pick which leads to message.
             </div>
 
             {leadsLoading ? (
-              <div className="flex justify-center py-8"><Loader2 className="animate-spin text-primary-600" size={20} /></div>
-            ) : matchingLeads.length === 0 ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="animate-spin text-primary-600" size={20} />
+              </div>
+            ) : leads.length === 0 ? (
               <p className="text-sm text-ink-400 text-center py-8">
-                No leads in your pipeline currently match this audience. Add or ingest leads of this type first.
+                No leads in your pipeline yet. Add leads first.
               </p>
             ) : (
               <div className="flex flex-col divide-y divide-border border border-border rounded-xl max-h-[260px] overflow-y-auto bg-white">
-                {matchingLeads.map((lead) => (
-                  <label key={lead.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-cream-50/60 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedLeadIds.has(lead.id)}
-                      onChange={() => toggleLeadSelected(lead.id)}
-                      className="accent-primary-700"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-ink-900 truncate">{lead.name}</p>
-                      <p className="text-xs text-ink-400 truncate">
-                        {sendCampaign.channel === "WhatsApp" ? (lead.phone || "No phone on file") : (lead.email || "No email on file")}
-                      </p>
-                    </div>
-                    {((sendCampaign.channel === "WhatsApp" && !lead.phone) || (sendCampaign.channel === "Email" && !lead.email)) && (
-                      <Badge tone="warning">Missing contact</Badge>
-                    )}
-                  </label>
-                ))}
+                {leads.map((lead) => {
+                  const missing = isEmailCampaign(sendCampaign) ? !lead.email : !lead.phone;
+                  return (
+                    <label
+                      key={lead.id}
+                      className="flex items-center gap-3 px-3 py-2.5 hover:bg-cream-50/60 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedLeadIds.has(lead.id)}
+                        onChange={() => toggleLeadSelected(lead.id)}
+                        className="accent-primary-700"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-ink-900 truncate">{lead.name}</p>
+                        <p className="text-xs text-ink-400 truncate">
+                          {isEmailCampaign(sendCampaign)
+                            ? lead.email || "No email on file"
+                            : lead.phone || "No phone on file"}
+                        </p>
+                      </div>
+                      {missing && <Badge tone="warning">Missing contact</Badge>}
+                    </label>
+                  );
+                })}
               </div>
             )}
 
-            {matchingLeads.length > 0 && (
+            {leads.length > 0 && (
               <div className="p-3 bg-cream-50/80 rounded-xl border border-border">
-                <p className="text-xs font-semibold uppercase tracking-wider text-ink-700 mb-1.5">Message Preview</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-ink-700 mb-1.5">
+                  Message Preview
+                </p>
                 <p className="text-sm text-ink-700 whitespace-pre-wrap">
-                  {buildMessage(matchingLeads.find((l) => selectedLeadIds.has(l.id)) || matchingLeads[0])}
+                  {buildMessage(leads.find((l) => selectedLeadIds.has(l.id)) || leads[0])}
                 </p>
               </div>
             )}
 
             <p className="text-[11px] text-ink-400">
-              Each selected lead gets an individually personalized {sendCampaign.channel === "WhatsApp" ? "WhatsApp" : "email"} message and is logged to their interaction timeline.
+              Each selected lead gets an individually personalized{" "}
+              {isEmailCampaign(sendCampaign) ? "email" : "WhatsApp"} message and is logged to their
+              interaction timeline.
             </p>
           </div>
         )}

@@ -1,6 +1,85 @@
-import { mockRequest } from "./apiClient";
+import { mockRequest, apiClient } from "./apiClient";
 
 const DEFAULT_LEADS = [];
+
+// ---------------------------------------------------------------------------
+// Lead campaigns — WIRED to the backend (B1.7: GET/POST/PUT/DELETE
+// /api/v1/leads/campaigns, LEAD_GEN / ADMIN). DELETE deactivates (status =
+// CANCELLED), it never row-deletes. The rest of this file (lead pipeline,
+// targets, interaction logging) is still the localStorage mock — the backend
+// lead endpoints exist but expose no per-lead detail / activity-list / delete
+// yet, so the Pipeline page can't be fully migrated without a Part B add.
+// ---------------------------------------------------------------------------
+
+// Backend LeadCampaignChannel — the UI shows the label, stores the enum.
+export const CAMPAIGN_CHANNELS = [
+  { value: "EMAIL", label: "Email" },
+  { value: "SOCIAL", label: "Social" },
+  { value: "EVENT", label: "Event" },
+  { value: "REFERRAL", label: "Referral" },
+  { value: "PAID_ADS", label: "Paid Ads" },
+  { value: "WEBINAR", label: "Webinar" },
+];
+export const CAMPAIGN_STATUSES = ["PLANNED", "ACTIVE", "COMPLETED", "CANCELLED"];
+
+const CHANNEL_LABEL = Object.fromEntries(CAMPAIGN_CHANNELS.map((c) => [c.value, c.label]));
+
+function toFeCampaign(c) {
+  if (!c) return null;
+  return {
+    id: c.id,
+    name: c.name,
+    channel: c.channel,
+    channelLabel: CHANNEL_LABEL[c.channel] || c.channel,
+    description: c.description || "",
+    startDate: c.startDate || "",
+    endDate: c.endDate || "",
+    budget: c.budget != null ? Number(c.budget) : null,
+    targetLeads: c.targetLeads ?? null,
+    status: c.status || "PLANNED",
+    createdByUuid: c.createdByUuid || null,
+    createdAt: c.createdAt || null,
+    updatedAt: c.updatedAt || null,
+  };
+}
+
+// FE form values -> backend request body. `startDate` is required by the API;
+// default it to today so a minimal "just a name + channel" create still works.
+function toCampaignRequest(v, { includeStatus = false } = {}) {
+  const body = {
+    name: (v.name || "").trim(),
+    channel: v.channel,
+    description: v.description ? v.description.trim() : null,
+    startDate: v.startDate || new Date().toISOString().slice(0, 10),
+    endDate: v.endDate || null,
+    budget: v.budget === "" || v.budget == null ? null : Number(v.budget),
+    targetLeads: v.targetLeads === "" || v.targetLeads == null ? null : Number(v.targetLeads),
+  };
+  if (includeStatus) body.status = v.status || "PLANNED";
+  return body;
+}
+
+export async function getCampaigns({ status } = {}) {
+  const res = await apiClient.get("/leads/campaigns", status ? { status } : undefined);
+  const rows = Array.isArray(res) ? res : res?.content ?? [];
+  return rows.map(toFeCampaign);
+}
+
+export async function createCampaign(input) {
+  return toFeCampaign(await apiClient.post("/leads/campaigns", toCampaignRequest(input)));
+}
+
+export async function updateCampaign(id, input) {
+  return toFeCampaign(
+    await apiClient.put(`/leads/campaigns/${id}`, toCampaignRequest(input, { includeStatus: true }))
+  );
+}
+
+// DELETE = deactivate (status -> CANCELLED) on the backend.
+export async function deleteCampaign(id) {
+  await apiClient.del(`/leads/campaigns/${id}`);
+  return true;
+}
 
 export const PREAPPROVED_WHATSAPP_TEMPLATES = [
   {
