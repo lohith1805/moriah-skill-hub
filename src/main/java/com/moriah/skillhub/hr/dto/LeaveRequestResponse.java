@@ -10,6 +10,7 @@ import java.time.LocalDate;
 public record LeaveRequestResponse(
         Long id,
         String userUuid,
+        String userFullName,
         LeaveType leaveType,
         LocalDate fromDate,
         LocalDate toDate,
@@ -17,6 +18,7 @@ public record LeaveRequestResponse(
         String reason,
         LeaveStatus status,
         String approvedByUuid,
-        Instant decidedAt
+        Instant decidedAt,
+        Instant createdAt
 ) {
 }

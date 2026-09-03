@@ -590,6 +590,12 @@ supports it (slug-sanitised server-side). → keep `data.id` as «docId».
 ```
 → keep `data.id` as «leaveId». Overlapping approved leave → `409`.
 
+**Step 4b — list leave requests** · `GET {{baseUrl}}/api/v1/hr/leaves?status=PENDING` · auth: «any token»
+→ `data.content[]` of `{ id, userUuid, userFullName, leaveType, fromDate, toDate, days, reason,
+status (PENDING｜APPROVED｜REJECTED), approvedByUuid, decidedAt, createdAt }`. A plain employee
+token sees **only its own** rows (the `userUuid` param is ignored for them); `hr@` / `admin@` see
+everyone and may add `&userUuid=…`.
+
 **Step 5 — decide the leave** (login as the reporting manager or HR) ·
 `PUT {{baseUrl}}/api/v1/hr/leaves/«leaveId»/decision`
 ```json

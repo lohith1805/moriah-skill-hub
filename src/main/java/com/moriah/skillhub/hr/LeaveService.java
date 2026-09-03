@@ -1,6 +1,7 @@
 package com.moriah.skillhub.hr;
 
 import com.moriah.skillhub.common.audit.AuditLogService;
+import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ForbiddenOperationException;
@@ -18,6 +19,8 @@ import com.moriah.skillhub.user.entity.RoleCode;
 import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,6 +63,38 @@ public class LeaveService {
         leaveRequestRepository.save(leave);
 
         return toResponse(leave);
+    }
+
+    /** {@code GET /api/v1/hr/leaves}. HR_MANAGER/ADMIN see every request (optionally filtered by
+     * {@code userUuid} / {@code status}); any other authenticated caller is forced to their own
+     * rows regardless of the {@code userUuid} param — the same "own data unless you're HR" scoping
+     * {@link #decide} enforces. */
+    @Transactional(readOnly = true)
+    public PageResponse<LeaveRequestResponse> list(String userUuid, LeaveStatus status, Long callerUserId, Pageable pageable) {
+        boolean isHr = SecurityUtils.currentUserRoles().contains(RoleCode.HR_MANAGER.name())
+                || SecurityUtils.currentUserRoles().contains(RoleCode.ADMIN.name());
+
+        Long scopeUserId;
+        if (isHr) {
+            scopeUserId = userUuid == null || userUuid.isBlank() ? null
+                    : userRepository.findByUuid(userUuid)
+                            .map(User::getId)
+                            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.USER_NOT_FOUND, userUuid));
+        } else {
+            scopeUserId = callerUserId;
+        }
+
+        Page<LeaveRequest> page;
+        if (scopeUserId != null && status != null) {
+            page = leaveRequestRepository.findByUserIdAndStatus(scopeUserId, status, pageable);
+        } else if (scopeUserId != null) {
+            page = leaveRequestRepository.findByUserId(scopeUserId, pageable);
+        } else if (status != null) {
+            page = leaveRequestRepository.findByStatus(status, pageable);
+        } else {
+            page = leaveRequestRepository.findAll(pageable);
+        }
+        return PageResponse.from(page.map(this::toResponse));
     }
 
     @Transactional
@@ -116,6 +151,7 @@ public class LeaveService {
         return new LeaveRequestResponse(
                 leave.getId(),
                 user.getUuid(),
+                user.getFullName(),
                 leave.getLeaveType(),
                 leave.getFromDate(),
                 leave.getToDate(),
@@ -123,6 +159,7 @@ public class LeaveService {
                 leave.getReason(),
                 leave.getStatus(),
                 leave.getApprovedBy() == null ? null : leave.getApprovedBy().getUuid(),
-                leave.getDecidedAt());
+                leave.getDecidedAt(),
+                leave.getCreatedAt());
     }
 }

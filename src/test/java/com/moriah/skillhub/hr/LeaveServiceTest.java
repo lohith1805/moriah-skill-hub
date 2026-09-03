@@ -25,6 +25,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -33,6 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -206,5 +210,42 @@ class LeaveServiceTest {
         assertThatThrownBy(() -> service().decide(99L, new LeaveDecisionRequest(LeaveStatus.APPROVED), 9L))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.LEAVE_REQUEST_NOT_FOUND);
+    }
+
+    // --- list ---
+
+    @Test
+    void list_nonHrCaller_isForcedToOwnRows_ignoringUserUuidParam() {
+        authenticateAs(3L, List.of("DEVELOPER"));
+        var pageable = PageRequest.of(0, 20);
+        when(leaveRequestRepository.findByUserId(3L, pageable)).thenReturn(new PageImpl<>(List.of()));
+
+        service().list("uuid-999", null, 3L, pageable);
+
+        verify(leaveRequestRepository).findByUserId(3L, pageable);
+    }
+
+    @Test
+    void list_hrCallerNoFilters_readsEveryRequest() {
+        authenticateAs(9L, List.of("HR_MANAGER"));
+        var pageable = PageRequest.of(0, 20);
+        when(leaveRequestRepository.findAll(pageable)).thenReturn(new PageImpl<>(List.of()));
+
+        service().list(null, null, 9L, pageable);
+
+        verify(leaveRequestRepository).findAll(pageable);
+    }
+
+    @Test
+    void list_hrCallerWithUserUuidAndStatus_scopesToThatUser() {
+        authenticateAs(9L, List.of("ADMIN"));
+        var pageable = PageRequest.of(0, 20);
+        when(userRepository.findByUuid("uuid-1")).thenReturn(Optional.of(user(1L)));
+        when(leaveRequestRepository.findByUserIdAndStatus(1L, LeaveStatus.PENDING, pageable))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        service().list("uuid-1", LeaveStatus.PENDING, 9L, pageable);
+
+        verify(leaveRequestRepository).findByUserIdAndStatus(1L, LeaveStatus.PENDING, pageable);
     }
 }
