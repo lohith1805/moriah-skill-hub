@@ -3,7 +3,7 @@ import {
   Users, CalendarClock, GitPullRequest, BarChart3, GraduationCap, FolderKanban, Bug, Library,
   Target, Megaphone, Trophy, Wallet, FileText, LogOut as LogOutIcon, FilePenLine,
   CalendarCheck, MonitorCheck, ShieldCheck, Settings2, ScrollText, FileBarChart, Briefcase, Rocket,
-  PlayCircle, Video,
+  PlayCircle, Video, UserPlus,
 } from "lucide-react";
 import { ROLES } from "../utils/constants";
 
@@ -62,6 +62,7 @@ export const NAV_CONFIG = {
     { to: "/hr/attendance", label: "Attendance & Leave", icon: CalendarCheck },
     { to: "/hr/payroll", label: "Payroll", icon: Wallet },
     { to: "/hr/documents", label: "Letters & Certifications", icon: FileText },
+    { to: "/hr/onboarding", label: "Onboarding", icon: UserPlus },
     { to: "/hr/exit", label: "Exit Management", icon: LogOutIcon },
     { to: "/hr/profile", label: "My Profile", icon: User },
     { to: "/hr/settings", label: "Account Settings", icon: Settings2 },
