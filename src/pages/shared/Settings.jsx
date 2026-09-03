@@ -69,7 +69,14 @@ export default function SharedSettings() {
       setSetup(res);
       setCode("");
     } catch (err) {
-      notify(err.message || "Could not start 2FA setup.", { type: "error" });
+      // The account already has 2FA on (e.g. admin/HR mandatory setup done at first
+      // login) but this view's cached user said otherwise — re-sync and correct the UI.
+      if (/already.*enabled/i.test(err.message || "") || err.status === 409) {
+        await refreshUser();
+        notify("Two-factor authentication is already enabled on this account.", { type: "info" });
+      } else {
+        notify(err.message || "Could not start 2FA setup.", { type: "error" });
+      }
     } finally {
       setTwoFaBusy(false);
     }
