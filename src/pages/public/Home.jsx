@@ -32,6 +32,7 @@ import {
 import Button from "../../components/ui/Button";
 import Badge from "../../components/ui/Badge";
 import { SUBSCRIPTION_PLANS, CURRENCY } from "../../utils/constants";
+import { getPublicStats, getPublicPlans, submitInboundLead } from "../../services/siteService";
 
 const NAV_LINKS = [
   { label: "Home", href: "#" },
@@ -304,6 +305,18 @@ function HeroSlider() {
 }
 
 function Hero() {
+  const [stats, setStats] = useState(null);
+  useEffect(() => {
+    getPublicStats().then(setStats).catch(() => {});
+  }, []);
+  const bands = stats
+    ? [
+        { value: `${(stats.graduates + stats.activeLearners).toLocaleString("en-IN")}+`, label: "Learners on the platform" },
+        { value: `${stats.activeBatches}`, label: "Active batches" },
+        { value: `${stats.certificatesIssued.toLocaleString("en-IN")}+`, label: "Certificates issued" },
+        { value: `${stats.hiringPartners}+`, label: "Hiring partners" },
+      ]
+    : STATS;
   return (
     <section className="relative overflow-hidden bg-primary-800 text-white">
       <div className="absolute -right-24 -top-24 h-80 w-80 rounded-full bg-gold-500/10 animate-pulse-slow" />
@@ -339,7 +352,7 @@ function Hero() {
 
       <div className="relative border-t border-white/10 bg-primary-900/60">
         <div className="max-w-7xl mx-auto px-6 lg:px-8 py-6 grid grid-cols-2 sm:grid-cols-4 gap-6">
-          {STATS.map((s) => (
+          {bands.map((s) => (
             <div key={s.label} className="group text-center sm:text-left cursor-default">
               <p className="font-display text-2xl font-bold text-gold-400 transition-transform duration-300 group-hover:scale-110 origin-left inline-block">
                 {s.value}
@@ -429,7 +442,12 @@ function Features() {
 /* Deep navy, gold accents — the "premium plan" surface. */
 
 function Pricing() {
-  const highlighted = "project_based";
+  const highlighted = "PROJECT_BASED";
+  const [plans, setPlans] = useState(null);
+  useEffect(() => {
+    getPublicPlans().then(setPlans).catch(() => {});
+  }, []);
+  const planList = plans && plans.length ? plans : SUBSCRIPTION_PLANS;
   return (
     <section id="pricing" className="bg-primary-900 text-white">
       <div className="max-w-7xl mx-auto px-6 lg:px-8 py-20">
@@ -441,8 +459,8 @@ function Pricing() {
         />
 
         <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-5 gap-5">
-          {SUBSCRIPTION_PLANS.map((plan) => {
-            const isHighlighted = plan.code === highlighted;
+          {planList.map((plan) => {
+            const isHighlighted = (plan.code || "").toUpperCase() === highlighted;
             return (
               <div
                 key={plan.code}
@@ -726,47 +744,25 @@ function FAQ() {
 
 /* --------------------------------- Contact --------------------------------- */
 function Contact() {
-  const [form, setForm] = useState({ name: "", email: "", type: "", message: "" });
+  const [form, setForm] = useState({ name: "", email: "", phone: "", type: "", message: "" });
   const [sent, setSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
-    
-    // Add lead to CRM leads database
-    const saved = localStorage.getItem("msh_crm_leads");
-    let leadsList = [];
-    if (saved) {
-      try {
-        leadsList = JSON.parse(saved);
-      } catch (err) {
-        leadsList = [];
-      }
-    } else {
-      leadsList = [];
+    setError("");
+    try {
+      // POST /api/v1/leads/inbound — public, unauthenticated. Creates an unassigned lead a
+      // lead-gen agent picks up in /leads/pipeline.
+      await submitInboundLead(form);
+      setSent(true);
+    } catch (err) {
+      setError(err?.message || "Something went wrong. Please email us instead.");
+    } finally {
+      setSubmitting(false);
     }
-    
-    
-    const newLead = {
-      id: `l_${Date.now()}`,
-      name: form.name,
-      email: form.email,
-      message: form.message,
-      type: form.type === "Corporate hiring partner" ? "Corporate Partner" : "Student (B2C)",
-      source: "Contact Us Form",
-      stage: "New Inquiry",
-      phone: "",
-      assignedAgent: "Unassigned",
-      updatedAt: new Date().toISOString().slice(0, 10)
-    };
-    
-    leadsList.unshift(newLead);
-    localStorage.setItem("msh_crm_leads", JSON.stringify(leadsList));
-
-    await new Promise((r) => setTimeout(r, 800));
-    setSubmitting(false);
-    setSent(true);
   };
 
   const inputClass =
@@ -893,6 +889,17 @@ function Contact() {
                   </div>
 
                   <div className="flex flex-col gap-1.5 text-left">
+                    <input
+                      required
+                      type="tel"
+                      value={form.phone}
+                      onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                      placeholder="Phone number"
+                      className={inputClass}
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5 text-left">
                     <select
   required
   value={form.type}
@@ -920,6 +927,8 @@ function Contact() {
                       className={inputClass + " resize-none"}
                     />
                   </div>
+
+                  {error && <p className="text-xs text-red-300 text-left -mt-2">{error}</p>}
 
                   <Button type="submit" variant="gold" size="lg" loading={submitting} icon={ArrowRight} iconPosition="right" className="mt-2 transition-all duration-300 hover:shadow-xl hover:shadow-gold-500/10">
                     Send message
