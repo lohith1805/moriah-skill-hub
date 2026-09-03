@@ -378,8 +378,10 @@ auto-PIP). `placementPipeline.js` stays too (display-helper + backend adapter).
    — "resend verification email" form (own email input) on the failed/missing states; Register
    student-success screen — inline "resend the verification link". `authService.resendVerificationEmail()`.
 
-⚠️ **`openapi.json` / Postman / `API-Documentation.md` NOT yet regenerated** for
-`POST /auth/resend-verification` — needs the live-app re-export procedure below.
+✅ **`openapi.json` / Postman / `API-Documentation.md` re-exported from the live app** (commit
+`f7cacfc`, 2026-09-03): 153 paths / 202 ops; Postman v2.1.0 = 33 folders / 214 requests;
+API-Documentation.md = 202 endpoints. Covers `POST /auth/resend-verification` +
+`GET /subscriptions/me/invoices`. Diff was purely additive (0 removed lines).
 
 **Student billing / plans page pass (2026-09-03, verified: FE build + BE compile + payment/
 invoice/ownership/cache tests green):**
@@ -405,8 +407,8 @@ invoice/ownership/cache tests green):**
    culprit). And a Razorpay webhook can't reach `localhost` — needs the Cloudflare tunnel URL
    registered as the webhook endpoint, or no `payments`/`invoices` row is ever created.
 
-⚠️ **openapi.json / Postman / API-Documentation.md NOT regenerated** for `POST /auth/resend-verification`
-or `GET /subscriptions/me/invoices` — both need the live-app re-export procedure below.
+✅ **openapi.json / Postman / API-Documentation.md regenerated** (commit `f7cacfc`) — see the note
+above; covers both `POST /auth/resend-verification` and `GET /subscriptions/me/invoices`.
 
 **Whole-project verified E2E run (2026-09-03): [`docs/verified-e2e-flow.md`](docs/verified-e2e-flow.md) +
 `scripts/e2e-flow.py`.** Booted deps + `mvn spring-boot:run` (dev) + walked 44 steps across
