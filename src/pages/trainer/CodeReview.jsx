@@ -9,7 +9,7 @@ import { Textarea } from "../../components/ui/FormField";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import EmptyState from "../../components/ui/EmptyState";
 import Tabs from "../../components/ui/Tabs";
-import { getSprintTasks, reviewSubmission } from "../../services/trainerService";
+import { getReviewQueue, reviewSubmission } from "../../services/trainerService";
 import { useToast } from "../../context/ToastContext";
 
 // Simulated source files for the student's PR diff
@@ -61,10 +61,11 @@ export default function TrainerCodeReview() {
   const [tempCommentText, setTempCommentText] = useState("");
 
   const loadSubmissions = () => {
-    getSprintTasks().then((t) => { 
-      setTasks(t.filter((x) => x.githubPr || x.videoUrl)); 
-      setLoading(false); 
-    });
+    setLoading(true);
+    getReviewQueue()
+      .then(setTasks)
+      .catch((e) => notify(e.message || "Couldn't load the review queue.", { type: "error" }))
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {
@@ -84,18 +85,23 @@ export default function TrainerCodeReview() {
   const decide = async (decision) => {
     setSubmitting(true);
     try {
-      await reviewSubmission(active.id, { 
-        score, 
-        decision, 
+      await reviewSubmission(active.id, {
+        submissionId: active.submissionId,
+        score,
+        decision,
         comment,
-        inlineComments: stagedComments 
+        inlineComments: stagedComments,
       });
-      notify(`Submission ${decision.toLowerCase()}.`, { type: decision === "Approved" ? "success" : "warning", title: "Review recorded" });
-      setTasks((prev) => prev.map((t) => (t.id === active.id ? { ...t, status: decision === "Approved" ? "Completed" : "In Progress" } : t)));
+      notify(
+        decision === "Approved" ? "Approved — the task is now complete." : "Changes requested — sent back to the student.",
+        { type: decision === "Approved" ? "success" : "warning", title: "Review recorded" }
+      );
       setActive(null);
       setComment("");
       setStagedComments([]);
       loadSubmissions();
+    } catch (err) {
+      notify(err.message || "Couldn't record the review.", { type: "error" });
     } finally {
       setSubmitting(false);
     }

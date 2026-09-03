@@ -342,21 +342,40 @@ export async function getStudentsForBatch() {
   return [];
 }
 
-// GET /api/v1/reviews/queue — IN_REVIEW tasks awaiting the caller's review.
+// GET /api/v1/reviews/queue — IN_REVIEW tasks awaiting the caller's review,
+// each enriched (best-effort) with its latest submission's PR / video links.
 export async function getReviewQueue() {
   const res = await apiClient.get("/reviews/queue", { size: 50 });
-  return asRows(res).map((t) => ({
-    id: t.id,
-    title: t.title,
-    description: t.description || "",
-    sprintId: t.sprintId,
-    assignee: t.assignedToName || "",
-    assigneeUuid: t.assignedToUuid || null,
-    points: t.storyPoints ?? 0,
-    status: "Review",
-    dueAt: t.dueAt || null,
-  }));
+  const rows = asRows(res);
+  return Promise.all(
+    rows.map(async (t) => {
+      const sub = await latestSubmissionForTask(t.id).catch(() => null);
+      return {
+        id: t.id,
+        title: t.title,
+        description: t.description || "",
+        sprintId: t.sprintId,
+        assignee: t.assignedToName || "",
+        assigneeUuid: t.assignedToUuid || null,
+        points: t.storyPoints ?? 0,
+        status: "Review",
+        dueAt: t.dueAt || null,
+        submissionId: sub?.id ?? null,
+        githubPr: sub?.prUrl || null,
+        videoUrl: sub?.videoUrl || null,
+      };
+    })
+  );
 }
+
+async function latestSubmissionForTask(taskId) {
+  const res = await apiClient.get("/submissions", { taskId, size: 50 });
+  const subs = asRows(res);
+  if (!subs.length) return null;
+  return subs.reduce((a, b) => ((b.attemptNumber ?? 0) >= (a.attemptNumber ?? 0) ? b : a));
+}
+
+const FE_DECISION_TO_VERDICT = { Approved: "APPROVED", Rejected: "CHANGES_REQUESTED" };
 
 export async function getStaffableClientProjects() {
   try {
@@ -368,7 +387,29 @@ export async function getStaffableClientProjects() {
   }
 }
 
-export async function reviewSubmission(taskId, { score, decision, comment, inlineComments = [] }) {
+// POST /api/v1/reviews — resolve the task's latest submission, then review it.
+// APPROVED closes the task (COMPLETED); CHANGES_REQUESTED sends it back.
+export async function reviewSubmission(taskId, { submissionId, score, decision, comment, inlineComments = [] }) {
+  let subId = submissionId;
+  if (!subId) {
+    const sub = await latestSubmissionForTask(taskId);
+    if (!sub) throw new Error("This task has no submission to review yet.");
+    subId = sub.id;
+  }
+  const body = {
+    submissionId: subId,
+    score: Math.min(10, Math.max(1, Number(score) || 1)),
+    verdict: FE_DECISION_TO_VERDICT[decision] || "CHANGES_REQUESTED",
+    comments: comment || "",
+    inlineComments: (inlineComments || [])
+      .filter((c) => c && c.comment)
+      .map((c) => ({ filePath: c.file || c.filePath || "unknown", line: c.line || 1, comment: c.comment })),
+  };
+  return apiClient.post("/reviews", body);
+}
+
+// legacy localStorage review path, kept only for reference — no longer called.
+async function reviewSubmissionMock(taskId, { score, decision, comment, inlineComments = [] }) {
   let allTasks = TASKS;
   try {
     const raw = localStorage.getItem("msh_sprint_tasks");
