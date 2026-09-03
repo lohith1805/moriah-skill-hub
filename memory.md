@@ -423,10 +423,37 @@ Found + fixed 2 `GlobalExceptionHandler` gaps where a client mistake surfaced as
 Harness notes: raises `AUTH_RATE_LIMIT_PER_MIN` (default 10/min IP-scoped trips on the login burst);
 uses unique email+phone per run (`users.phone` is UNIQUE); resets `admin@` 2FA to setup-required.
 
-**HEADs:** Frontend `e1e5a52` (branch `master`). Backend — `dcc5bd3` + uncommitted
-`GlobalExceptionHandler`/`ErrorCode` fixes + `docs/verified-e2e-flow.md` + `scripts/e2e-flow.py`
-(commit `fe85aa6`). This pass ran only targeted unit slices (green); full surefire (547) not re-run
-since the seed/spec work. Testcontainers `*IT` still need Docker.
+**Payment-page + post-payment UX pass (2026-09-03):**
+- **Student now hears about their payment.** `PaymentWebhookService` after a subscription goes
+  ACTIVE: IN_APP `SUBSCRIPTION_ACTIVATED` row (reaches the bell, not just a toast) + email.
+  `activateSubscription` now returns the `UserSubscription` (or null) not a boolean.
+  `BatchAllocationService` also notifies the student IN_APP for both allocation outcomes —
+  `BATCH_ALLOCATED` and `BATCH_PLACEMENT_PENDING` (before: only PMs were told). BE `0e2c13c`
+  (+ `PaymentWebhookServiceTest`/`BatchAllocationServiceTest` updated).
+- **Coupon on the checkout page.** New `POST /api/v1/subscriptions/checkout/preview`
+  `{planCode,couponCode?}` → payable amount via the same `CouponService.preview` the real
+  checkout uses; invalid coupon = `couponApplied:false` + message, not an error. BE `9e4e8b7`
+  (DTOs `CheckoutPreviewRequest`/`Response`). FE `8aa7de0`: coupon field + Apply in the
+  gateway-select modal, discounted price inline, code passed through to `/checkout`.
+- **`docs/webhooks.md` already documents the manual signed-webhook method** (`openssl dgst
+  -sha256 -hmac`, both gateways) — no change needed (I briefly clobbered it, restored from git).
+
+**Backend context notes (things the user flagged, mostly frontend-mock, NOT bugs in real code):**
+- Developer dashboard "Simulated Client Projects" + Bug-Challenges projects: 100% frontend mock
+  (`developerService.getProjects()` → `mockRequest(PROJECTS)`, localStorage `msh_developer_projects`
+  / `BUG_CHALLENGES_KEY`). Two different mock sources → the 4-vs-3 mismatch; "disappears on assign"
+  is a localStorage-mutation quirk. Real backend: `GET /api/v1/projects` (PUBLISHED only for
+  non-admins), seed has **1** published project (`Todo API`). Dev projects/challenges = one of the
+  6 still-unwired areas.
+- Toasts vs bell: toasts are `ToastContext` (ephemeral); the bell reads `GET /notifications`,
+  which only shows backend `notifications` rows. Before this pass, a STUDENT got IN_APP rows only
+  for PIP; now also subscription-activated + batch placement. Task/sprint/review/quiz/certificate/
+  interview events still fire a FE toast only — each needs an `enqueueAfterCommit` added at its
+  service to land in the bell (not done).
+
+**HEADs:** Frontend `8aa7de0` (branch `master`). Backend `9e4e8b7` on top of `0e2c13c` /
+`f7cacfc` (openapi re-export) / `fe85aa6` (400/405 handlers). Targeted unit slices green this
+pass; full surefire (547) not re-run since the seed/spec work. Testcontainers `*IT` need Docker.
 
 **Local run state right now:** Docker `skillhub-mysql` / `-redis` / `-minio` are UP but MySQL is
 published on **3316** (I remapped it — native Windows service `MySQL97`, StartMode Auto, squats
