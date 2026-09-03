@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Layers, Send, Edit, Trash2, GitFork, FileCode, Video, HelpCircle } from "lucide-react";
+import { Plus, Layers, Send, Edit, GitFork, FileCode, Video, HelpCircle } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
 import Badge from "../../components/ui/Badge";
@@ -8,7 +8,7 @@ import Modal from "../../components/ui/Modal";
 import FileUpload from "../../components/ui/FileUpload";
 import { Input, Textarea, Select } from "../../components/ui/FormField";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
-import { getProjects } from "../../services/developerService";
+import { getProjects, createProject, updateProject, publishProject } from "../../services/developerService";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required } from "../../utils/validators";
 
@@ -49,33 +49,15 @@ export default function DeveloperProjects() {
   const [errors, setErrors] = useState({});
   const { notify } = useToast();
 
+  const reload = () =>
+    getProjects()
+      .then((p) => setProjects(p.map((proj) => ({ ...proj, files: [] }))))
+      .catch(() => setProjects([]))
+      .finally(() => setLoading(false));
+
   useEffect(() => {
-    const saved = localStorage.getItem("msh_developer_projects");
-    if (saved) {
-      const parsed = JSON.parse(saved).map(p => ({
-        ...p,
-        files: (p.files || []).map(f => new File([""], f.name, { type: f.name.endsWith('.pdf') ? 'application/pdf' : f.name.endsWith('.zip') ? 'application/zip' : 'image/png' }))
-      }));
-      setProjects(parsed);
-      setLoading(false);
-    } else {
-      getProjects().then((p) => {
-        const withFiles = p.map(proj => ({ 
-          ...proj, 
-          files: [],
-          starterRepo: "https://github.com/moriah-hub/starter-boilerplate",
-          referenceSolution: "https://github.com/moriah-hub/starter-boilerplate/tree/solution",
-          swaggerSpec: "https://petstore.swagger.io",
-          erDiagram: "https://upload.wikimedia.org/wikipedia/commons/d/d5/Databases-relation-diagram.png",
-          videoTutorial: "https://www.youtube.com/embed/dQw4w9WgXcQ",
-          readmeContent: "### Setup & Installation\n1. Clone the boilerplate repo.\n2. Run `npm install` to install node modules.\n3. Run `npm run dev` to launch locally."
-        }));
-        setProjects(withFiles);
-        localStorage.setItem("msh_developer_projects", JSON.stringify(withFiles));
-        setLoading(false);
-      });
-    }
-  }, []);
+    reload();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = async (e) => {
     e.preventDefault();
@@ -84,65 +66,26 @@ export default function DeveloperProjects() {
     if (Object.keys(validation).length) return;
     setSubmitting(true);
     try {
-      const newProj = {
-        id: `pr_${Date.now()}`,
-        title: values.title,
-        stack: values.stack.split(",").map((s) => s.trim()),
-        difficulty: values.difficulty,
-        description: values.description,
-        version: "v1.0",
-        status: "Draft",
-        assignedBatches: [],
-        files: values.files || [],
-        starterRepo: values.starterRepo,
-        referenceSolution: values.referenceSolution,
-        swaggerSpec: values.swaggerSpec,
-        erDiagram: values.erDiagram,
-        videoTutorial: values.videoTutorial,
-        readmeContent: values.readmeContent
-      };
-      const updated = [newProj, ...projects];
-      setProjects(updated);
-      
-      const toSave = updated.map(p => ({
-        ...p,
-        files: (p.files || []).map(f => ({ name: f.name, size: f.size }))
-      }));
-      localStorage.setItem("msh_developer_projects", JSON.stringify(toSave));
-      
+      await createProject(values);
       notify("Project created as a draft.", { type: "success", title: "Project created" });
       setModalOpen(false);
       setValues(emptyProjectValues);
+      await reload();
+    } catch (err) {
+      notify(err.message || "Could not create the project.", { type: "error" });
     } finally {
       setSubmitting(false);
     }
   };
 
   const publish = async (id) => {
-    const updated = projects.map((p) => (p.id === id ? { ...p, status: "Published" } : p));
-    setProjects(updated);
-    
-    const toSave = updated.map(p => ({
-      ...p,
-      files: (p.files || []).map(f => ({ name: f.name, size: f.size }))
-    }));
-    localStorage.setItem("msh_developer_projects", JSON.stringify(toSave));
-    
-    notify("Project published and available for batch assignment.", { type: "success" });
-  };
-
-  const handleDelete = (id) => {
-    const project = projects.find(p => p.id === id);
-    const updated = projects.filter((p) => p.id !== id);
-    setProjects(updated);
-    
-    const toSave = updated.map(p => ({
-      ...p,
-      files: (p.files || []).map(f => ({ name: f.name, size: f.size }))
-    }));
-    localStorage.setItem("msh_developer_projects", JSON.stringify(toSave));
-    
-    notify(`Project "${project?.title}" deleted successfully.`, { type: "success", title: "Project Deleted" });
+    try {
+      await publishProject(id);
+      notify("Project published — it can now be attached to a task.", { type: "success" });
+      await reload();
+    } catch (err) {
+      notify(err.message || "Could not publish the project.", { type: "error" });
+    }
   };
 
   const openEdit = (p) => {
@@ -164,51 +107,28 @@ export default function DeveloperProjects() {
     setEditModalOpen(true);
   };
 
-  const handleEditSubmit = (e) => {
+  const handleEditSubmit = async (e) => {
     e.preventDefault();
     const validation = validateForm(editValues, { title: [required], stack: [required], difficulty: [required] });
     setErrors(validation);
     if (Object.keys(validation).length) return;
 
-    const updated = projects.map((p) => {
-      if (p.id === editingId) {
-        return {
-          ...p,
-          title: editValues.title,
-          stack: editValues.stack.split(",").map((s) => s.trim()),
-          difficulty: editValues.difficulty,
-          description: editValues.description,
-          status: editValues.status,
-          files: editValues.files || [],
-          starterRepo: editValues.starterRepo,
-          referenceSolution: editValues.referenceSolution,
-          swaggerSpec: editValues.swaggerSpec,
-          erDiagram: editValues.erDiagram,
-          videoTutorial: editValues.videoTutorial,
-          readmeContent: editValues.readmeContent
-        };
-      }
-      return p;
-    });
-
-    setProjects(updated);
-    
-    const toSave = updated.map(p => ({
-      ...p,
-      files: (p.files || []).map(f => ({ name: f.name, size: f.size }))
-    }));
-    localStorage.setItem("msh_developer_projects", JSON.stringify(toSave));
-    
-    notify("Project updated successfully.", { type: "success", title: "Project Updated" });
-    setEditModalOpen(false);
-    setEditingId(null);
+    try {
+      await updateProject(editingId, editValues);
+      notify("Project updated.", { type: "success", title: "Project Updated" });
+      setEditModalOpen(false);
+      setEditingId(null);
+      await reload();
+    } catch (err) {
+      notify(err.message || "Could not update the project.", { type: "error" });
+    }
   };
 
   return (
     <div>
       <PageHeader
-        title="Simulated Client Projects"
-        subtitle="Author multi-tier industry architectures with technical specs, repositories, and video walkthrough tutorials"
+        title="Practice Projects"
+        subtitle="Author reference projects for student batches — created as a DRAFT, then published"
         breadcrumbs={[{ label: "Dashboard", to: "/developer/dashboard" }, { label: "Projects" }]}
         action={<Button icon={Plus} onClick={() => setModalOpen(true)}>New Project</Button>}
       />
@@ -244,7 +164,6 @@ export default function DeveloperProjects() {
                   <Button size="sm" variant="secondary" icon={Send} onClick={() => publish(p.id)}>Publish</Button>
                 )}
                 <Button size="sm" variant="secondary" icon={Edit} onClick={() => openEdit(p)}>Edit</Button>
-                <Button size="sm" variant="danger" icon={Trash2} onClick={() => handleDelete(p.id)}>Delete</Button>
               </div>
             </Card>
           ))}

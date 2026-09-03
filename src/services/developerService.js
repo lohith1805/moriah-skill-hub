@@ -1,8 +1,102 @@
 import { mockRequest, apiClient } from "./apiClient";
-import { PROJECTS } from "./mockData";
 
 const BANK_KEY = "msh_assessment_bank";
 const PUBLISHED_KEY = "msh_dev_assessments";
+
+// ---------------------------------------------------------------------------
+// Projects — real backend (feature 15). GET/POST/PUT /api/v1/projects,
+// POST /projects/{id}/publish, GET /projects/{id}/challenges.
+// Non-admin callers only ever see PUBLISHED; a DEVELOPER additionally authors
+// DRAFTs and publishes them. The backend Project is intentionally lean —
+// title, description, techStack, difficulty, domain, starterRepoUrl, version,
+// status, assets[], challenges[]. There is no delete (edit a DRAFT, or bump a
+// PUBLISHED one into a new DRAFT version) and no "assigned batches" on the
+// project itself (a project attaches to a task, feature 11).
+// ---------------------------------------------------------------------------
+
+const PROJECT_STATUS_TO_FE = { DRAFT: "Draft", PUBLISHED: "Published", ARCHIVED: "Archived" };
+const DIFFICULTY_TO_FE = { BEGINNER: "Beginner", INTERMEDIATE: "Intermediate", ADVANCED: "Advanced" };
+const DIFFICULTY_TO_API = { Beginner: "BEGINNER", Intermediate: "INTERMEDIATE", Advanced: "ADVANCED" };
+
+function toFeProject(p) {
+  return {
+    id: p.id,
+    title: p.title,
+    slug: p.slug,
+    description: p.description || "",
+    stack: p.techStack || [],
+    difficulty: DIFFICULTY_TO_FE[p.difficulty] || p.difficulty || "",
+    domain: p.domain || "",
+    starterRepo: p.starterRepoUrl || "",
+    version: p.version || "v1",
+    status: PROJECT_STATUS_TO_FE[p.status] || p.status,
+    backendStatus: p.status,
+    createdBy: p.createdByFullName || "",
+    assets: p.assets || [],
+    challenges: (p.challenges || []).map(toFeChallenge),
+  };
+}
+
+function toFeChallenge(c) {
+  return {
+    id: c.id,
+    title: c.title,
+    expectedBehaviour: c.expectedBehaviour || "",
+    brokenCodeUrl: c.brokenCodeUrl || "",
+    testScriptUrl: c.testScriptUrl || "",
+    difficulty: DIFFICULTY_TO_FE[c.difficulty] || c.difficulty || "",
+  };
+}
+
+export async function getProjects({ status, difficulty, domain } = {}) {
+  const res = await apiClient.get("/projects", {
+    status: status || undefined,
+    difficulty: difficulty ? DIFFICULTY_TO_API[difficulty] || difficulty : undefined,
+    domain: domain || undefined,
+    size: 100,
+  });
+  return (res && res.content ? res.content : []).map(toFeProject);
+}
+
+// payload: { title, stack (comma string or array), difficulty, description, domain, starterRepo, version }
+export async function createProject(payload) {
+  const body = {
+    title: (payload.title || "").trim(),
+    description: payload.description || undefined,
+    techStack: Array.isArray(payload.stack)
+      ? payload.stack
+      : String(payload.stack || "").split(",").map((s) => s.trim()).filter(Boolean),
+    difficulty: DIFFICULTY_TO_API[payload.difficulty] || payload.difficulty || undefined,
+    domain: payload.domain || undefined,
+    starterRepoUrl: payload.starterRepo || undefined,
+    version: payload.version || undefined,
+  };
+  return toFeProject(await apiClient.post("/projects", body));
+}
+
+export async function updateProject(id, payload) {
+  const body = {
+    title: payload.title,
+    description: payload.description || undefined,
+    techStack: Array.isArray(payload.stack)
+      ? payload.stack
+      : String(payload.stack || "").split(",").map((s) => s.trim()).filter(Boolean),
+    difficulty: DIFFICULTY_TO_API[payload.difficulty] || payload.difficulty || undefined,
+    domain: payload.domain || undefined,
+    starterRepoUrl: payload.starterRepo || undefined,
+    version: payload.version || undefined,
+  };
+  return toFeProject(await apiClient.put(`/projects/${id}`, body));
+}
+
+export async function publishProject(id) {
+  return toFeProject(await apiClient.post(`/projects/${id}/publish`));
+}
+
+export async function getProjectChallenges(projectId) {
+  const res = await apiClient.get(`/projects/${projectId}/challenges`);
+  return (Array.isArray(res) ? res : res?.content || []).map(toFeChallenge);
+}
 
 function readJSON(key, fallback = []) {
   try {
@@ -14,10 +108,6 @@ function readJSON(key, fallback = []) {
 }
 function writeJSON(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
-}
-
-export async function getProjects() {
-  return mockRequest(PROJECTS);
 }
 
 // ---------------------------------------------------------------------------
@@ -81,18 +171,6 @@ export async function getDocReviews() {
 export async function markDocReviewed(docId) {
   const d = await apiClient.post(`/dev/requirement-documents/${docId}/acknowledge`);
   return { reviewed: true, reviewedBy: d.devReviewedByFullName, reviewedAt: (d.devReviewedAt || "").slice(0, 10) };
-}
-
-export async function createProject(payload) {
-  const project = { id: `pr${Date.now()}`, status: "Draft", version: "v1.0", assignedBatches: [], ...payload };
-  PROJECTS.unshift(project);
-  return mockRequest(project, { delay: 700 });
-}
-
-export async function publishProject(projectId) {
-  const idx = PROJECTS.findIndex((p) => p.id === projectId);
-  if (idx > -1) PROJECTS[idx] = { ...PROJECTS[idx], status: "Published" };
-  return mockRequest(PROJECTS[idx]);
 }
 
 export async function getBugChallenges() {
