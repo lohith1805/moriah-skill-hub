@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { LogIn, Lock, Eye, EyeOff, User } from "lucide-react";
 import Button from "../../components/ui/Button";
@@ -104,6 +104,16 @@ export default function Login() {
   const [otp, setOtp] = useState("");
   const [mfaError, setMfaError] = useState("");
   const [mfaBusy, setMfaBusy] = useState(false);
+
+  // A failed social sign-in (OAuthCallback) bounces back here with a human-readable
+  // reason in router state — show it the same way a failed password login is shown,
+  // then clear it so a refresh doesn't repeat it.
+  const [authError] = useState(location.state?.authError || "");
+  useEffect(() => {
+    if (!location.state?.authError) return;
+    notify(location.state.authError, { type: "error", title: "Sign in failed" });
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.state, location.pathname, navigate, notify]);
 
   const set = (field) => (e) => setValues((v) => ({ ...v, [field]: e.target.value }));
 
@@ -254,6 +264,12 @@ export default function Login() {
       <h2 className="font-display text-2xl font-bold text-ink-900">Welcome back!</h2>
       <span className="block h-0.5 w-10 bg-gold-400 mt-3" />
       <p className="text-sm text-ink-500 mt-3">Sign in to access your Moriah Skill Hub dashboard.</p>
+
+      {authError && (
+        <div className="mt-4 rounded-lg border border-error-200 bg-error-50 px-4 py-3 text-sm text-error-700">
+          {authError}
+        </div>
+      )}
 
       <form onSubmit={submit} className="mt-6 flex flex-col gap-4 text-left" noValidate>
         <div>

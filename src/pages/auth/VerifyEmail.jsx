@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
-import { verifyEmail } from "../../services/authService";
+import { CheckCircle2, XCircle, Loader2, Mail, Send } from "lucide-react";
+import { verifyEmail, resendVerificationEmail } from "../../services/authService";
+import { isEmail } from "../../utils/validators";
 
 // Landed on from the emailed verification link: /verify-email?token=...
 export default function VerifyEmail() {
@@ -10,6 +11,14 @@ export default function VerifyEmail() {
   const [state, setState] = useState(token ? "verifying" : "missing");
   const [message, setMessage] = useState("");
   const ran = useRef(false);
+
+  // Resend: this page usually has no email in context (it's reached from the
+  // emailed link), so ask for one. The backend never reveals whether the address
+  // matches an unverified account, so the confirmation copy stays deliberately vague.
+  const [email, setEmail] = useState(params.get("email") || "");
+  const [resendState, setResendState] = useState("idle"); // idle | sending | sent | error
+  const [resendMessage, setResendMessage] = useState("");
+  const resendBusy = resendState === "sending" || resendState === "sent";
 
   useEffect(() => {
     if (!token || ran.current) return;
@@ -21,6 +30,28 @@ export default function VerifyEmail() {
         setMessage(err.message || "This verification link is invalid or has expired.");
       });
   }, [token]);
+
+  const handleResend = async (e) => {
+    e.preventDefault();
+    // isEmail() returns an error string when the value is INVALID, "" when valid.
+    if (isEmail(email.trim())) {
+      setResendState("error");
+      setResendMessage("Enter a valid email address.");
+      return;
+    }
+    setResendState("sending");
+    setResendMessage("");
+    try {
+      await resendVerificationEmail(email.trim());
+      setResendState("sent");
+      setResendMessage(
+        "If that account still needs verifying, a fresh link is on its way. It can take a minute to arrive — check your spam folder too."
+      );
+    } catch (err) {
+      setResendState("error");
+      setResendMessage(err.message || "Could not send a new link. Please try again in a moment.");
+    }
+  };
 
   return (
     <div className="text-center">
@@ -53,6 +84,50 @@ export default function VerifyEmail() {
           <p className="text-sm text-ink-500 mt-2">
             {state === "missing" ? "This link is missing its token." : message}
           </p>
+
+          <form onSubmit={handleResend} className="mx-auto mt-6 max-w-sm text-left">
+            <p className="text-sm font-medium text-ink-900">Need a new link?</p>
+            <div className="relative mt-2">
+              <span className="absolute left-1.5 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-md bg-cream-100 text-ink-500">
+                <Mail size={15} />
+              </span>
+              <input
+                type="email"
+                required
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={resendBusy}
+                className="w-full rounded-lg border border-border pl-12 pr-4 py-3 text-sm text-ink-900 outline-none transition-all duration-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 disabled:bg-cream-50"
+                autoComplete="email"
+              />
+            </div>
+            {resendMessage && (
+              <p className={`mt-2 text-xs ${resendState === "error" ? "text-error-500" : "text-success-600"}`}>
+                {resendMessage}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={resendBusy}
+              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary-700 py-3 text-sm font-semibold text-white transition-all duration-200 hover:bg-primary-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {resendState === "sending" ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" /> Sending…
+                </>
+              ) : resendState === "sent" ? (
+                <>
+                  <CheckCircle2 size={16} /> Link sent
+                </>
+              ) : (
+                <>
+                  <Send size={16} /> Resend verification email
+                </>
+              )}
+            </button>
+          </form>
+
           <Link to="/login" className="inline-block mt-6 text-sm font-medium text-primary-700 hover:underline">
             Back to sign in
           </Link>

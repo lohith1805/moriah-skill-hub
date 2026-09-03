@@ -10,6 +10,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required, isEmail, isPhone, passwordStrength, matches } from "../../utils/validators";
 import { ROLES, ROLE_LABELS } from "../../utils/constants";
+import { oauthAuthorizeUrl, resendVerificationEmail } from "../../services/authService";
 import LegalModal from "../../components/legal/LegalModal";
 
 /* Only Student and Corporate Client are self-registerable. Every other role
@@ -29,6 +30,14 @@ function GoogleIcon({ size = 16 }) {
       <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z" />
       <path fill="#FBBC05" d="M11.69 28.18A13.98 13.98 0 0 1 10.9 24c0-1.45.25-2.86.69-4.18v-5.7H4.34A21.97 21.97 0 0 0 2 24c0 3.55.85 6.91 2.34 9.88l7.35-5.7z" />
       <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z" />
+    </svg>
+  );
+}
+
+function GithubIcon({ size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
     </svg>
   );
 }
@@ -105,6 +114,7 @@ export default function Register() {
   const [role, setRole] = useState(ROLES.STUDENT);
   const [clientSubmitted, setClientSubmitted] = useState(false);
   const [studentSubmitted, setStudentSubmitted] = useState(false);
+  const [resendState, setResendState] = useState("idle"); // idle | sending | sent
 
   const [values, setValues] = useState({
     name: searchParams.get("name") || "",
@@ -207,8 +217,27 @@ export default function Register() {
     }
   };
 
-  const handleGoogle = () => {
-    notify("Google sign-up isn't connected yet.", { type: "info", title: "Coming soon" });
+  /* Full-page redirect to the backend's OAuth2 authorize endpoint — identical to the
+     Login page. The backend completes the sign-in (first OAuth login auto-creates an
+     ACTIVE student with a verified email) and redirects back to /auth/oauth/callback. */
+  const handleOAuth = (provider) => {
+    window.location.href = oauthAuthorizeUrl(provider.toLowerCase());
+  };
+
+  const handleResendVerification = async () => {
+    if (resendState !== "idle") return;
+    setResendState("sending");
+    try {
+      await resendVerificationEmail(values.email);
+      setResendState("sent");
+      notify(`We've sent another verification link to ${values.email}.`, {
+        type: "success",
+        title: "Link on its way",
+      });
+    } catch (err) {
+      setResendState("idle");
+      notify(err.message || "Could not resend the link. Try again in a moment.", { type: "error" });
+    }
   };
 
   /* ------------------------------ Student: success screen ------------------------------ */
@@ -232,7 +261,24 @@ export default function Register() {
             <li>Choose a plan and pay on the Subscription page — that unlocks your dashboard.</li>
           </ol>
         </div>
-        <Link to="/login" className="inline-block mt-6 text-sm font-medium text-primary-700 hover:underline">
+        <p className="text-xs text-ink-400 mt-5">
+          Didn't get the email? Check your spam folder, or{" "}
+          <button
+            type="button"
+            onClick={handleResendVerification}
+            disabled={resendState !== "idle"}
+            className="font-medium text-primary-700 hover:underline disabled:no-underline disabled:text-ink-400"
+          >
+            {resendState === "sending"
+              ? "sending…"
+              : resendState === "sent"
+              ? "link sent"
+              : "resend the verification link"}
+          </button>
+          .
+        </p>
+
+        <Link to="/login" className="inline-block mt-4 text-sm font-medium text-primary-700 hover:underline">
           Go to sign in
         </Link>
       </div>
@@ -414,10 +460,24 @@ export default function Register() {
               <span className="px-3 text-xs text-ink-400">or continue with</span>
               <span className="flex-1 h-px bg-border" />
             </div>
-            <button type="button" onClick={handleGoogle} className="flex items-center justify-center gap-2 rounded-lg border border-border py-3 text-sm font-medium text-ink-700 transition-all duration-200 hover:bg-cream-50 hover:-translate-y-0.5">
-              <GoogleIcon size={16} />
-              Sign up with Google
-            </button>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => handleOAuth("Google")}
+                className="flex items-center justify-center gap-2 rounded-lg border border-border py-3 text-xs font-semibold text-ink-700 transition-all duration-200 hover:bg-cream-50 hover:-translate-y-0.5"
+              >
+                <GoogleIcon size={14} />
+                Google
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOAuth("GitHub")}
+                className="flex items-center justify-center gap-2 rounded-lg border border-border py-3 text-xs font-semibold text-ink-700 transition-all duration-200 hover:bg-cream-50 hover:-translate-y-0.5"
+              >
+                <GithubIcon size={14} />
+                GitHub
+              </button>
+            </div>
           </>
         )}
       </form>

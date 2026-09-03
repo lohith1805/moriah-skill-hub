@@ -273,6 +273,14 @@ export async function verifyEmail(token) {
   return { verified: true };
 }
 
+// Re-send the verification link. The backend responds identically whether or not the
+// address maps to an unverified account (no account-enumeration), so the UI can only
+// ever say "if that account needs verifying, a new link is on its way".
+export async function resendVerificationEmail(email) {
+  await apiClient.post("/auth/resend-verification", { email });
+  return { sent: true };
+}
+
 export async function registerClient(payload) {
   const res = await apiClient.post("/auth/register/client", {
     fullName: payload.name || payload.fullName,
