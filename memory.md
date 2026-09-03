@@ -381,9 +381,37 @@ auto-PIP). `placementPipeline.js` stays too (display-helper + backend adapter).
 ⚠️ **`openapi.json` / Postman / `API-Documentation.md` NOT yet regenerated** for
 `POST /auth/resend-verification` — needs the live-app re-export procedure below.
 
-**HEADs:** Frontend `0d25ebb` (branch is `master`, not `main`). Backend `496e67b` on top of
-`5c80beb` / `25f3dd4` (docs re-export) / `6351d26`. Full surefire = **547 tests green**
-(Testcontainers `*IT` still need Docker; `mvn -o test` alone is unit-only, ~15s).
+**Student billing / plans page pass (2026-09-03, verified: FE build + BE compile + payment/
+invoice/ownership/cache tests green):**
+1. **`GET /api/v1/plans` → 500 (recurring)** — a poison Redis value (stale DTO shape / serializer
+   mismatch / shared keyspace) made the `@Cacheable` throw `SerializationException` out of the
+   proxy. Durable fix (BE `4054e17`): new `CacheErrorHandlingConfig implements CachingConfigurer`
+   — a `CacheErrorHandler` that evicts the bad key + treats a failed GET as a miss (method runs,
+   repopulates); failed put/evict/clear logged & swallowed. Redis down now = "do the real work",
+   never a 500. No more manual `redis-cli FLUSHALL`.
+2. **Student "Invoice History" was a localStorage mock** (`msh_transactions` filtered by user
+   name) → real payment never showed, Plan column blank. New **`GET /api/v1/subscriptions/me/invoices`**
+   (BE `dcc5bd3`, `payment/InvoiceController` mapped under `/subscriptions/*` like `CheckoutController`
+   so `subscription/` keeps no dep on `payment/`). `InvoiceService.listForUser(userId, uuid)` =
+   caller's CAPTURED/REFUNDED payments left-joined to `invoices`; row carries planCode/planName/
+   amount/status + a 10-min pre-signed `pdfUrl` (null while the async `InvoiceGenerationJob` hasn't
+   issued it → status `"PROCESSING"`). `OwnershipGuard` gained an `invoices/` branch
+   (`canAccessInvoice`: invoice→payment→user, student-owner only) — was deny-by-default before.
+   FE `0d25… → e1e5a52`: `studentService.getMyInvoices()`, `Subscription.jsx` billing table now
+   backend-driven with per-status badge tones; PDF button opens the pre-signed link or explains
+   it's still generating.
+   ⚠️ If rows stay `"PROCESSING"` forever, the async invoice job is failing — check `skillhub-minio`
+   is up and `job_runs` / logs for `[InvoiceGenerationJob] failed` (S3/MinIO upload is the usual
+   culprit). And a Razorpay webhook can't reach `localhost` — needs the Cloudflare tunnel URL
+   registered as the webhook endpoint, or no `payments`/`invoices` row is ever created.
+
+⚠️ **openapi.json / Postman / API-Documentation.md NOT regenerated** for `POST /auth/resend-verification`
+or `GET /subscriptions/me/invoices` — both need the live-app re-export procedure below.
+
+**HEADs:** Frontend `e1e5a52` (branch `master`). Backend `dcc5bd3` on top of `4054e17` / `55e66a5`
+(memory) / `496e67b`. This pass ran only the `*Auth* *OAuth* *Payment* *Invoice* *Subscription*
+*Ownership* *Cache* *Entitlement* *Plan*` unit slices (all green) — full surefire (547) not re-run
+since the seed/spec work. Testcontainers `*IT` still need Docker.
 
 **Local run state right now:** Docker `skillhub-mysql` / `-redis` / `-minio` are UP but MySQL is
 published on **3316** (I remapped it — native Windows service `MySQL97`, StartMode Auto, squats
