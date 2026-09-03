@@ -10,14 +10,15 @@ import ProgressBar from "../../components/ui/ProgressBar";
 import EmptyState from "../../components/ui/EmptyState";
 import Tabs from "../../components/ui/Tabs";
 import { Input, Select } from "../../components/ui/FormField";
-import { 
-  getBatches, 
-  createBatch, 
-  getAssignableProjects, 
+import {
+  getBatches,
+  createBatch,
+  getAssignableProjects,
   setProjectBatches,
   getAllStudents,
   updateStudentBatch,
-  createStudent
+  createStudent,
+  getStudentsForBatch,
 } from "../../services/trainerService";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required, isEmail } from "../../utils/validators";
@@ -61,8 +62,27 @@ export default function TrainerBatches() {
   const [changeBatchValue, setChangeBatchValue] = useState("");
   const [changeBatchSubmitting, setChangeBatchSubmitting] = useState(false);
 
-  // View Batch Students (roster popup, opened from the Batches tab)
+  // View Batch Students (roster popup, opened from the Batches tab) — pulled
+  // live from GET /api/v1/batches/{id}/students.
   const [viewBatch, setViewBatch] = useState(null);
+  const [viewBatchRoster, setViewBatchRoster] = useState([]);
+  const [rosterLoading, setRosterLoading] = useState(false);
+
+  useEffect(() => {
+    if (!viewBatch) {
+      setViewBatchRoster([]);
+      return;
+    }
+    setRosterLoading(true);
+    getStudentsForBatch(viewBatch.id)
+      .then((rows) =>
+        setViewBatchRoster(
+          rows.map((s) => ({ id: s.userUuid, name: s.name, email: s.email, batch: viewBatch.name, status: s.status }))
+        )
+      )
+      .catch(() => setViewBatchRoster([]))
+      .finally(() => setRosterLoading(false));
+  }, [viewBatch]);
 
   const [searchParams] = useSearchParams();
   const query = searchParams.get("search")?.toLowerCase() || "";
@@ -220,10 +240,6 @@ export default function TrainerBatches() {
   const BATCH_OPTIONS = batchOptionsForTrack(studentValues.track);
   const CHANGE_BATCH_OPTIONS = batchOptionsForTrack(changeBatchStudent?.track);
 
-  // Roster shown in the "View students" popup opened from a batch's
-  // student count — filtered from the same students list the Students
-  // tab uses, so it always reflects the latest batch assignments.
-  const viewBatchRoster = viewBatch ? students.filter((s) => s.batch === viewBatch.name) : [];
 
   return (
     <div>
@@ -437,11 +453,13 @@ export default function TrainerBatches() {
         description={viewBatch ? `${viewBatch.track} · ${viewBatchRoster.length} student${viewBatchRoster.length === 1 ? "" : "s"}` : ""}
         footer={<Button variant="secondary" onClick={() => setViewBatch(null)}>Close</Button>}
       >
-        {viewBatchRoster.length === 0 ? (
+        {rosterLoading ? (
+          <p className="text-sm text-ink-400 py-8 text-center">Loading roster…</p>
+        ) : viewBatchRoster.length === 0 ? (
           <EmptyState
             icon={GraduationCap}
-            title="No students allocated yet"
-            description="Add a student or change a student's batch to populate this cohort."
+            title="No students enrolled yet"
+            description="Students are enrolled via payment/allocation or an admin add."
           />
         ) : (
           <div className="flex flex-col gap-2 max-h-80 overflow-y-auto">
@@ -451,7 +469,7 @@ export default function TrainerBatches() {
                   <p className="text-sm font-semibold text-ink-900">{s.name}</p>
                   <p className="text-xs text-ink-500">{s.email}</p>
                 </div>
-                <span className="text-xs text-ink-400">{s.phone}</span>
+                <span className="text-xs text-ink-400">{s.status}</span>
               </div>
             ))}
           </div>
