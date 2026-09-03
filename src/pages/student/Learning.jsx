@@ -103,16 +103,19 @@ export default function StudentLearning() {
 
   const finishQuiz = async () => {
     const questions = activeLesson.quiz;
-    let correct = 0;
-    questions.forEach((q) => {
-      if (answers[q.id] === q.correctAnswer) correct++;
-    });
-    const score = Math.round((correct / questions.length) * 100);
+    // Positional array of chosen option indices, in quiz order — the backend
+    // grades this server-side (the answer key is never sent to the client).
+    const answersArray = questions.map((q) => q.options.indexOf(answers[q.id]));
 
     try {
-      const result = await submitLessonQuiz(activeLesson.id, score);
+      const result = await submitLessonQuiz(activeLesson.id, answersArray);
       setQuizStarted(false);
-      setShowResults({ score, passed: result.quizPassed, correct, total: questions.length });
+      setShowResults({
+        score: result.quizScore,
+        passed: result.quizPassed,
+        correct: result.correct,
+        total: result.total,
+      });
     } catch (e) {
       notify("Failed to record your quiz score. Please try again.", { type: "error" });
     }
@@ -311,7 +314,9 @@ export default function StudentLearning() {
             <p className="text-xs text-ink-500 mt-1 line-clamp-2 flex-1">{lesson.description}</p>
             <div className="flex items-center justify-between mt-4 text-xs text-ink-400">
               <span className="flex items-center gap-1"><Clock size={12} /> {lesson.duration}</span>
-              <span className="flex items-center gap-1"><ListChecks size={12} /> {lesson.questionCount} questions</span>
+              {lesson.questionCount != null && (
+                <span className="flex items-center gap-1"><ListChecks size={12} /> {lesson.questionCount} questions</span>
+              )}
             </div>
           </Card>
         ))}

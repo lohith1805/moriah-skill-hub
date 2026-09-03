@@ -1,9 +1,30 @@
-import { mockRequest } from "./apiClient";
+import { mockRequest, apiClient } from "./apiClient";
 import { TASKS, PIP_RECORDS, CERTIFICATES, BATCHES, SPRINTS } from "./mockData";
-import { SUBSCRIPTION_PLANS } from "../utils/constants";
+import { SUBSCRIPTION_PLANS, PLAN_CODE_TO_FE } from "../utils/constants";
 import { getPersistedUser } from "./authService";
 import { evaluateStudentAutoPip } from "./pipEngine";
 import { trySyncGraduateToTalentPool } from "./hrService";
+
+// ---------------------------------------------------------------------------
+// WIRED to the backend (this session): video lessons + quiz (/api/v1/lessons,
+// B1.4), certificates (/api/v1/certificates/me), PIP status (/api/v1/pip/me),
+// plan catalogue (/api/v1/plans), current subscription (/api/v1/subscriptions/me),
+// scheduled interviews (/api/v1/interviews/me, B1.8).
+// STILL MOCK: sprint board / tasks / submissions (no "my tasks across sprints"
+// endpoint — needs batch->sprint->task fan-out), assessments + bug challenges
+// (dev in-browser runner), resume upload, subscribeToPlan (no checkout endpoint
+// on the subscription controller yet).
+// ---------------------------------------------------------------------------
+
+const asRows = (res) => (Array.isArray(res) ? res : res?.content ?? []);
+
+// crude "watched" heuristic for the still-fake video player: any progress row
+// whose status is IN_PROGRESS/COMPLETED counts as watched.
+function ytId(url) {
+  if (!url) return null;
+  const m = String(url).match(/(?:v=|youtu\.be\/|embed\/)([A-Za-z0-9_-]{6,})/);
+  return m ? m[1] : null;
+}
 
 // Converts an uploaded File to a base64 data URL so the resume's actual
 // content survives a reload and can be opened by HR/Client later — same
@@ -280,66 +301,135 @@ export async function getPerformanceSummary() {
   });
 }
 
+// GET /api/v1/pip/me — the caller's own PIP record (or null if none).
 export async function getMyPipStatus() {
-  const user = getPersistedUser();
-  if (!user) return mockRequest(null);
-  runAutoPipCheckForCurrentUser(user);
-
-  // Read fresh from localStorage — a trainer raising a PIP (manually, or via
-  // the rule engine) writes into "msh_pip_records" at runtime, after this
-  // module's PIP_RECORDS snapshot may already be loaded, so we can't rely on
-  // the stale in-memory array here (same reasoning as getCertificates below).
-  let allPipRecords = PIP_RECORDS;
+  let rec;
   try {
-    const raw = localStorage.getItem("msh_pip_records");
-    if (raw) allPipRecords = JSON.parse(raw);
+    rec = await apiClient.get("/pip/me");
   } catch (e) {
-    allPipRecords = PIP_RECORDS;
+    if (e?.status === 404) return null;
+    throw e;
   }
+  if (!rec) return null;
+  return {
+    id: rec.id,
+    reason: rec.triggerReason || (rec.ruleCode || "").replace(/_/g, " "),
+    ruleCode: rec.ruleCode,
+    severity: rec.severity,
+    status: rec.status,
+    triggeredOn: rec.triggeredAt ? rec.triggeredAt.slice(0, 10) : "",
+    startDate: rec.startDate || null,
+    endDate: rec.endDate || null,
+    blocksTaskPull: !!rec.blocksTaskPull,
+    reviewNotes: rec.reviewNotes || "",
+    milestones: (rec.milestones || []).map((m) => ({
+      id: m.id,
+      label: m.title,
+      description: m.description || "",
+      dueDate: m.dueDate || null,
+      done: m.status === "COMPLETED" || m.status === "VERIFIED",
+      status: m.status,
+    })),
+  };
+}
 
-  const name = user.name || "Student";
-  const mine = allPipRecords.filter((p) => p.student === name);
-  if (!mine.length) return mockRequest(null);
+const FE_PLAN_META = Object.fromEntries(SUBSCRIPTION_PLANS.map((p) => [p.code, p]));
 
-  // Prefer an active (non-resolved) case; fall back to the most recent one.
-  const active = mine.find((p) => p.status !== "Resolved");
-  return mockRequest(active || mine[0]);
+function toFePlan(p) {
+  const feCode = PLAN_CODE_TO_FE[p.code] || p.code.toLowerCase();
+  const meta = FE_PLAN_META[feCode] || {};
+  return {
+    code: feCode,
+    backendCode: p.code,
+    name: p.name,
+    model: meta.model || "",
+    price: p.priceInr != null ? Number(p.priceInr) : meta.price ?? 0,
+    durationDays: p.durationDays ?? null,
+    tierRank: p.tierRank ?? null,
+    features:
+      meta.features ||
+      [
+        p.allowsBatch && "Batch enrolment",
+        p.allowsSprints && "Sprint board & reviews",
+        p.allowsPip && "Performance Improvement Plans",
+        p.mentorSupport && "Mentor support",
+        p.allowsInternshipLetter && "Internship letter",
+        p.allowsClientProject && "Client projects",
+      ].filter(Boolean),
+  };
 }
 
 export async function getPlans() {
-  return mockRequest(SUBSCRIPTION_PLANS);
+  try {
+    const res = await apiClient.get("/plans");
+    const rows = asRows(res);
+    return rows.length ? rows.map(toFePlan) : SUBSCRIPTION_PLANS;
+  } catch {
+    return SUBSCRIPTION_PLANS;
+  }
 }
 
+// GET /api/v1/subscriptions/me -> the caller's active subscription (or null).
+export async function getMySubscription() {
+  try {
+    const s = await apiClient.get("/subscriptions/me");
+    if (!s) return null;
+    return {
+      planCode: PLAN_CODE_TO_FE[s.planCode] || (s.planCode || "").toLowerCase(),
+      backendPlanCode: s.planCode,
+      planName: s.planName,
+      startDate: s.startDate || null,
+      endDate: s.endDate || null,
+      status: s.status,
+      autoRenew: !!s.autoRenew,
+    };
+  } catch (e) {
+    if (e?.status === 404) return null;
+    throw e;
+  }
+}
+
+// No checkout endpoint on the subscription controller yet — the real payment
+// flow is POST /subscriptions/checkout in the payment module (see
+// testing-flow.md Flow 5). Kept mock so the UI still completes.
 export async function subscribeToPlan(planCode, paymentMethod) {
   await mockRequest(null, { delay: 900 });
   return { invoiceId: `INV-${Date.now()}`, status: "success", planCode, paymentMethod };
 }
 
+// GET /api/v1/interviews/me — mock/technical/HR/placement interviews a PM
+// scheduled for the caller (B1.8). No dedicated page yet; here for reuse.
+export async function getMyInterviews() {
+  const res = await apiClient.get("/interviews/me");
+  return asRows(res).map((i) => ({
+    id: i.id,
+    type: i.interviewType,
+    scheduledAt: i.scheduledAt,
+    durationMinutes: i.durationMinutes ?? null,
+    mode: i.mode,
+    location: i.location || "",
+    interviewerName: i.interviewerName || "",
+    meetingLink: i.meetingLink || "",
+    status: i.status,
+    feedback: i.feedback || "",
+    rating: i.rating ?? null,
+  }));
+}
+
+// GET /api/v1/certificates/me — certificates issued to the caller.
 export async function getCertificates() {
-  const user = getPersistedUser();
-  if (!user) return mockRequest([]);
-
-  // Read fresh from localStorage — Graduation approvals write new
-  // certificates at runtime, after this module's CERTIFICATES snapshot was
-  // already loaded, so we can't rely on the stale in-memory array here.
-  let allCertificates = CERTIFICATES;
-  try {
-    const raw = localStorage.getItem("msh_certificates");
-    if (raw) allCertificates = JSON.parse(raw);
-  } catch (e) {
-    allCertificates = CERTIFICATES;
-  }
-
-  const name = (user.name || "").toLowerCase();
-  const email = (user.email || "").toLowerCase();
-
-  // A student only sees certificates actually issued to them via Trainer's
-  // Graduation Approval.
-  const myCertificates = allCertificates.filter((c) => {
-    return (c.studentEmail && c.studentEmail.toLowerCase() === email) || c.studentName?.toLowerCase() === name;
-  });
-
-  return mockRequest(myCertificates);
+  const res = await apiClient.get("/certificates/me");
+  return asRows(res).map((c) => ({
+    id: c.id,
+    title: c.certificateType === "EXCELLENCE" ? "Certificate of Excellence" : "Certificate of Completion",
+    certificateNumber: c.certificateNumber,
+    batchName: c.batchName || "",
+    issuedOn: c.issuedAt ? c.issuedAt.slice(0, 10) : "",
+    verifyCode: c.verificationCode,
+    downloadUrl: c.downloadUrl || null,
+    status: c.revokedAt ? "Revoked" : "Issued",
+    revokeReason: c.revokeReason || null,
+  }));
 }
 
 export async function submitGithubPR(taskId, prUrl, videoUrl = "") {
@@ -470,88 +560,105 @@ export async function submitAssessment(id, score) {
 // own watch/quiz progress on top, keyed by student email (mirrors
 // msh_assessment_attempts) so two demo student accounts never collide.
 
-function readPublishedVideoLessons() {
-  try {
-    const raw = localStorage.getItem("msh_dev_video_lessons");
-    const list = raw ? JSON.parse(raw) : [];
-    return list.filter((l) => l.status === "Published");
-  } catch (e) {
-    return [];
-  }
+const PASS_MARK = 60;
+
+function fmtDuration(seconds) {
+  if (!seconds) return "";
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return s ? `${m}m ${s}s` : `${m}m`;
 }
 
-function readLessonProgress() {
+// GET /api/v1/lessons — published lessons, each row carrying the caller's
+// progress. Watch/quiz-pass state comes from `progress` + a local quiz-score
+// cache (the backend attempt only exposes pass/fail via the submit response).
+function readQuizScoreCache() {
   try {
-    const raw = localStorage.getItem("msh_lesson_progress");
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    return [];
+    return JSON.parse(localStorage.getItem("msh_lesson_quiz_scores") || "{}");
+  } catch {
+    return {};
   }
 }
-
-function writeLessonProgress(list) {
-  localStorage.setItem("msh_lesson_progress", JSON.stringify(list));
+function writeQuizScore(id, score, passed) {
+  const all = readQuizScoreCache();
+  all[id] = { score, passed };
+  localStorage.setItem("msh_lesson_quiz_scores", JSON.stringify(all));
 }
 
 export async function getVideoLessons() {
-  const user = getPersistedUser();
-  const email = (user?.email || "").toLowerCase();
-  const progress = readLessonProgress().filter((p) => p.studentEmail === email);
-
-  const list = readPublishedVideoLessons().map((lesson) => {
-    const p = progress.find((pr) => pr.lessonId === lesson.id);
-    return {
-      id: lesson.id,
-      module: lesson.module,
-      title: lesson.title,
-      description: lesson.description,
-      duration: lesson.duration,
-      questionCount: lesson.quiz.length,
-      watched: p?.watched || false,
-      quizScore: p?.quizScore ?? null,
-      quizPassed: p?.quizPassed ?? null,
-    };
-  });
-
-  return mockRequest(list);
+  const res = await apiClient.get("/lessons", { size: 100 });
+  const scores = readQuizScoreCache();
+  return asRows(res)
+    .filter((l) => l.published)
+    .map((l) => {
+      const cached = scores[l.id] || {};
+      const completed = l.progress?.status === "COMPLETED";
+      return {
+        id: l.id,
+        module: l.moduleName,
+        title: l.title,
+        description: l.description || "",
+        duration: fmtDuration(l.durationSeconds),
+        durationSeconds: l.durationSeconds ?? null,
+        videoUrl: l.videoUrl,
+        videoId: ytId(l.videoUrl),
+        questionCount: null, // filled in on detail load
+        watched: !!l.progress && l.progress.status !== "NOT_STARTED",
+        quizScore: cached.score ?? (completed ? 100 : null),
+        quizPassed: cached.passed ?? (completed ? true : null),
+        passingScore: PASS_MARK,
+      };
+    });
 }
 
 export async function getVideoLessonDetail(id) {
-  const lesson = readPublishedVideoLessons().find((l) => l.id === id);
-  if (!lesson) return mockRequest(null);
-  return mockRequest(lesson);
+  const [lesson, quiz] = await Promise.all([
+    apiClient.get(`/lessons/${id}`),
+    apiClient.get(`/lessons/${id}/quiz`).catch(() => []),
+  ]);
+  if (!lesson) return null;
+  return {
+    id: lesson.id,
+    module: lesson.moduleName,
+    title: lesson.title,
+    description: lesson.description || "",
+    duration: fmtDuration(lesson.durationSeconds),
+    videoUrl: lesson.videoUrl,
+    videoId: ytId(lesson.videoUrl),
+    videoType: ytId(lesson.videoUrl) ? "youtube" : "upload",
+    passingScore: PASS_MARK,
+    // Learning.jsx expects {id, question, options}; the answer key is never
+    // returned by the API — grading happens server-side on submit.
+    quiz: (Array.isArray(quiz) ? quiz : []).map((q) => ({
+      id: q.id,
+      question: q.questionText,
+      options: q.options || [],
+      explanation: q.explanation || "",
+    })),
+  };
 }
 
-export async function markLessonWatched(id) {
-  const user = getPersistedUser();
-  const email = (user?.email || "").toLowerCase();
-  const progress = readLessonProgress();
-  const idx = progress.findIndex((p) => p.lessonId === id && p.studentEmail === email);
-
-  if (idx > -1) {
-    progress[idx] = { ...progress[idx], watched: true };
-  } else {
-    progress.push({ lessonId: id, studentEmail: email, watched: true, quizScore: null, quizPassed: null });
-  }
-  writeLessonProgress(progress);
-  return mockRequest({ ok: true });
+// POST /api/v1/lessons/{id}/progress — watchedSeconds never rewinds server-side.
+export async function markLessonWatched(id, watchedSeconds = 1) {
+  await apiClient.post(`/lessons/${id}/progress`, {
+    watchedSeconds: Math.max(1, Math.round(watchedSeconds)),
+    completed: false,
+  });
+  return { ok: true };
 }
 
-export async function submitLessonQuiz(id, score) {
-  const user = getPersistedUser();
-  const email = (user?.email || "").toLowerCase();
-  const lesson = readPublishedVideoLessons().find((l) => l.id === id);
-  const passed = score >= (lesson?.passingScore ?? 60);
-
-  const progress = readLessonProgress();
-  const idx = progress.findIndex((p) => p.lessonId === id && p.studentEmail === email);
-  const entry = { lessonId: id, studentEmail: email, watched: true, quizScore: score, quizPassed: passed, submittedAt: new Date().toISOString() };
-
-  if (idx > -1) {
-    progress[idx] = { ...progress[idx], ...entry };
-  } else {
-    progress.push(entry);
-  }
-  writeLessonProgress(progress);
-  return mockRequest(entry);
+// POST /api/v1/lessons/{id}/quiz/submit — `answers` is a positional array of
+// chosen option indices (one per question, in quiz order). The server grades
+// and, on >= 60%, upserts LessonProgress to COMPLETED.
+export async function submitLessonQuiz(id, answers) {
+  const r = await apiClient.post(`/lessons/${id}/quiz/submit`, { answers });
+  const pct = r.total ? Math.round((r.score * 100) / r.total) : 0;
+  writeQuizScore(id, pct, !!r.passed);
+  return {
+    quizScore: pct,
+    quizPassed: !!r.passed,
+    correct: r.score,
+    total: r.total,
+    passMarkPercent: r.passMarkPercent ?? PASS_MARK,
+  };
 }
