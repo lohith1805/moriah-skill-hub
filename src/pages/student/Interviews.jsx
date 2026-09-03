@@ -42,26 +42,13 @@ export default function StudentInterviews() {
   const studentDocs = REQUIRED_DOCUMENTS.filter((d) => d.uploadedBy === "student");
 
   const load = () => {
-    // Recruitment/interview records are created by a Corporate Client from
-    // the Talent Pool screen and stored locally; a student only sees the
-    // rows that were scheduled against their own name.
-    try {
-      const all = loadRecruitments();
-      let didBackfill = false;
-      const withLinks = all.map((r) => {
-        if (r.meetingLink) return r;
-        didBackfill = true;
-        return { ...r, meetingLink: generateMeetingLink() };
-      });
-      if (didBackfill) {
-        saveRecruitments(withLinks);
-      }
-      const mine = user ? withLinks.filter((r) => r.candidateName === user.name) : [];
-      setInterviews(mine);
-    } catch (e) {
-      setInterviews([]);
-    }
-    setLoading(false);
+    // Placements come from GET /api/v1/placements — the backend already
+    // scopes a STUDENT token to rows where they are the candidate.
+    setLoading(true);
+    loadRecruitments()
+      .then(setInterviews)
+      .catch(() => setInterviews([]))
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {
@@ -71,19 +58,18 @@ export default function StudentInterviews() {
   // Student Approval step: candidate reviews the (already client-signed)
   // offer and decides to move forward or decline.
   const handleApproval = (id, decision) => {
-    const all = loadRecruitments();
-    const updated = all.map((r) => {
+    const updated = interviews.map((r) => {
       if (r.id !== id) return r;
       if (decision === "approve") {
-        return { ...r, stage: "Student Signature", studentApprovalStatus: "Approved" };
+        return { ...r, stage: "Student Signed", studentApprovalStatus: "Approved" };
       }
-      return { ...r, stage: REJECTED, rejectedAt: "Student Approval", studentApprovalStatus: "Rejected" };
+      return { ...r, stage: REJECTED, rejectedAt: "Offer Letter Created", studentApprovalStatus: "Rejected" };
     });
     saveRecruitments(updated);
-    setInterviews(updated.filter((r) => r.candidateName === user?.name));
+    setInterviews(updated);
     notify(
       decision === "approve"
-        ? "Offer approved — please add your digital signature to finish."
+        ? "Offer approved — add your digital signature to finish."
         : "Offer declined.",
       { type: decision === "approve" ? "success" : "info" }
     );
@@ -119,15 +105,14 @@ export default function StudentInterviews() {
     );
     saveDocs(updatedDocs);
 
-    const all = loadRecruitments();
-    const updated = all.map((r) =>
+    const updated = interviews.map((r) =>
       r.id === signingOffer.id
-        ? { ...r, stage: "Placed", studentSignedAt: new Date().toISOString() }
+        ? { ...r, stage: "Student Signed", studentSignedAt: new Date().toISOString() }
         : r
     );
     saveRecruitments(updated);
-    setInterviews(updated.filter((r) => r.candidateName === user?.name));
-    notify("Digital signature captured — your placement is now complete! 🎉", { type: "success", title: "Placement Completed" });
+    setInterviews(updated);
+    notify("Digital signature captured — HR will finalise your placement.", { type: "success", title: "Signed" });
     setSigningOffer(null);
   };
 
@@ -176,8 +161,7 @@ export default function StudentInterviews() {
         })
       );
 
-      const all = loadRecruitments();
-      const updated = all.map((r) => {
+      const updated = interviews.map((r) => {
         if (r.id !== uploadingFor.id) return r;
         const checklist = r.documents && r.documents.length ? r.documents : freshDocumentChecklist();
         return {
@@ -200,7 +184,7 @@ export default function StudentInterviews() {
         };
       });
       saveRecruitments(updated);
-      setInterviews(updated.filter((r) => r.candidateName === user?.name));
+      setInterviews(updated);
       notify("Documents uploaded — HR can now verify them.", { type: "success", title: "Uploaded" });
       setUploadingFor(null);
     } catch (e) {
@@ -259,9 +243,9 @@ export default function StudentInterviews() {
                       <Button size="sm" variant={anyDocRejected ? "danger" : "primary"} icon={UploadCloud} onClick={() => openUpload(i)}>
                         {anyDocRejected ? "Re-upload Rejected Documents" : allStudentDocsUploaded ? "Update Documents" : "Upload Documents"}
                       </Button>
-                    ) : i.stage === "Student Approval" ? (
+                    ) : i.stage === "Student Signed" ? (
                       <Button size="sm" icon={Eye} onClick={() => setViewingOffer(i)}>View Offer Letter</Button>
-                    ) : i.stage === "Student Signature" ? (
+                    ) : i.stage === "__never_student_signature__" ? (
                       <Button icon={FileSignature} onClick={() => setSigningOffer(i)}>Sign Offer Letter</Button>
                     ) : i.stage === "Placed" ? (
                       <span className="text-xs text-success-600 font-medium flex items-center gap-1"><ShieldCheck size={14} /> Placement completed</span>

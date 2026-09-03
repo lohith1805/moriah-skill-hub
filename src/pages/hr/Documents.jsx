@@ -107,7 +107,7 @@ export default function HrDocuments() {
   };
 
   const loadPipeline = () => {
-    setRecruitments(loadRecruitments());
+    loadRecruitments().then(setRecruitments).catch(() => setRecruitments([]));
   };
 
   useEffect(() => {
@@ -254,7 +254,7 @@ export default function HrDocuments() {
     persistDocs(updatedDocs);
     if (doc.recruitmentId) {
       const updatedRecruitments = recruitments.map((r) =>
-        r.id === doc.recruitmentId ? { ...r, stage: "Student Approval", clientSignedAt: new Date().toISOString() } : r
+        r.id === doc.recruitmentId ? { ...r, stage: "Client Signed", clientSignedAt: new Date().toISOString() } : r
       );
       persistRecruitments(updatedRecruitments);
     }
@@ -266,7 +266,7 @@ export default function HrDocuments() {
     persistDocs(updatedDocs);
     if (doc.recruitmentId) {
       const updatedRecruitments = recruitments.map((r) =>
-        r.id === doc.recruitmentId ? { ...r, stage: REJECTED, rejectedAt: "Client Review & Signature" } : r
+        r.id === doc.recruitmentId ? { ...r, stage: REJECTED, rejectedAt: "Offer Letter Created" } : r
       );
       persistRecruitments(updatedRecruitments);
     }
@@ -395,7 +395,7 @@ export default function HrDocuments() {
   const confirmDocumentsVerified = (recruitmentId) => {
     const target = recruitments.find((r) => r.id === recruitmentId);
     const updated = recruitments.map((r) =>
-      r.id === recruitmentId ? { ...r, stage: "Documents Verified", docsVerifiedAt: new Date().toISOString() } : r
+      r.id === recruitmentId ? { ...r, docsVerifiedAt: new Date().toISOString() } : r
     );
     persistRecruitments(updated);
     notify(`All documents verified for ${target?.candidateName}.`, { type: "success" });
@@ -404,7 +404,7 @@ export default function HrDocuments() {
   const confirmPlacement = (recruitmentId) => {
     const target = recruitments.find((r) => r.id === recruitmentId);
     const updated = recruitments.map((r) =>
-      r.id === recruitmentId ? { ...r, stage: "Placement Confirmed", placementConfirmedAt: new Date().toISOString() } : r
+      r.id === recruitmentId ? { ...r, placementConfirmedAt: new Date().toISOString() } : r
     );
     persistRecruitments(updated);
     notify(`Placement confirmed for ${target?.candidateName}. You can now create the offer letter.`, { type: "success" });
@@ -413,7 +413,7 @@ export default function HrDocuments() {
   const sendForClientReview = (recruitmentId) => {
     const target = recruitments.find((r) => r.id === recruitmentId);
     const updated = recruitments.map((r) =>
-      r.id === recruitmentId ? { ...r, stage: "Client Review & Signature" } : r
+      r.id === recruitmentId ? { ...r, stage: "Offer Letter Created" } : r
     );
     persistRecruitments(updated);
     notify(`Offer letter sent to ${target?.clientName || "the client"} for review & signature.`, { type: "success" });
@@ -505,9 +505,9 @@ export default function HrDocuments() {
   const awaitingHrSchedule = recruitments.filter((r) => r.stage === "Technical Round Approved");
   const hrRoundScheduledList = recruitments.filter((r) => r.stage === "HR Round Scheduled");
   const hrRoundCompletedList = recruitments.filter((r) => r.stage === "HR Round Completed");
-  const inVerification = recruitments.filter((r) => r.stage === "Document Verification");
-  const verifiedAwaitingPlacement = recruitments.filter((r) => r.stage === "Documents Verified");
-  const placementConfirmedAwaitingOffer = recruitments.filter((r) => r.stage === "Placement Confirmed");
+  const inVerification = recruitments.filter((r) => r.stage === "Document Verification" && !r.docsVerifiedAt);
+  const verifiedAwaitingPlacement = recruitments.filter((r) => r.stage === "Document Verification" && r.docsVerifiedAt && !r.placementConfirmedAt);
+  const placementConfirmedAwaitingOffer = recruitments.filter((r) => r.stage === "Document Verification" && r.placementConfirmedAt);
   const offerCreatedAwaitingSend = recruitments.filter((r) => r.stage === "Offer Letter Created");
 
   return (

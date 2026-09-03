@@ -14,7 +14,7 @@ import ProgressBar from "../../components/ui/ProgressBar";
 import EmptyState from "../../components/ui/EmptyState";
 import { Input, Select } from "../../components/ui/FormField";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
-import { getTalentPool, getCandidateResume } from "../../services/clientService";
+import { getTalentPool, getCandidateResume, requestRecruitment } from "../../services/clientService";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
 import { validateForm, required, isUrl } from "../../utils/validators";
@@ -87,47 +87,15 @@ export default function ClientTalentPool() {
     setTimeout(() => setCopiedId((cur) => (cur === id ? null : cur)), 1500);
   };
 
-  useEffect(() => {
-    // Load talent
-    getTalentPool().then((t) => {
-      setTalent(t);
-      setLoading(false);
-    });
+  const reloadRecruitments = () => loadRecruitments().then(setRecruitments).catch(() => setRecruitments([]));
 
-    // Load recruitments
-    const parsed = loadRecruitments();
-    // Backfill: recruitment records created before the interview-link
-    // feature (or the pipeline `stage` field) existed won't have them.
-    // Mint/derive them now and persist so the client table AND the
-    // student's "My Interviews" page (which reads this same key) both see
-    // a consistent shape.
-    let didBackfill = false;
-    const withLinks = parsed.map((r) => {
-      let next = r;
-      if (!next.meetingLink) {
-        didBackfill = true;
-        next = { ...next, meetingLink: generateMeetingLink() };
-      }
-      if (!next.stage) {
-        didBackfill = true;
-        // Legacy records used `status` ("Interview Scheduled" / "Selected"
-        // / "Rejected" / "Placed"). Map them onto the new stage machine —
-        // "Selected" no longer means Placed; it now re-enters at Document
-        // Verification since that step can't be skipped.
-        const legacyMap = {
-          "Interview Scheduled": "Technical Round Scheduled",
-          Selected: "Document Verification",
-          Rejected: REJECTED,
-          Placed: "Placed",
-        };
-        next = { ...next, stage: legacyMap[next.status] || "Technical Round Scheduled" };
-      }
-      return next;
-    });
-    if (didBackfill) {
-      saveRecruitments(withLinks);
-    }
-    setRecruitments(withLinks);
+  useEffect(() => {
+    getTalentPool()
+      .then((t) => setTalent(t))
+      .catch((e) => notify(e.message || "Could not load the talent pool.", { type: "error" }))
+      .finally(() => setLoading(false));
+    reloadRecruitments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Accepts either a Talent Pool candidate ({id, name, track, ...}) or an
@@ -145,24 +113,18 @@ export default function ClientTalentPool() {
     setModalOpen(true);
   };
 
-  // Client reviews a candidate's resume, then shortlists them. This is the
-  // first pipeline record created for a candidate — interview scheduling
-  // only becomes available once they're shortlisted (see openRecruitModal
-  // usage on the candidate card below).
-  const handleShortlist = (candidate) => {
-    const created = {
-      id: `rec_${Date.now()}`,
-      candidateId: candidate.id,
-      candidateName: candidate.name,
-      track: candidate.track,
-      clientName: user?.company || user?.name || "the recruiting company",
-      stage: "Shortlisted",
-      shortlistedAt: new Date().toISOString(),
-    };
-    const updated = [created, ...recruitments];
-    setRecruitments(updated);
-    saveRecruitments(updated);
-    notify(`${candidate.name} shortlisted — schedule a technical round when you're ready.`, { type: "success", title: "Candidate shortlisted" });
+  // A placement is created server-side only when HR/ADMIN approve the
+  // recruitment request — so "shortlisting" now submits that request.
+  const handleShortlist = async (candidate) => {
+    try {
+      await requestRecruitment(candidate, { roleTitle: candidate.track || "Software Engineer" });
+      notify(
+        `Recruitment request sent for ${candidate.name}. Once HR approves it, they'll appear in your hiring pipeline.`,
+        { type: "success", title: "Request submitted" }
+      );
+    } catch (err) {
+      notify(err.message || "Could not submit the recruitment request.", { type: "error" });
+    }
   };
 
   const handleViewResume = (candidate) => {
@@ -355,9 +317,9 @@ export default function ClientTalentPool() {
     const updated = recruitments.map((r) => {
       if (r.id !== reviewingOffer.id) return r;
       if (decision === "approve") {
-        return { ...r, stage: "Student Approval", clientSignedAt: new Date().toISOString() };
+        return { ...r, stage: "Client Signed", clientSignedAt: new Date().toISOString() };
       }
-      return { ...r, stage: REJECTED, rejectedAt: "Client Review & Signature" };
+      return { ...r, stage: REJECTED, rejectedAt: "Offer Letter Created" };
     });
     setRecruitments(updated);
     saveRecruitments(updated);
@@ -472,7 +434,7 @@ export default function ClientTalentPool() {
                         <Button size="sm" variant="secondary" icon={ThumbsUp} onClick={() => handleDecision(r.id, "approve")}>Approve</Button>
                         <Button size="sm" variant="secondary" icon={ThumbsDown} onClick={() => handleDecision(r.id, "reject")}>Reject</Button>
                       </div>
-                    ) : r.stage === "Client Review & Signature" ? (
+                    ) : r.stage === "Offer Letter Created" ? (
                       <Button size="sm" icon={FileSignature} onClick={() => openOfferReview(r)}>Review & Sign Offer</Button>
                     ) : r.stage === "Placed" ? (
                       <span className="text-xs text-success-600 font-medium">Placement completed</span>
