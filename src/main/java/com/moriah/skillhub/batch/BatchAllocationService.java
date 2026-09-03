@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Clears the feature 07 stub ({@code PaymentWebhookService} calls {@link #allocate} at the
@@ -110,6 +111,11 @@ public class BatchAllocationService {
                     pending.setResolvedBatch(batch);
                 });
 
+        notificationService.enqueueAfterCommit(user.getId(), NotificationChannel.IN_APP, "BATCH_ALLOCATED", Map.of(
+                "batchName", Objects.toString(batch.getName(), ""),
+                "trackCode", Objects.toString(batch.getTrackCode(), ""),
+                "startDate", Objects.toString(batch.getStartDate(), "")));
+
         log.info("[batch/allocate] user {} enrolled into batch {}", user.getId(), batch.getId());
     }
 
@@ -131,6 +137,12 @@ public class BatchAllocationService {
 
         log.info("[batch/allocate] user {} parked pending — no batch available for track {}", user.getId(), trackCode);
         notifyPMs(user, trackCode);
+        // The student paid for a batch plan but no batch matched — tell them it's being sorted,
+        // rather than leaving them on a dashboard with nothing and no explanation.
+        notificationService.enqueueAfterCommit(user.getId(), NotificationChannel.IN_APP, "BATCH_PLACEMENT_PENDING", Map.of(
+                "trackCode", Objects.toString(trackCode, ""),
+                "message", "Your subscription is active. We're finding you a batch for the " + trackCode
+                        + " track and will let you know the moment you're placed."));
     }
 
     private void notifyPMs(User user, String trackCode) {

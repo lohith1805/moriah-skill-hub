@@ -110,7 +110,9 @@ class BatchAllocationServiceTest {
         assertThat(saved.getBatch()).isEqualTo(batch);
         assertThat(saved.getUser()).isEqualTo(user);
         verify(pendingBatchAllocationRepository, never()).save(any());
-        verify(notificationService, never()).enqueueAfterCommit(anyLong(), any(), anyString(), anyMap());
+        // A successful auto-allocation now notifies the student (in-app) that they've been placed.
+        verify(notificationService).enqueueAfterCommit(eq(1L), eq(NotificationChannel.IN_APP),
+                eq("BATCH_ALLOCATED"), anyMap());
     }
 
     @Test
@@ -154,6 +156,9 @@ class BatchAllocationServiceTest {
                 eq("BATCH_ALLOCATION_PENDING"), anyMap());
         verify(notificationService).enqueueAfterCommit(eq(51L), eq(NotificationChannel.IN_APP),
                 eq("BATCH_ALLOCATION_PENDING"), anyMap());
+        // ...and the student is told their placement is being sorted, not left in the dark.
+        verify(notificationService).enqueueAfterCommit(eq(1L), eq(NotificationChannel.IN_APP),
+                eq("BATCH_PLACEMENT_PENDING"), anyMap());
     }
 
     @Test

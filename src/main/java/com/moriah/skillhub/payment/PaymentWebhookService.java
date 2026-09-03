@@ -3,6 +3,8 @@ package com.moriah.skillhub.payment;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.moriah.skillhub.batch.BatchAllocationService;
 import com.moriah.skillhub.common.audit.AuditLogService;
+import com.moriah.skillhub.common.notification.NotificationChannel;
+import com.moriah.skillhub.common.notification.NotificationService;
 import com.moriah.skillhub.common.util.Constants;
 import com.moriah.skillhub.payment.entity.Invoice;
 import com.moriah.skillhub.payment.entity.InvoiceStatus;
@@ -30,6 +32,8 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -53,6 +57,7 @@ public class PaymentWebhookService {
     private final ApplicationEventPublisher eventPublisher;
     private final BatchAllocationService batchAllocationService;
     private final AuditLogService auditLogService;
+    private final NotificationService notificationService;
 
     /** Audit 2026-08-31 (M7): subscription start/end dates resolved in the jobs' zone, not the
      * JVM default (a UTC host would date them a day early for late-evening-UTC captures). */
@@ -154,7 +159,8 @@ public class PaymentWebhookService {
         auditLogService.record(null, "PAYMENT_CAPTURED", "Payment", payment.getId(),
                 previousStatus, PaymentStatus.CAPTURED);
 
-        if (!activateSubscription(payment)) {
+        UserSubscription subscription = activateSubscription(payment);
+        if (subscription == null) {
             // Audit 2026-08-31 (H6): the user already has an ACTIVE subscription, so no second one
             // could be created. Do NOT go on to issue an invoice, allocate a batch seat, or fire
             // PaymentCapturedEvent (which would try to render an invoice PDF for a row that does
@@ -177,22 +183,49 @@ public class PaymentWebhookService {
         // "Transactions").
         batchAllocationService.allocate(payment.getUser().getId(), payment.getTrackCode(), payment.getPlanId());
 
+        notifySubscriber(payment, subscription);
         eventPublisher.publishEvent(new PaymentCapturedEvent(payment.getId()));
     }
 
-    /** @return {@code true} if an ACTIVE subscription was created, {@code false} if the user
-     *          already had one — see {@link #capturePayment} for how the caller handles false.
+    /** Tell the student their payment landed — an in-app row (so it reaches the bell, not just a
+     * transient toast) plus an email. Fires after this transaction commits; a dispatch failure
+     * never rolls the payment back ({@code enqueueAfterCommit}). */
+    private void notifySubscriber(Payment payment, UserSubscription subscription) {
+        Long userId = payment.getUser().getId();
+        String planName = Objects.toString(subscription.getPlan().getName(), "your subscription");
+        String endDate = Objects.toString(subscription.getEndDate(), "");
+
+        notificationService.enqueueAfterCommit(userId, NotificationChannel.IN_APP, "SUBSCRIPTION_ACTIVATED", Map.of(
+                "planName", planName,
+                "startDate", Objects.toString(subscription.getStartDate(), ""),
+                "endDate", endDate,
+                "amount", Objects.toString(payment.getAmount(), ""),
+                "currency", Objects.toString(payment.getCurrency(), "")));
+
+        String email = payment.getUser().getEmail();
+        if (email != null && !email.isBlank()) {
+            notificationService.enqueueAfterCommit(userId, NotificationChannel.EMAIL, "SUBSCRIPTION_ACTIVATED", Map.of(
+                    "to", email,
+                    "subject", "Your Moriah Skill Hub subscription is active",
+                    "body", "Your " + planName + " plan is now active until " + endDate
+                            + ". Sign in to see your dashboard, and if your plan includes a batch you'll be "
+                            + "placed into one automatically — we'll email you the details."));
+        }
+    }
+
+    /** @return the newly-created ACTIVE subscription, or {@code null} if the user already had one
+     *          — see {@link #capturePayment} for how the caller handles {@code null}.
      *          <p>Audit 2026-08-31 (H6): checks for an existing ACTIVE row up front rather than
      *          catching {@code uq_one_active_subscription} from a {@code saveAndFlush} — a flush
      *          failure poisons the Hibernate session and would roll back the whole webhook
      *          transaction (payment never marked CAPTURED), leaving the gateway to retry forever.
      *          The DB constraint still backstops the rare concurrent-double-capture race. */
-    private boolean activateSubscription(Payment payment) {
+    private UserSubscription activateSubscription(Payment payment) {
         boolean alreadyActive = userSubscriptionRepository
                 .findByUserIdAndStatus(payment.getUser().getId(), SubscriptionStatus.ACTIVE)
                 .isPresent();
         if (alreadyActive) {
-            return false;
+            return null;
         }
 
         SubscriptionPlan plan = subscriptionPlanRepository.findById(payment.getPlanId()).orElseThrow();
@@ -206,7 +239,7 @@ public class PaymentWebhookService {
         subscription.setEndDate(startDate.plusDays(plan.getDurationDays()));
         subscription.setStatus(SubscriptionStatus.ACTIVE);
         userSubscriptionRepository.save(subscription);
-        return true;
+        return subscription;
     }
 
     private void createPendingInvoice(Payment payment) {
