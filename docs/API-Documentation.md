@@ -1,6 +1,6 @@
 # Moriah Skill Hub — API Documentation
 
-> Generated from `docs/openapi.json` (OpenAPI 3.1.0). 199 endpoints across 31 groups. Auth/role column is read from each controller's `@PreAuthorize`.
+> Generated from `docs/openapi.json` (OpenAPI 3.1.0). 202 endpoints across 32 groups. Auth/role column is read from each controller's `@PreAuthorize`.
 
 ## Conventions
 
@@ -89,7 +89,7 @@ On success the callback returns the **same `LoginResponse` envelope as `POST /ap
 - [Admin](#admin) — 25 endpoints
 - [Assessments](#assessments) — 12 endpoints
 - [Attendance](#attendance) — 4 endpoints
-- [Auth](#auth) — 13 endpoints
+- [Auth](#auth) — 14 endpoints
 - [BA](#ba) — 8 endpoints
 - [Batches](#batches) — 8 endpoints
 - [Bug Challenges](#bug-challenges) — 5 endpoints
@@ -112,11 +112,12 @@ On success the callback returns the **same `LoginResponse` envelope as `POST /ap
 - [Sprints](#sprints) — 6 endpoints
 - [Standups](#standups) — 3 endpoints
 - [Submissions](#submissions) — 2 endpoints
-- [Subscriptions](#subscriptions) — 1 endpoints
+- [Subscriptions](#subscriptions) — 2 endpoints
 - [Talent](#talent) — 4 endpoints
 - [Tasks](#tasks) — 5 endpoints
 - [Users](#users) — 5 endpoints
 - [Webhooks](#webhooks) — 3 endpoints
+- [o-auth-2-default-callback-fallback-controller](#o-auth-2-default-callback-fallback-controller) — 1 endpoints
 
 ---
 
@@ -2331,6 +2332,34 @@ Corporate-client self-registration — creates a PENDING_APPROVAL account that c
     "fullName": "string",
     "email": "string"
   },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `POST` `/api/v1/auth/resend-verification`
+
+Re-send the email-verification link — always responds the same way regardless of whether the address maps to an account still awaiting verification
+
+**Auth:** Public — no token required
+
+**Request body:**
+
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": null,
   "error": null
 }
 ```
@@ -8131,6 +8160,39 @@ The caller's current active subscription
 
 ---
 
+### `GET` `/api/v1/subscriptions/me/invoices`
+
+The caller's billing history — captured/refunded payments with invoice status and a short-lived PDF link (null while the invoice is still being generated)
+
+**Auth:** Authenticated (any logged-in user)
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "invoiceNumber": "string",
+      "planCode": "string",
+      "planName": "string",
+      "amount": 0.0,
+      "currency": "string",
+      "paymentStatus": "CREATED",
+      "invoiceStatus": "string",
+      "paidAt": "2026-01-15T10:30:00Z",
+      "pdfUrl": "string",
+      "reference": "string"
+    }
+  ],
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
 ## Talent
 
 ### `GET` `/api/v1/recruitment-requests`
@@ -8897,6 +8959,22 @@ WhatsApp Cloud API inbound message webhook — signature-verified, not token-ver
 ```json
 "string"
 ```
+
+**Status codes:** `200`
+
+---
+
+## o-auth-2-default-callback-fallback-controller
+
+### `GET` `/login/oauth2/code/**`
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Query parameters:**
+
+| name | type | required | description |
+|---|---|---|---|
+| `error` | string | no |  |
 
 **Status codes:** `200`
 

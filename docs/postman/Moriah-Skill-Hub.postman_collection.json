@@ -9811,6 +9811,38 @@
             "description": "The caller's current active subscription\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
           },
           "response": []
+        },
+        {
+          "name": "GET /api/v1/subscriptions/me/invoices",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/subscriptions/me/invoices",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "subscriptions",
+                "me",
+                "invoices"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "The caller's billing history \u2014 captured/refunded payments with invoice status and a short-lived PDF link (null while the invoice is still being generated)\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
+          },
+          "response": []
         }
       ]
     },
@@ -10618,6 +10650,50 @@
                 }
               }
             }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "o-auth-2-default-callback-fallback-controller",
+      "item": [
+        {
+          "name": "GET /login/oauth2/code/**",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/login/oauth2/code/**",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "login",
+                "oauth2",
+                "code",
+                "**"
+              ],
+              "query": [
+                {
+                  "key": "error",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Any logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
           },
           "response": []
         }

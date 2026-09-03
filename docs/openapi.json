@@ -5706,6 +5706,37 @@
                 }
             }
         },
+        "/api/v1/auth/resend-verification": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Re-send the email-verification link — always responds the same way regardless of whether the address maps to an account still awaiting verification",
+                "operationId": "resendVerification",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ResendVerificationRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseVoid"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/auth/register": {
             "post": {
                 "tags": [
@@ -7066,6 +7097,29 @@
                 }
             }
         },
+        "/login/oauth2/code/**": {
+            "get": {
+                "tags": [
+                    "o-auth-2-default-callback-fallback-controller"
+                ],
+                "operationId": "handleMisroutedCallback",
+                "parameters": [
+                    {
+                        "name": "error",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
         "/api/v1/users/me": {
             "get": {
                 "tags": [
@@ -7148,6 +7202,27 @@
                             "*/*": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ApiResponseSubscriptionResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/subscriptions/me/invoices": {
+            "get": {
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "The caller's billing history — captured/refunded payments with invoice status and a short-lived PDF link (null while the invoice is still being generated)",
+                "operationId": "myInvoices",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseListInvoiceResponse"
                                 }
                             }
                         }
@@ -14358,6 +14433,19 @@
                     }
                 }
             },
+            "ResendVerificationRequest": {
+                "type": "object",
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "minLength": 1
+                    }
+                },
+                "required": [
+                    "email"
+                ]
+            },
             "RegisterRequest": {
                 "type": "object",
                 "properties": {
@@ -15838,6 +15926,70 @@
                     },
                     "autoRenew": {
                         "type": "boolean"
+                    }
+                }
+            },
+            "ApiResponseListInvoiceResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/InvoiceResponse"
+                        }
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ErrorDetail"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "InvoiceResponse": {
+                "type": "object",
+                "properties": {
+                    "invoiceNumber": {
+                        "type": "string"
+                    },
+                    "planCode": {
+                        "type": "string"
+                    },
+                    "planName": {
+                        "type": "string"
+                    },
+                    "amount": {
+                        "type": "number"
+                    },
+                    "currency": {
+                        "type": "string"
+                    },
+                    "paymentStatus": {
+                        "type": "string",
+                        "enum": [
+                            "CREATED",
+                            "PENDING",
+                            "CAPTURED",
+                            "FAILED",
+                            "REFUNDED"
+                        ]
+                    },
+                    "invoiceStatus": {
+                        "type": "string"
+                    },
+                    "paidAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "pdfUrl": {
+                        "type": "string"
+                    },
+                    "reference": {
+                        "type": "string"
                     }
                 }
             },
