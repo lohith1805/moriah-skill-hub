@@ -11,7 +11,7 @@ import FileUpload from "../../components/ui/FileUpload";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
-import { getPerformanceSummary, getMyTasks, getMyPipStatus, getVideoLessons, getResumeStatus, saveResumeFile, getMySubscription } from "../../services/studentService";
+import { getPerformanceSummary, getMyTasks, getMyPipStatus, getVideoLessons, getResumeStatus, saveResumeFile, getMySubscription, getMyBatch } from "../../services/studentService";
 import { loadRecruitments, stageTone, stageMessage, REJECTED } from "../../utils/placementPipeline";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { Input } from "../../components/ui/FormField";
@@ -42,6 +42,13 @@ export default function StudentDashboard() {
   const [pip, setPip] = useState(null);
   const [lessons, setLessons] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [myBatch, setMyBatch] = useState(null);
+
+  // Batch enrolment isn't on /users/me — read it here so the header reflects an
+  // auto-assignment without needing a re-login.
+  useEffect(() => {
+    getMyBatch().then(setMyBatch).catch(() => setMyBatch(null));
+  }, []);
 
   const [hasCheckedIn, setHasCheckedIn] = useState(false);
   const [checkinTime, setCheckinTime] = useState("");
@@ -322,7 +329,14 @@ export default function StudentDashboard() {
 
   return (
     <div>
-      <PageHeader title={`Welcome back, ${user?.name?.split(" ")[0]}`} subtitle={[user?.track, user?.batch].filter(Boolean).join(" · ") || "Track and batch not assigned yet"} />
+      <PageHeader
+        title={`Welcome back, ${user?.name?.split(" ")[0]}`}
+        subtitle={
+          myBatch
+            ? [myBatch.trackCode, myBatch.name].filter(Boolean).join(" · ")
+            : "You're on a plan — we're placing you into a batch. You'll be notified the moment you're in."
+        }
+      />
 
       <div className="mb-6 max-w-md">
         <Input

@@ -134,6 +134,18 @@ async function myBatchIds() {
   return asRows(res).map((b) => b.id);
 }
 
+// GET /api/v1/batches (student-scoped) → the caller's current batch, or null if
+// they haven't been placed into one yet. `/users/me` does NOT carry batch
+// enrolment, so the dashboard reads it from here.
+export async function getMyBatch() {
+  const res = await apiClient.get("/batches", { size: 100 });
+  const rows = asRows(res);
+  const active = rows.find((b) => b.status === "ACTIVE") || rows[0];
+  return active
+    ? { id: active.id, name: active.name, trackCode: active.trackCode, status: active.status }
+    : null;
+}
+
 // GET /api/v1/tasks?sprintId= for every sprint in the caller's batches, kept
 // to tasks assigned to the caller OR still in the BACKLOG (pullable).
 export async function getMyTasks() {
