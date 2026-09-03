@@ -18,6 +18,7 @@ import { Input, Select } from "../../components/ui/FormField";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required } from "../../utils/validators";
 import { DEFAULT_TEMPLATES, renderTemplateText } from "../../utils/letterTemplates";
+import { downloadPdf } from "../../utils/pdf";
 import {
   REJECTED, stageTone, stageIndex,
   loadRecruitments, saveRecruitments, saveDocs,
@@ -292,16 +293,11 @@ export default function HrDocuments() {
 
   const downloadDocument = (doc) => {
     const text = getDocRenderText(doc);
-    const blob = new Blob([text], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${doc.name.toLowerCase().replace(/\s+/g, "_")}_${doc.type}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    notify("Document downloaded successfully.", { type: "success" });
+    const file = `${doc.name.toLowerCase().replace(/\s+/g, "_")}_${doc.type}`;
+    downloadPdf(file, doc.name || "HR Document", [
+      { lines: String(text).split(/\n{2,}/).flatMap((p) => [p.trim(), ""]) },
+    ]);
+    notify("Document downloaded as PDF.", { type: "success" });
   };
 
   const handleDelete = (id) => {

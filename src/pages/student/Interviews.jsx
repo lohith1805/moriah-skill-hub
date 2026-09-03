@@ -15,6 +15,7 @@ import {
   freshDocumentChecklist, REQUIRED_DOCUMENTS, fileToDataURL
 } from "../../utils/placementPipeline";
 import { renderTemplateText } from "../../utils/letterTemplates";
+import { downloadPdf } from "../../utils/pdf";
 
 // Mirrors the generator in client/TalentPool.jsx. Kept here too so that if
 // a student opens this page before any backfill has run on the client side,
@@ -76,19 +77,14 @@ export default function StudentInterviews() {
     setViewingOffer(null);
   };
 
-  // Lets the student download a copy of the offer letter for their own
-  // records — simulated file, since there's no real file storage backend.
+  // Lets the student download a copy of the offer letter for their own records.
   const downloadOfferLetter = (record) => {
     const doc = loadDocs().find((d) => d.id === record?.offerDocId);
-    const blob = new Blob([doc ? renderTemplateText(doc) : ""], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `offer_letter_${(record?.candidateName || "candidate").toLowerCase().replace(/\s+/g, "_")}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const text = doc ? renderTemplateText(doc) : "Offer letter not found.";
+    const name = (record?.candidateName || "candidate").toLowerCase().replace(/\s+/g, "_");
+    downloadPdf(`offer_letter_${name}`, "Offer Letter", [
+      { lines: text.split(/\n{2,}/).flatMap((p) => [p.trim(), ""]) },
+    ]);
     notify("Downloading your offer letter…", { type: "info" });
   };
 

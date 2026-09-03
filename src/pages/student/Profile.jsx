@@ -13,6 +13,7 @@ import { useToast } from "../../context/ToastContext";
 import Modal from "../../components/ui/Modal";
 import { getCertificates, getPerformanceSummary, saveResumeFile, getResumeStatus } from "../../services/studentService";
 import { updateProfile } from "../../services/authService";
+import { downloadPdf } from "../../utils/pdf";
 
 // "https://github.com/foo" / "github.com/foo" / "foo" -> "foo"
 const ghUsername = (v) => (v || "").trim().replace(/^https?:\/\/(www\.)?github\.com\//i, "").replace(/\/.*$/, "");
@@ -214,79 +215,27 @@ export default function StudentProfile() {
       }
     }
     {
-      const printWindow = window.open("", "_blank");
-      if (!printWindow) {
-        notify("Please allow popups to export your resume.", { type: "warning" });
-        return;
-      }
-      const htmlContent = `
-        <html>
-          <head>
-            <title>Resume - ${user?.name}</title>
-            <style>
-              body { font-family: system-ui, sans-serif; color: #1f2937; padding: 40px; max-width: 800px; margin: 0 auto; line-height: 1.5; }
-              .header { text-align: center; border-bottom: 2px solid #e5e7eb; padding-bottom: 15px; margin-bottom: 25px; }
-              .name { font-size: 28px; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: 1px; color: #111827; }
-              .title { font-size: 16px; font-weight: 600; color: #4f46e5; margin: 5px 0 0 0; }
-              .contact { font-size: 12px; color: #4b5563; margin-top: 8px; }
-              .section { margin-bottom: 25px; }
-              .section-title { font-size: 14px; font-weight: bold; border-bottom: 1px solid #d1d5db; padding-bottom: 4px; margin-bottom: 10px; text-transform: uppercase; color: #374151; letter-spacing: 0.5px; }
-              .section-content { font-size: 13px; color: #374151; }
-              .badge { background: #f3f4f6; border: 1px solid #e5e7eb; padding: 2px 8px; border-radius: 4px; font-size: 11px; display: inline-block; margin-right: 5px; margin-top: 5px; }
-              .cert-row { margin-bottom: 10px; font-size: 13px; }
-              .cert-code { font-family: monospace; color: #4b5563; font-weight: bold; }
-              @media print {
-                .no-print { display: none; }
-              }
-            </style>
-          </head>
-          <body>
-            <div class="no-print" style="margin-bottom: 20px; text-align: right;">
-              <button onclick="window.print()" style="background: #111827; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 500;">Print / Save PDF</button>
-            </div>
-            <div class="header">
-              <h1 class="name">${user?.name}</h1>
-              <p class="title">${user?.track || "Software Trainee"}</p>
-              <div class="contact">
-                Email: ${user?.email} | Phone: ${user?.phone} <br/>
-                ${values.github ? `GitHub: ${values.github} ` : ""}
-                ${values.linkedin ? `| LinkedIn: ${values.linkedin}` : ""}
-              </div>
-            </div>
-            
-            <div class="section">
-              <div class="section-title">Professional Summary</div>
-              <div class="section-content">${values.bio || "No summary provided."}</div>
-            </div>
-
-            <div class="section">
-              <div class="section-title">Education</div>
-              <div class="section-content">${values.education || "Not specified."}</div>
-            </div>
-
-            <div class="section">
-              <div class="section-title">Technical Expertise</div>
-              <div class="section-content">
-                ${values.skills ? values.skills.split(",").map(s => `<span class="badge">${s.trim()}</span>`).join("") : "Not specified."}
-              </div>
-            </div>
-
-            <div class="section">
-              <div class="section-title">Verified Credentials &amp; Accomplishments</div>
-              <div class="section-content">
-                ${certs.length > 0 ? certs.map(c => `
-                  <div class="cert-row">
-                    <strong>${c.title}</strong> — Verified on ${c.issuedOn}<br/>
-                    <span style="font-size:11px; color:#6b7280;">Credential Code: </span><span class="cert-code">${c.verifyCode}</span>
-                  </div>
-                `).join("") : `<p style="color:#6b7280; font-size:12px;">Apprenticeship graduation credentials pending final review.</p>`}
-              </div>
-            </div>
-          </body>
-        </html>
-      `;
-      printWindow.document.write(htmlContent);
-      printWindow.document.close();
+      const skills = values.skills ? values.skills.split(",").map((s) => s.trim()).filter(Boolean) : [];
+      downloadPdf(`resume_${(user?.name || "student").toLowerCase().replace(/\s+/g, "_")}`, user?.name || "Resume", [
+        {
+          keyValues: [
+            ["Track", user?.track || "Software Trainee"],
+            ["Email", user?.email || ""],
+            ["Phone", user?.phone || ""],
+            ...(values.github ? [["GitHub", values.github]] : []),
+            ...(values.linkedin ? [["LinkedIn", values.linkedin]] : []),
+          ],
+        },
+        { heading: "Professional Summary", lines: [values.bio || "No summary provided."] },
+        { heading: "Education", lines: [values.education || "Not specified."] },
+        { heading: "Technical Expertise", lines: [skills.length ? skills.join(", ") : "Not specified."] },
+        {
+          heading: "Verified Credentials",
+          lines: certs.length
+            ? certs.map((c) => `${c.title} — verified ${c.issuedOn} (code ${c.verifyCode})`)
+            : ["Apprenticeship graduation credentials pending final review."],
+        },
+      ]);
     }
   };
 

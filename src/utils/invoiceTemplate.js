@@ -5,6 +5,8 @@
 // split evenly across CGST/SGST for an intra-state supply), consistent with
 // SUBSCRIPTION_PLANS pricing in utils/constants.js.
 
+import { downloadInvoicePdf } from "./pdf";
+
 const GST_RATE = 0.18;
 
 const escapeHtml = (str = "") =>
@@ -156,19 +158,13 @@ export function openInvoice(txn) {
   return true;
 }
 
-// Downloads the invoice for a single transaction as its own standalone
-// .html file (e.g. "INV-ABC12345.html") — not a zip, and not the app
-// bundle. Safe to call from within the invoice preview modal.
+// Downloads the invoice for a single transaction as a real PDF
+// (e.g. "INV-ABC12345.pdf"). Safe to call from within the invoice preview modal.
 export function downloadInvoice(txn) {
-  const html = buildInvoiceHTML(txn);
-  const invoiceNo = invoiceNumberFor(txn);
-  const blob = new Blob([html], { type: "text/html" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `${invoiceNo}.html`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  downloadInvoicePdf({
+    invoiceNo: invoiceNumberFor(txn),
+    isCreditNote: txn.status === "Refunded",
+    txn,
+    breakdown: buildInvoiceBreakdown(txn.amount),
+  });
 }
