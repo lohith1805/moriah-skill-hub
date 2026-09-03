@@ -7,6 +7,7 @@ import com.moriah.skillhub.batch.dto.BatchResponse;
 import com.moriah.skillhub.batch.dto.BatchStudentResponse;
 import com.moriah.skillhub.batch.dto.CreateBatchRequest;
 import com.moriah.skillhub.batch.dto.GraduationResult;
+import com.moriah.skillhub.batch.dto.PendingAllocationResponse;
 import com.moriah.skillhub.batch.dto.UpdateBatchRequest;
 import com.moriah.skillhub.batch.entity.Batch;
 import com.moriah.skillhub.batch.entity.BatchStudent;
@@ -48,6 +49,7 @@ public class BatchService {
     private final PendingBatchAllocationRepository pendingBatchAllocationRepository;
     private final UserRepository userRepository;
     private final EntitlementService entitlementService;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     /** build-plan.md feature 10: "Creation restricted to TRAINER_PM and ADMIN; creator becomes
      * pm_id" — literally, with no exception for ADMIN (`/architect feature 10` reading). */
@@ -66,7 +68,33 @@ public class BatchService {
         batch.setCapacity(request.capacity());
         batchRepository.save(batch);
 
+        // Students who paid for a batch plan on this track before any batch existed are parked in
+        // pending_batch_allocations. Draining that queue is an AFTER_COMMIT concern — done by
+        // PendingAllocationDrainer, not inline, so BatchService keeps no dependency on
+        // BatchAllocationService (they would otherwise form a cycle via UserService).
+        eventPublisher.publishEvent(new BatchCreatedEvent(batch.getTrackCode()));
+
         return toResponse(batch, null);
+    }
+
+    /** {@code GET /api/v1/batches/pending-allocations} — students who paid for a batch plan but
+     * have no matching batch yet ({@code pending_batch_allocations} rows still unresolved). A PM
+     * screen shows this as "assignment pending"; the row clears itself the moment a matching batch
+     * is created (see {@link BatchAllocationService#retryPendingForTrack}) or the PM adds them
+     * manually. */
+    @Transactional(readOnly = true)
+    public List<PendingAllocationResponse> listPendingAllocations() {
+        Map<Long, String> planCodes = entitlementService.planCodesById();
+        return pendingBatchAllocationRepository.findByResolvedAtIsNullOrderByCreatedAtAsc().stream()
+                .map(p -> new PendingAllocationResponse(
+                        p.getUser().getUuid(),
+                        p.getUser().getFullName(),
+                        p.getUser().getEmail(),
+                        p.getTrackCode(),
+                        planCodes.get(p.getPlanId()),
+                        p.getReason(),
+                        p.getCreatedAt()))
+                .toList();
     }
 
     @Transactional(readOnly = true)

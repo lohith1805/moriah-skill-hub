@@ -4,6 +4,7 @@ import com.moriah.skillhub.batch.dto.AddStudentRequest;
 import com.moriah.skillhub.batch.dto.BatchResponse;
 import com.moriah.skillhub.batch.dto.BatchStudentResponse;
 import com.moriah.skillhub.batch.dto.CreateBatchRequest;
+import com.moriah.skillhub.batch.dto.PendingAllocationResponse;
 import com.moriah.skillhub.batch.dto.UpdateBatchRequest;
 import com.moriah.skillhub.certificate.GraduationService;
 import com.moriah.skillhub.certificate.dto.GraduationResponse;
@@ -65,6 +66,14 @@ public class BatchController {
     public ResponseEntity<ApiResponse<PageResponse<BatchResponse>>> list(
             @PageableDefault(size = 20) Pageable pageable, @CurrentUser Long callerUserId) {
         return ResponseEntity.ok(ApiResponse.success(batchService.list(callerUserId, isStudentOnly(), pageable)));
+    }
+
+    @GetMapping("/pending-allocations")
+    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @Operation(summary = "Students who paid for a batch plan but have no matching batch yet — "
+            + "auto-placed the moment a batch for their track is created")
+    public ResponseEntity<ApiResponse<List<PendingAllocationResponse>>> pendingAllocations() {
+        return ResponseEntity.ok(ApiResponse.success(batchService.listPendingAllocations()));
     }
 
     @GetMapping("/{id}")
