@@ -440,6 +440,30 @@ export async function subscribeToPlan(backendPlanCode, feGateway = "Razorpay", {
   };
 }
 
+// GET /api/v1/subscriptions/me/invoices — the caller's billing history. Each row
+// is a captured/refunded payment; `invoiceStatus` is "PROCESSING" until the async
+// invoice job has rendered the PDF, then "ISSUED" with a short-lived `pdfUrl`.
+const INVOICE_DISPLAY_STATUS = (r) => {
+  if (r.paymentStatus === "REFUNDED") return "REFUNDED";
+  if (r.invoiceStatus === "ISSUED") return "CAPTURED";
+  if (r.invoiceStatus === "FAILED") return "INVOICE FAILED";
+  return "PROCESSING";
+};
+
+export async function getMyInvoices() {
+  const res = await apiClient.get("/subscriptions/me/invoices");
+  return asRows(res).map((r) => ({
+    id: r.invoiceNumber || r.reference,
+    reference: r.reference,
+    plan: r.planName || r.planCode || "—",
+    amount: r.amount != null ? Number(r.amount) : 0,
+    currency: r.currency || "INR",
+    date: r.paidAt ? String(r.paidAt).slice(0, 10) : "—",
+    status: INVOICE_DISPLAY_STATUS(r),
+    pdfUrl: r.pdfUrl || null,
+  }));
+}
+
 // GET /api/v1/interviews/me — mock/technical/HR/placement interviews a PM
 // scheduled for the caller (B1.8). No dedicated page yet; here for reuse.
 export async function getMyInterviews() {

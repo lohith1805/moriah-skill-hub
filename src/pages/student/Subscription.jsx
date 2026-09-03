@@ -7,7 +7,7 @@ import Badge from "../../components/ui/Badge";
 import Table from "../../components/ui/Table";
 import Modal from "../../components/ui/Modal";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
-import { getPlans, subscribeToPlan, getMySubscription } from "../../services/studentService";
+import { getPlans, subscribeToPlan, getMySubscription, getMyInvoices } from "../../services/studentService";
 import { useToast } from "../../context/ToastContext";
 import { CURRENCY } from "../../utils/constants";
 import { useAuth } from "../../context/AuthContext";
@@ -58,26 +58,14 @@ export default function StudentSubscription() {
   const [mySub, setMySub] = useState(null);
   const currentPlanCode = mySub?.planCode || null;
 
+  const refreshInvoices = () =>
+    getMyInvoices()
+      .then(setInvoiceList)
+      .catch(() => setInvoiceList([]));
+
   useEffect(() => {
-    if (user) {
-      try {
-        const rawTx = localStorage.getItem("msh_transactions");
-        const txs = rawTx ? JSON.parse(rawTx) : [];
-        const studentInvoices = txs
-          .filter((t) => t.student === user.name)
-          .map((t) => ({
-            id: t.id.replace("tx", "INV-"),
-            plan: t.plan,
-            amount: t.amount,
-            date: t.date,
-            status: t.status,
-          }));
-        setInvoiceList(studentInvoices);
-      } catch (e) {
-        setInvoiceList([]);
-      }
-    }
-  }, [user]);
+    if (user) refreshInvoices();
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     Promise.all([getPlans(), getMySubscription().catch(() => null)]).then(([data, sub]) => {
@@ -119,6 +107,7 @@ export default function StudentSubscription() {
           const sub = await waitForActivation();
           setProcessing(false);
           setSelected(null);
+          refreshInvoices();
           if (sub) {
             notify(`You're on the ${sub.planName || selected.name} plan.`, { type: "success", title: "Subscription active" });
             navigate("/student/dashboard", { replace: true });
@@ -144,12 +133,29 @@ export default function StudentSubscription() {
   };
 
   const viewInvoicePDF = (invoice) => {
+    // The real invoice PDF is rendered server-side and handed back as a short-lived
+    // pre-signed link. Until the async job has produced it, pdfUrl is null.
+    if (invoice.pdfUrl) {
+      const w = window.open(invoice.pdfUrl, "_blank", "noopener");
+      if (!w) notify("Please allow popups to open the invoice PDF.", { type: "warning" });
+      return;
+    }
+    if (invoice.status === "PROCESSING") {
+      notify("Your invoice PDF is still being generated — try again in a minute.", { type: "info" });
+      return;
+    }
+    if (invoice.status === "INVOICE FAILED") {
+      notify("This invoice couldn't be generated. Contact billing@moriah.io with your payment reference.", { type: "error" });
+      return;
+    }
+
+    // Fallback: a printable HTML rendering from the row data we already have.
     const printWindow = window.open("", "_blank");
     if (!printWindow) {
       notify("Please allow popups to view the invoice PDF.", { type: "warning" });
       return;
     }
-    
+
     const htmlContent = `
       <html>
         <head>
@@ -301,7 +307,25 @@ export default function StudentSubscription() {
             { key: "plan", header: "Plan" },
             { key: "amount", header: "Amount", render: (r) => CURRENCY(r.amount) },
             { key: "date", header: "Date" },
-            { key: "status", header: "Status", render: (r) => <Badge tone="success">{r.status}</Badge> },
+            {
+              key: "status",
+              header: "Status",
+              render: (r) => (
+                <Badge
+                  tone={
+                    r.status === "CAPTURED"
+                      ? "success"
+                      : r.status === "PROCESSING"
+                      ? "warning"
+                      : r.status === "REFUNDED"
+                      ? "neutral"
+                      : "error"
+                  }
+                >
+                  {r.status}
+                </Badge>
+              ),
+            },
             { key: "action", header: "", render: (row) => <Button variant="ghost" size="sm" icon={Download} onClick={(e) => { e.stopPropagation(); viewInvoicePDF(row); }}>PDF</Button> },
           ]}
           data={invoiceList}
