@@ -5,6 +5,7 @@ import com.moriah.skillhub.assessment.dto.AddBankQuestionRequest;
 import com.moriah.skillhub.assessment.dto.CreateQuestionBankRequest;
 import com.moriah.skillhub.assessment.dto.QuestionBankItemResponse;
 import com.moriah.skillhub.assessment.dto.QuestionBankResponse;
+import com.moriah.skillhub.assessment.dto.UpdateQuestionBankRequest;
 import com.moriah.skillhub.assessment.entity.QuestionBank;
 import com.moriah.skillhub.assessment.entity.QuestionBankItem;
 import com.moriah.skillhub.assessment.entity.QuestionDifficulty;
@@ -135,6 +136,55 @@ class QuestionBankServiceTest {
         assertThatThrownBy(() -> new AddBankQuestionRequest(
                 "q", QuestionType.CODE, List.of("a", "b"), null, 5, null, null))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void updateBank_replacesFields() {
+        QuestionBank b = bank(3L);
+        when(bankRepository.findById(3L)).thenReturn(Optional.of(b));
+        when(itemRepository.countByBankId(3L)).thenReturn(2L);
+        when(userRepository.findAllById(any())).thenReturn(List.of());
+
+        QuestionBankResponse res = service.updateBank(3L,
+                new UpdateQuestionBankRequest("Java Advanced", "java-advanced", "harder set", false));
+
+        assertThat(b.getName()).isEqualTo("Java Advanced");
+        assertThat(b.getTopic()).isEqualTo("java-advanced");
+        assertThat(b.isActive()).isFalse();
+        assertThat(res.questionCount()).isEqualTo(2L);
+    }
+
+    @Test
+    void deactivateBank_flipsActive() {
+        QuestionBank b = bank(3L);
+        when(bankRepository.findById(3L)).thenReturn(Optional.of(b));
+
+        service.deactivateBank(3L);
+
+        assertThat(b.isActive()).isFalse();
+    }
+
+    @Test
+    void removeQuestion_deletesWhenItemBelongsToBank() {
+        QuestionBankItem item = new QuestionBankItem();
+        item.setId(10L);
+        item.setBank(bank(3L));
+        when(itemRepository.findById(10L)).thenReturn(Optional.of(item));
+
+        service.removeQuestion(3L, 10L);
+
+        org.mockito.Mockito.verify(itemRepository).delete(item);
+    }
+
+    @Test
+    void removeQuestion_wrongBank_throwsNotFound() {
+        QuestionBankItem item = new QuestionBankItem();
+        item.setId(10L);
+        item.setBank(bank(99L));
+        when(itemRepository.findById(10L)).thenReturn(Optional.of(item));
+
+        assertThatThrownBy(() -> service.removeQuestion(3L, 10L))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 
     private User userWith(long id, String uuid) {

@@ -6,6 +6,7 @@ import com.moriah.skillhub.assessment.dto.AddBankQuestionRequest;
 import com.moriah.skillhub.assessment.dto.CreateQuestionBankRequest;
 import com.moriah.skillhub.assessment.dto.QuestionBankItemResponse;
 import com.moriah.skillhub.assessment.dto.QuestionBankResponse;
+import com.moriah.skillhub.assessment.dto.UpdateQuestionBankRequest;
 import com.moriah.skillhub.assessment.entity.QuestionBank;
 import com.moriah.skillhub.assessment.entity.QuestionBankItem;
 import com.moriah.skillhub.assessment.repository.QuestionBankItemRepository;
@@ -64,9 +65,36 @@ public class QuestionBankService {
     }
 
     @Transactional
+    public QuestionBankResponse updateBank(Long bankId, UpdateQuestionBankRequest request) {
+        QuestionBank bank = requireBank(bankId);
+        bank.setName(request.name());
+        bank.setTopic(request.topic());
+        bank.setDescription(blankToNull(request.description()));
+        bank.setActive(request.active());
+        return toBankResponse(bank, itemRepository.countByBankId(bank.getId()), creatorUuids(List.of(bank)));
+    }
+
+    /** {@code DELETE /api/v1/assessments/banks/{id}} — deactivate, never row-delete: a bank's
+     * items may already have been snapshotted into a live quiz. Idempotent. */
+    @Transactional
+    public void deactivateBank(Long bankId) {
+        QuestionBank bank = requireBank(bankId);
+        bank.setActive(false);
+    }
+
+    /** {@code DELETE /api/v1/assessments/banks/{id}/questions/{questionId}} — a bank item is
+     * leaf content, so this is a real row-delete. 404 if the item is not in this bank. */
+    @Transactional
+    public void removeQuestion(Long bankId, Long questionId) {
+        QuestionBankItem item = itemRepository.findById(questionId)
+                .filter(i -> i.getBank().getId().equals(bankId))
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.RESOURCE_NOT_FOUND, questionId));
+        itemRepository.delete(item);
+    }
+
+    @Transactional
     public QuestionBankItemResponse addQuestion(Long bankId, AddBankQuestionRequest request, Long callerUserId) {
-        QuestionBank bank = bankRepository.findById(bankId)
-                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.QUESTION_BANK_NOT_FOUND, bankId));
+        QuestionBank bank = requireBank(bankId);
 
         QuestionBankItem item = new QuestionBankItem();
         item.setBank(bank);
@@ -95,6 +123,11 @@ public class QuestionBankService {
                 : userRepository.findAllById(creatorIds).stream()
                         .collect(Collectors.toMap(User::getId, User::getUuid));
         return PageResponse.from(page.map(i -> toItemResponse(i, creators.get(i.getCreatedBy()))));
+    }
+
+    private QuestionBank requireBank(Long bankId) {
+        return bankRepository.findById(bankId)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.QUESTION_BANK_NOT_FOUND, bankId));
     }
 
     private Map<Long, String> creatorUuids(List<QuestionBank> banks) {
