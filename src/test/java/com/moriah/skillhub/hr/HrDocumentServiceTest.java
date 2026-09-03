@@ -11,20 +11,30 @@ import com.moriah.skillhub.hr.dto.VerifyHrDocumentRequest;
 import com.moriah.skillhub.hr.entity.HrDocument;
 import com.moriah.skillhub.hr.entity.HrDocumentStatus;
 import com.moriah.skillhub.hr.repository.HrDocumentRepository;
+import com.moriah.skillhub.common.security.AuthenticatedPrincipal;
 import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.repository.UserRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.security.authentication.TestingAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -148,5 +158,42 @@ class HrDocumentServiceTest {
                 new VerifyHrDocumentRequest(HrDocumentStatus.VERIFIED, null), 9L))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.HR_DOCUMENT_NOT_FOUND);
+    }
+
+    // --- list ---
+
+    @AfterEach
+    void clearContext() {
+        SecurityContextHolder.clearContext();
+    }
+
+    private void authenticateAs(long userId, List<String> roles) {
+        SecurityContextHolder.getContext().setAuthentication(
+                new TestingAuthenticationToken(new AuthenticatedPrincipal(userId, "uuid-" + userId, roles), null));
+    }
+
+    @Test
+    void list_nonHrCaller_scopesToOwnRows_ignoringUserUuidFilter() {
+        authenticateAs(3L, List.of("DEVELOPER"));
+        var pageable = PageRequest.of(0, 20);
+        when(hrDocumentRepository.search(eq(3L), isNull(), isNull(), eq(pageable)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        service().list("uuid-999", null, null, 3L, "uuid-3", pageable);
+
+        verify(hrDocumentRepository).search(eq(3L), isNull(), isNull(), eq(pageable));
+    }
+
+    @Test
+    void list_hrCallerWithFilters_resolvesUuidAndPassesFilters() {
+        authenticateAs(9L, List.of("HR_MANAGER"));
+        var pageable = PageRequest.of(0, 20);
+        when(userRepository.findByUuid("uuid-1")).thenReturn(Optional.of(user(1L, "uuid-1")));
+        when(hrDocumentRepository.search(eq(1L), eq(HrDocumentStatus.PENDING), eq("AADHAAR"), eq(pageable)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        service().list("uuid-1", HrDocumentStatus.PENDING, "AADHAAR", 9L, "uuid-9", pageable);
+
+        verify(hrDocumentRepository).search(eq(1L), eq(HrDocumentStatus.PENDING), eq("AADHAAR"), eq(pageable));
     }
 }

@@ -578,6 +578,13 @@ Exactly one of `baseSalary` / `hourlyRate` must be set. → keep `data.id` as «
 field **`file`** (PDF; magic-byte checked). Also send a query/param `documentType` if your client
 supports it (slug-sanitised server-side). → keep `data.id` as «docId».
 
+**Step 2b — list HR documents** · `GET {{baseUrl}}/api/v1/hr/documents?status=PENDING` · auth: «any token»
+→ `data.content[]` of `{ id, userUuid, userFullName, documentType, verificationStatus
+(PENDING｜VERIFIED｜REJECTED), verifiedByUuid, verifiedAt, rejectionReason, downloadUrl
+(presigned, 15-min TTL), createdAt }`. A plain employee token sees **only its own** rows (the
+`userUuid` param is ignored for them); `hr@` / `admin@` see everyone and may add `&userUuid=…` and
+`&documentType=…`. `downloadUrl` is `null` on the `POST` / `PUT` responses — re-list to get a link.
+
 **Step 3 — verify the document** · `PUT {{baseUrl}}/api/v1/hr/documents/«docId»/verify`
 ```json
 { "decision": "VERIFIED", "rejectionReason": null }

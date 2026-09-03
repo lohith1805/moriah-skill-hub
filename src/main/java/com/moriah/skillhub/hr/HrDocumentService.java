@@ -1,25 +1,32 @@
 package com.moriah.skillhub.hr;
 
 import com.moriah.skillhub.common.audit.AuditLogService;
+import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ForbiddenOperationException;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
+import com.moriah.skillhub.common.security.SecurityUtils;
 import com.moriah.skillhub.common.storage.StorageService;
+import com.moriah.skillhub.common.util.Constants;
 import com.moriah.skillhub.hr.dto.HrDocumentResponse;
 import com.moriah.skillhub.hr.dto.VerifyHrDocumentRequest;
 import com.moriah.skillhub.hr.entity.HrDocument;
 import com.moriah.skillhub.hr.entity.HrDocumentStatus;
 import com.moriah.skillhub.hr.repository.HrDocumentRepository;
+import com.moriah.skillhub.user.entity.RoleCode;
 import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.net.URL;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -81,6 +88,42 @@ public class HrDocumentService {
         return toResponse(document);
     }
 
+    /** {@code GET /api/v1/hr/documents}. HR_MANAGER/ADMIN see every document (optionally filtered
+     * by {@code userUuid} / {@code status} / {@code documentType}); any other authenticated
+     * caller is forced to their own — the same "own data unless you're HR" scoping {@link #verify}
+     * enforces. {@code downloadUrl} is presigned per row against {@code callerUuid}. */
+    @Transactional(readOnly = true)
+    public PageResponse<HrDocumentResponse> list(String userUuidFilter, HrDocumentStatus status, String documentType,
+                                                 Long callerUserId, String callerUuid, Pageable pageable) {
+        boolean isHr = SecurityUtils.currentUserRoles().contains(RoleCode.HR_MANAGER.name())
+                || SecurityUtils.currentUserRoles().contains(RoleCode.ADMIN.name());
+
+        Long scopeUserId;
+        if (isHr) {
+            scopeUserId = userUuidFilter == null || userUuidFilter.isBlank() ? null
+                    : userRepository.findByUuid(userUuidFilter)
+                            .map(User::getId)
+                            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.USER_NOT_FOUND, userUuidFilter));
+        } else {
+            scopeUserId = callerUserId;
+        }
+
+        String docType = documentType == null || documentType.isBlank() ? null
+                : documentType.trim().replaceAll("[^A-Za-z0-9_-]", "");
+
+        return PageResponse.from(hrDocumentRepository.search(scopeUserId, status, docType, pageable)
+                .map(d -> toResponse(d, presign(d.getFileKey(), callerUuid))));
+    }
+
+    private String presign(String key, String callerUuid) {
+        if (key == null) {
+            return null;
+        }
+        URL url = storageService.presignedGetUrl(callerUuid, key,
+                Duration.ofMinutes(Constants.PRESIGNED_URL_TTL_MINUTES));
+        return url == null ? null : url.toString();
+    }
+
     @Transactional
     public HrDocumentResponse verify(Long documentId, VerifyHrDocumentRequest request, Long callerUserId) {
         HrDocument document = hrDocumentRepository.findById(documentId)
@@ -115,13 +158,20 @@ public class HrDocumentService {
     }
 
     private HrDocumentResponse toResponse(HrDocument document) {
+        return toResponse(document, null);
+    }
+
+    private HrDocumentResponse toResponse(HrDocument document, String downloadUrl) {
         return new HrDocumentResponse(
                 document.getId(),
                 document.getUser().getUuid(),
+                document.getUser().getFullName(),
                 document.getDocumentType(),
                 document.getVerificationStatus(),
                 document.getVerifiedBy() == null ? null : document.getVerifiedBy().getUuid(),
                 document.getVerifiedAt(),
-                document.getRejectionReason());
+                document.getRejectionReason(),
+                downloadUrl,
+                document.getCreatedAt());
     }
 }
