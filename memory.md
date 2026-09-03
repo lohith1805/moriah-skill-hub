@@ -408,9 +408,22 @@ invoice/ownership/cache tests green):**
 ⚠️ **openapi.json / Postman / API-Documentation.md NOT regenerated** for `POST /auth/resend-verification`
 or `GET /subscriptions/me/invoices` — both need the live-app re-export procedure below.
 
-**HEADs:** Frontend `e1e5a52` (branch `master`). Backend `dcc5bd3` on top of `4054e17` / `55e66a5`
-(memory) / `496e67b`. This pass ran only the `*Auth* *OAuth* *Payment* *Invoice* *Subscription*
-*Ownership* *Cache* *Entitlement* *Plan*` unit slices (all green) — full surefire (547) not re-run
+**Whole-project verified E2E run (2026-09-03): [`docs/verified-e2e-flow.md`](docs/verified-e2e-flow.md) +
+`scripts/e2e-flow.py`.** Booted deps + `mvn spring-boot:run` (dev) + walked 44 steps across
+public / register+verify+login / no-sub student / active-sub student / trainer-PM / lead-gen /
+admin (real 2FA setup dance in the harness). **44/44 green.** Also re-confirmed the FE↔BE API audit:
+144 distinct `apiClient.*` calls, **0 with no matching backend route**.
+Found + fixed 2 `GlobalExceptionHandler` gaps where a client mistake surfaced as a 500:
+- missing/unbindable `@RequestParam` (e.g. `GET /standups` w/o `batchId`) → now **400 VALIDATION_FAILED**
+  (`MissingServletRequestParameterException` + `MethodArgumentTypeMismatchException` handler).
+- wrong HTTP verb on an existing path (e.g. `GET /admin/plans`, which is POST/PUT/DELETE-only) →
+  now **405** (`HttpRequestMethodNotSupportedException` handler + new `ErrorCode.METHOD_NOT_ALLOWED`).
+Harness notes: raises `AUTH_RATE_LIMIT_PER_MIN` (default 10/min IP-scoped trips on the login burst);
+uses unique email+phone per run (`users.phone` is UNIQUE); resets `admin@` 2FA to setup-required.
+
+**HEADs:** Frontend `e1e5a52` (branch `master`). Backend — `dcc5bd3` + uncommitted
+`GlobalExceptionHandler`/`ErrorCode` fixes + `docs/verified-e2e-flow.md` + `scripts/e2e-flow.py`
+(commit `fe85aa6`). This pass ran only targeted unit slices (green); full surefire (547) not re-run
 since the seed/spec work. Testcontainers `*IT` still need Docker.
 
 **Local run state right now:** Docker `skillhub-mysql` / `-redis` / `-minio` are UP but MySQL is
