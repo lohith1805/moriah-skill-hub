@@ -25,8 +25,8 @@ import java.util.Objects;
  * instead, same "{@code common/} can't import a future feature's entities, but the table already
  * exists" reasoning {@link EntitlementFlagsLoader} already established for {@code
  * user_subscriptions}/{@code subscription_plans}. Every other namespace still resolves with no DB
- * hit. Namespaces owned by a resource id this class doesn't yet recognize ({@code invoices/},
- * {@code submissions/}) deny by default rather than guessing — "signing a key because the caller
+ * hit. Namespaces owned by a resource id this class doesn't yet recognize (e.g. {@code submissions/},
+ * and {@code invoices/} until the branch added below) deny by default rather than guessing — "signing a key because the caller
  * asked for it is an IDOR" (architecture.md "Object Storage") applies to unrecognized keys too.
  * ({@code certificates/} was in that same unrecognized set through feature 19 — feature 20 adds
  * it below, now that the entity backing it exists.) Two more feature-19 namespaces — {@code payslips/{employeeCode}/...} and
@@ -76,6 +76,8 @@ public class OwnershipGuard {
             allowed = segments.length >= 2 && canAccessHrLetter(segments[1], callerUuid);
         } else if (key.startsWith("certificates/")) {
             allowed = segments.length >= 2 && canAccessCertificate(segments[1], callerUuid);
+        } else if (key.startsWith("invoices/")) {
+            allowed = segments.length >= 2 && canAccessInvoice(segments[1], callerUuid);
         } else if (key.startsWith("exports/")) {
             allowed = isStaffWithRole(callerUuid, "ADMIN");
         } else {
@@ -168,6 +170,29 @@ public class OwnershipGuard {
                 certificateNumber, callerUuid)
                 .stream().findFirst().orElse(false);
         return Boolean.TRUE.equals(ownsCertificate) || isStaffWithRole(callerUuid, "TRAINER_PM", "ADMIN");
+    }
+
+    /** {@code invoices/{invoiceNumber}.pdf} — only the student the invoice was billed to may sign
+     * it (invoice -> payment -> user). Same single-segment-with-{@code .pdf}-suffix shape as
+     * {@link #canAccessCertificate}; no staff-bypass, since invoice PDFs are never acted on by
+     * staff the way payslips/HR letters are (admins read payments via {@code /admin/payments},
+     * not the object store). */
+    private boolean canAccessInvoice(String invoiceNumberSegment, String callerUuid) {
+        String invoiceNumber = invoiceNumberSegment.endsWith(".pdf")
+                ? invoiceNumberSegment.substring(0, invoiceNumberSegment.length() - 4)
+                : invoiceNumberSegment;
+        Boolean ownsInvoice = jdbcTemplate.query("""
+                SELECT EXISTS (
+                    SELECT 1 FROM invoices i
+                      JOIN payments p ON p.id = i.payment_id
+                      JOIN users owner ON owner.id = p.user_id
+                     WHERE i.invoice_number = ? AND owner.uuid = ?
+                ) AS is_owner
+                """,
+                (rs, rowNum) -> rs.getBoolean("is_owner"),
+                invoiceNumber, callerUuid)
+                .stream().findFirst().orElse(false);
+        return Boolean.TRUE.equals(ownsInvoice);
     }
 
     /** Shared "is this caller HR_MANAGER or ADMIN" check backing both {@link #canAccessPayslip}

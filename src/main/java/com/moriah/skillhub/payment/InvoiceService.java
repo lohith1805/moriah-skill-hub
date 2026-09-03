@@ -5,9 +5,11 @@ import com.lowagie.text.Paragraph;
 import com.lowagie.text.pdf.PdfWriter;
 import com.moriah.skillhub.common.audit.AuditLogService;
 import com.moriah.skillhub.common.storage.StorageService;
+import com.moriah.skillhub.payment.dto.InvoiceResponse;
 import com.moriah.skillhub.payment.entity.Invoice;
 import com.moriah.skillhub.payment.entity.InvoiceStatus;
 import com.moriah.skillhub.payment.entity.Payment;
+import com.moriah.skillhub.payment.entity.PaymentStatus;
 import com.moriah.skillhub.payment.repository.InvoiceRepository;
 import com.moriah.skillhub.payment.repository.PaymentRepository;
 import com.moriah.skillhub.subscription.entity.SubscriptionPlan;
@@ -15,10 +17,16 @@ import com.moriah.skillhub.subscription.repository.SubscriptionPlanRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayOutputStream;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Clears build-plan.md feature 07's stub: "InvoiceGenerationJob writes the PDF locally and logs.
@@ -83,6 +91,56 @@ public class InvoiceService {
         auditLogService.record(null, "INVOICE_ISSUED", "Invoice", invoice.getId(), InvoiceStatus.PENDING, InvoiceStatus.ISSUED);
 
         log.info("[invoice] rendered and uploaded {} to {}", invoice.getInvoiceNumber(), key);
+    }
+
+    private static final Duration PDF_LINK_TTL = Duration.ofMinutes(10);
+
+    /**
+     * The caller's billing history — every CAPTURED / REFUNDED payment they made, each paired
+     * with its invoice row if the async {@link InvoiceGenerationJob} has produced one yet. A
+     * payment with no invoice row (or one still {@code PENDING}) shows as {@code "PROCESSING"}
+     * with a null {@code pdfUrl}; once issued, {@code pdfUrl} is a fresh short-lived pre-signed
+     * GET. Read-only, no outbound call — {@code presignedGetUrl} signs locally.
+     */
+    @Transactional(readOnly = true)
+    public List<InvoiceResponse> listForUser(Long userId, String callerUuid) {
+        List<Payment> payments = paymentRepository.findByUserIdAndStatusInOrderByCreatedAtDesc(
+                userId, List.of(PaymentStatus.CAPTURED, PaymentStatus.REFUNDED));
+        if (payments.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, Invoice> invoiceByPaymentId = invoiceRepository
+                .findByPaymentIdIn(payments.stream().map(Payment::getId).toList())
+                .stream()
+                .collect(Collectors.toMap(i -> i.getPayment().getId(), Function.identity()));
+
+        Map<Long, SubscriptionPlan> planById = subscriptionPlanRepository
+                .findAllById(payments.stream().map(Payment::getPlanId).distinct().toList())
+                .stream()
+                .collect(Collectors.toMap(SubscriptionPlan::getId, Function.identity()));
+
+        return payments.stream().map(payment -> {
+            Invoice invoice = invoiceByPaymentId.get(payment.getId());
+            SubscriptionPlan plan = planById.get(payment.getPlanId());
+
+            String pdfUrl = null;
+            if (invoice != null && invoice.getPdfKey() != null) {
+                pdfUrl = storageService.presignedGetUrl(callerUuid, invoice.getPdfKey(), PDF_LINK_TTL).toString();
+            }
+
+            return new InvoiceResponse(
+                    invoice != null ? invoice.getInvoiceNumber() : null,
+                    plan != null ? plan.getCode() : null,
+                    plan != null ? plan.getName() : "Subscription",
+                    payment.getAmount(),
+                    payment.getCurrency(),
+                    payment.getStatus(),
+                    invoice != null ? invoice.getStatus().name() : "PROCESSING",
+                    payment.getCapturedAt(),
+                    pdfUrl,
+                    payment.getGatewayOrderId());
+        }).toList();
     }
 
     private byte[] renderPdf(Invoice invoice, Payment payment, String planName) {

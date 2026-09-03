@@ -11,12 +11,18 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
 public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     Optional<Payment> findByGatewayOrderId(String gatewayOrderId);
+
+    /** The caller's own billing history — {@code GET /api/v1/subscriptions/me/invoices}. Ordered
+     * newest first; the controller filters to CAPTURED + REFUNDED so an abandoned checkout
+     * ({@code CREATED}) never shows. */
+    List<Payment> findByUserIdAndStatusInOrderByCreatedAtDesc(Long userId, Collection<PaymentStatus> statuses);
 
     /** Refund webhooks (Razorpay's {@code refund.processed}, Stripe's {@code charge.refunded})
      * reference the gateway's payment/charge id, not the order/session id the checkout flow
