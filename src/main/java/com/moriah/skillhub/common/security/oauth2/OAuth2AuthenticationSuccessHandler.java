@@ -1,21 +1,14 @@
 package com.moriah.skillhub.common.security.oauth2;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.moriah.skillhub.auth.OAuth2Service;
 import com.moriah.skillhub.auth.dto.LoginResponse;
-import com.moriah.skillhub.common.dto.ApiResponse;
-import com.moriah.skillhub.common.dto.ErrorDetail;
 import com.moriah.skillhub.common.exception.BusinessException;
-import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ForbiddenOperationException;
 import com.moriah.skillhub.common.security.ClientIpResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.HttpStatusCode;
-import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.user.OAuth2User;
@@ -23,14 +16,23 @@ import org.springframework.security.web.authentication.AuthenticationSuccessHand
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
- * Replaces Spring Security's default redirect-based OAuth2 login success behaviour — build-plan.md
- * feature 05: "Issues the same JWT pair as password login," and `/architect feature 05` settled
- * on a JSON body over a redirect (never puts an access token in a URL). This is a servlet-{@link
- * jakarta.servlet.Filter}-level component, not a {@code @RestController} — an exception thrown
- * here never reaches {@code GlobalExceptionHandler} (that only wraps Spring MVC dispatch, which
- * this request never reaches), so the same envelope is written by hand here.
+ * Completes OAuth2 login, then <em>redirects the browser back to the SPA</em> with the login
+ * result in the URL fragment ({@code #accessToken=...}). OAuth2 is a full browser redirect chain,
+ * so the SPA never gets to read a JSON response body from this navigation — a redirect is the only
+ * thing that reaches it. The fragment (not the query string) keeps the token off the wire to any
+ * server, out of {@code Referer} headers, and out of access logs, so {@code /architect feature 05}'s
+ * "no access token in a URL query" rule still holds. The target URL is
+ * {@link OAuth2CookieProperties#frontendRedirectUri()}.
+ *
+ * <p>Servlet-{@link jakarta.servlet.Filter}-level component, not a {@code @RestController} — an
+ * exception here never reaches {@code GlobalExceptionHandler}, so failures are turned into a
+ * {@code #error=} redirect by hand.
  */
 @Component
 @RequiredArgsConstructor
@@ -39,7 +41,7 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
 
     private final OAuth2Service oAuth2Service;
     private final ClientIpResolver clientIpResolver;
-    private final ObjectMapper objectMapper;
+    private final OAuth2CookieProperties properties;
 
     @Override
     public void onAuthenticationSuccess(
@@ -54,18 +56,26 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
             LoginResponse loginResponse = oAuth2Service.handleOAuth2Login(
                     registrationId, oAuth2User, userAgent, ipAddress);
 
-            writeJson(response, HttpStatus.OK, ApiResponse.success(loginResponse));
+            Map<String, String> params = new LinkedHashMap<>();
+            if (loginResponse.twoFactorRequired()) {
+                params.put("twoFactorRequired", "true");
+                params.put("twoFactorSetupRequired", String.valueOf(loginResponse.twoFactorSetupRequired()));
+                params.put("challengeToken", loginResponse.challengeToken());
+            } else {
+                params.put("accessToken", loginResponse.tokens().accessToken());
+                params.put("refreshToken", loginResponse.tokens().refreshToken());
+                params.put("expiresIn", String.valueOf(loginResponse.tokens().expiresInSeconds()));
+            }
+            redirectWithFragment(response, params);
         } catch (BusinessException e) {
             log.warn("[oauth2/success] {}", e.getMessage());
-            writeJson(response, e.getErrorCode().status(),
-                    ApiResponse.failure(ErrorDetail.of(e.getErrorCode(), e.getMessage())));
+            redirectWithFragment(response, Map.of("error", e.getErrorCode().name()));
         } catch (ForbiddenOperationException e) {
             log.warn("[oauth2/success] {}", e.getMessage());
-            writeJson(response, e.getErrorCode().status(), ApiResponse.failure(ErrorDetail.of(e.getErrorCode())));
+            redirectWithFragment(response, Map.of("error", e.getErrorCode().name()));
         } catch (RuntimeException e) {
             log.error("[oauth2/success] unexpected error completing OAuth2 login", e);
-            writeJson(response, HttpStatus.INTERNAL_SERVER_ERROR,
-                    ApiResponse.failure(ErrorDetail.of(ErrorCode.INTERNAL_ERROR)));
+            redirectWithFragment(response, Map.of("error", "INTERNAL_ERROR"));
         }
     }
 
@@ -79,9 +89,17 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
                 "Expected OAuth2AuthenticationToken, got " + authentication.getClass());
     }
 
-    private void writeJson(HttpServletResponse response, HttpStatusCode status, ApiResponse<?> body) throws IOException {
-        response.setStatus(status.value());
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        response.getWriter().write(objectMapper.writeValueAsString(body));
+    private void redirectWithFragment(HttpServletResponse response, Map<String, String> params) throws IOException {
+        StringBuilder fragment = new StringBuilder();
+        params.forEach((k, v) -> {
+            if (v == null) return;
+            if (fragment.length() > 0) fragment.append('&');
+            fragment.append(urlEncode(k)).append('=').append(urlEncode(v));
+        });
+        response.sendRedirect(properties.frontendRedirectUri() + "#" + fragment);
+    }
+
+    private static String urlEncode(String s) {
+        return URLEncoder.encode(s, StandardCharsets.UTF_8);
     }
 }

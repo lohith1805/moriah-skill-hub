@@ -140,6 +140,11 @@ moriah:
       # How long HttpCookieOAuth2AuthorizationRequestRepository's cookie survives — the whole
       # authorize -> provider -> callback round trip should take seconds, not minutes.
       authorization-cookie-max-age-seconds: 180
+      # Where OAuth2AuthenticationSuccessHandler / FailureHandler send the browser after the
+      # provider round trip. The SPA reads the result from the URL *fragment* (never the query
+      # string, so tokens are not sent to any server or written to access logs). See
+      # frontend src/pages/auth/OAuthCallback.jsx.
+      frontend-redirect-uri: ${OAUTH2_FRONTEND_REDIRECT_URI:http://localhost:5173/auth/oauth/callback}
   jwt:
     secret: ${JWT_SECRET}
     key-id: ${JWT_KEY_ID:v1}
