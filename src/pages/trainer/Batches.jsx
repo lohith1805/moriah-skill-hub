@@ -19,6 +19,7 @@ import {
   updateStudentBatch,
   createStudent,
   getStudentsForBatch,
+  getPendingAllocations,
 } from "../../services/trainerService";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required, isEmail } from "../../utils/validators";
@@ -50,6 +51,7 @@ export default function TrainerBatches() {
   const [students, setStudents] = useState([]);
   const [studentsLoading, setStudentsLoading] = useState(false);
   const [studentSearch, setStudentSearch] = useState("");
+  const [pendingAllocs, setPendingAllocs] = useState([]);
 
   // Create Student Modal state
   const [addStudentOpen, setAddStudentOpen] = useState(false);
@@ -114,6 +116,9 @@ export default function TrainerBatches() {
     getAllStudents()
       .then(setStudents)
       .finally(() => setStudentsLoading(false));
+    getPendingAllocations()
+      .then(setPendingAllocs)
+      .catch(() => setPendingAllocs([]));
   };
 
   useEffect(() => {
@@ -301,6 +306,30 @@ export default function TrainerBatches() {
             </>
           ) : (
             <div>
+              {pendingAllocs.length > 0 && (
+                <div className="mb-5 rounded-lg border border-warning-200 bg-warning-50/60 p-4">
+                  <p className="text-sm font-semibold text-warning-700 mb-1">
+                    Assignment pending — {pendingAllocs.length} paid student{pendingAllocs.length > 1 ? "s" : ""} with no matching batch yet
+                  </p>
+                  <p className="text-xs text-ink-500 mb-3">
+                    They're placed automatically the moment you create a batch for their track. You can also add them to a batch by hand.
+                  </p>
+                  <Table
+                    data={pendingAllocs}
+                    columns={[
+                      { key: "name", header: "Student", render: (r) => (
+                        <div>
+                          <p className="font-semibold text-ink-900">{r.name}</p>
+                          <p className="text-xs text-ink-400">{r.email}</p>
+                        </div>
+                      )},
+                      { key: "track", header: "Track", render: (r) => <span className="text-sm text-ink-600">{r.track}</span> },
+                      { key: "plan", header: "Plan", render: (r) => <Badge tone="neutral">{r.plan}</Badge> },
+                      { key: "requestedAt", header: "Since", render: (r) => <span className="text-xs text-ink-500">{r.requestedAt}</span> },
+                    ]}
+                  />
+                </div>
+              )}
               <div className="flex flex-col sm:flex-row gap-3 mb-4">
                 <Input placeholder="Search students by name, email or batch…" value={studentSearch} onChange={(e) => setStudentSearch(e.target.value)} className="sm:max-w-md" />
               </div>

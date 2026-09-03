@@ -83,6 +83,23 @@ export async function getBatches() {
   return asRows(res).map(toFeBatch);
 }
 
+// GET /api/v1/batches/pending-allocations — students who paid for a batch plan
+// but have no matching batch yet. They're auto-placed the moment a batch for
+// their track is created; until then they show here as "assignment pending".
+export async function getPendingAllocations() {
+  const res = await apiClient.get("/batches/pending-allocations");
+  return asRows(res).map((p) => ({
+    uuid: p.studentUuid,
+    name: p.studentName,
+    email: p.studentEmail,
+    track: TRACK_CODE_TO_FE[p.trackCode] || p.trackCode,
+    trackCode: p.trackCode,
+    plan: p.planCode || "—",
+    reason: p.reason || "",
+    requestedAt: p.requestedAt ? String(p.requestedAt).slice(0, 10) : "",
+  }));
+}
+
 // POST /api/v1/batches — the caller becomes the batch PM.
 export async function createBatch(payload) {
   const body = {
