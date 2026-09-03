@@ -7,7 +7,7 @@ import Badge from "../../components/ui/Badge";
 import Table from "../../components/ui/Table";
 import Modal from "../../components/ui/Modal";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
-import { getPlans, subscribeToPlan, getMySubscription, getMyInvoices } from "../../services/studentService";
+import { getPlans, subscribeToPlan, getMySubscription, getMyInvoices, previewCheckout } from "../../services/studentService";
 import { useToast } from "../../context/ToastContext";
 import { CURRENCY } from "../../utils/constants";
 import { useAuth } from "../../context/AuthContext";
@@ -53,6 +53,9 @@ export default function StudentSubscription() {
   const [gateway, setGateway] = useState("Razorpay");
   const [trackCode, setTrackCode] = useState("FULL_STACK");
   const [invoiceList, setInvoiceList] = useState([]);
+  const [coupon, setCoupon] = useState("");
+  const [couponPreview, setCouponPreview] = useState(null); // { payableAmount, couponApplied, couponMessage }
+  const [couponBusy, setCouponBusy] = useState(false);
   const { notify } = useToast();
 
   const [mySub, setMySub] = useState(null);
@@ -75,11 +78,45 @@ export default function StudentSubscription() {
     });
   }, []);
 
+  // Reset the coupon whenever a different plan is picked (or the modal closes).
+  useEffect(() => {
+    setCoupon("");
+    setCouponPreview(null);
+    setCouponBusy(false);
+  }, [selected?.code]);
+
+  const planCodeForApi = () => selected?.backendCode || selected?.code;
+
+  const applyCoupon = async () => {
+    if (!selected) return;
+    const code = coupon.trim();
+    setCouponBusy(true);
+    try {
+      const res = await previewCheckout(planCodeForApi(), code || null);
+      setCouponPreview(res);
+      if (code && res.couponApplied) {
+        notify(`Coupon applied — you pay ${CURRENCY(res.payableAmount)}.`, { type: "success" });
+      } else if (code) {
+        notify(res.couponMessage || "That coupon code isn't valid.", { type: "error" });
+      }
+    } catch (err) {
+      notify(err.message || "Couldn't check that coupon. Try again.", { type: "error" });
+    } finally {
+      setCouponBusy(false);
+    }
+  };
+
+  const payableAmount = () =>
+    couponPreview?.couponApplied ? couponPreview.payableAmount : selected?.price ?? 0;
+
   const confirmUpgrade = async () => {
     if (!selected) return;
     setProcessing(true);
     try {
-      const checkout = await subscribeToPlan(selected.backendCode || selected.code, gateway, { trackCode });
+      const checkout = await subscribeToPlan(selected.backendCode || selected.code, gateway, {
+        trackCode,
+        couponCode: couponPreview?.couponApplied ? coupon.trim() : null,
+      });
 
       if (checkout.stripeCheckoutUrl) {
         window.location.href = checkout.stripeCheckoutUrl;
@@ -96,7 +133,7 @@ export default function StudentSubscription() {
       const rzp = new window.Razorpay({
         key: checkout.razorpayKeyId,
         order_id: checkout.razorpayOrderId,
-        amount: Math.round((checkout.amount || selected.price) * 100),
+        amount: Math.round((checkout.amount || payableAmount()) * 100),
         currency: checkout.currency || "INR",
         name: "Moriah Skill Hub",
         description: `${selected.name} plan`,
@@ -340,7 +377,7 @@ export default function StudentSubscription() {
         footer={
           <>
             <Button variant="secondary" onClick={() => setSelected(null)} disabled={processing}>Cancel</Button>
-            <Button icon={CreditCard} onClick={confirmUpgrade} loading={processing}>Pay {selected ? CURRENCY(selected.price) : ""}</Button>
+            <Button icon={CreditCard} onClick={confirmUpgrade} loading={processing}>Pay {selected ? CURRENCY(payableAmount()) : ""}</Button>
           </>
         }
       >
@@ -386,6 +423,36 @@ export default function StudentSubscription() {
                   </span>
                 </button>
               </div>
+            </div>
+
+            <div className="border-t border-border pt-4 text-left">
+              <p className="text-xs font-semibold text-ink-800 mb-2">Coupon code</p>
+              <div className="flex gap-2">
+                <input
+                  value={coupon}
+                  onChange={(e) => {
+                    setCoupon(e.target.value.toUpperCase());
+                    setCouponPreview(null);
+                  }}
+                  placeholder="Have a code?"
+                  className="flex-1 rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-primary-500 bg-white uppercase"
+                />
+                <Button
+                  variant="secondary"
+                  onClick={applyCoupon}
+                  loading={couponBusy}
+                  disabled={!coupon.trim() || couponBusy}
+                >
+                  Apply
+                </Button>
+              </div>
+              {couponPreview && coupon.trim() && (
+                <p className={`mt-2 text-xs ${couponPreview.couponApplied ? "text-success-700" : "text-error-600"}`}>
+                  {couponPreview.couponApplied
+                    ? `Coupon applied — ${CURRENCY(couponPreview.originalAmount ?? selected.price)} → ${CURRENCY(couponPreview.payableAmount)}`
+                    : couponPreview.couponMessage || "That coupon code isn't valid."}
+                </p>
+              )}
             </div>
 
             <div className="border-t border-border pt-4 text-left">

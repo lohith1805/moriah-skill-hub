@@ -422,6 +422,23 @@ export async function getMySubscription() {
 // backend responds 502 PAYMENT_GATEWAY_ERROR.
 // `feGateway` is "Razorpay" | "Stripe"; `feBackendCode` is a backend plan code
 // (STARTER / PROFESSIONAL / …) — the caller resolves it from the FE plan.
+// POST /api/v1/subscriptions/checkout/preview — "what would I pay for this plan
+// with this coupon?" Creates no order and reserves no coupon capacity. An invalid
+// coupon comes back as { couponApplied: false, couponMessage } rather than an error.
+export async function previewCheckout(backendPlanCode, couponCode) {
+  const res = await apiClient.post("/subscriptions/checkout/preview", {
+    planCode: backendPlanCode,
+    couponCode: couponCode || null,
+  });
+  return {
+    originalAmount: Number(res.originalAmount ?? 0),
+    payableAmount: Number(res.payableAmount ?? res.originalAmount ?? 0),
+    currency: res.currency || "INR",
+    couponApplied: !!res.couponApplied,
+    couponMessage: res.couponMessage || "",
+  };
+}
+
 export async function subscribeToPlan(backendPlanCode, feGateway = "Razorpay", { trackCode = "FULL_STACK", couponCode = null } = {}) {
   const res = await apiClient.post("/subscriptions/checkout", {
     planCode: backendPlanCode,
