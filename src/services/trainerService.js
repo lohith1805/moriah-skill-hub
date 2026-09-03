@@ -351,6 +351,49 @@ export async function getStudentsForBatch(batchId) {
   }));
 }
 
+// --- Standups + attendance -------------------------------------------
+
+const STANDUP_STATUS_TO_FE = { SCHEDULED: "Scheduled", FINALISED: "Finalised", CANCELLED: "Cancelled" };
+
+// GET /api/v1/standups?batchId=&date=YYYY-MM-DD
+export async function getStandups(batchId, date) {
+  const params = { batchId };
+  if (date) params.date = date;
+  const res = await apiClient.get("/standups", params);
+  return asRows(res).map((s) => ({
+    id: s.id,
+    batchId: s.batchId,
+    sprintId: s.sprintId ?? null,
+    scheduledAt: s.scheduledAt,
+    lateCutoffMinutes: s.lateCutoffMinutes ?? null,
+    notes: s.notes || "",
+    status: STANDUP_STATUS_TO_FE[s.status] || s.status,
+  }));
+}
+
+// POST /api/v1/standups
+export async function scheduleStandup({ batchId, sprintId, scheduledAt, lateCutoffMinutes = 15, notes }) {
+  const res = await apiClient.post("/standups", {
+    batchId: Number(batchId),
+    sprintId: sprintId ? Number(sprintId) : null,
+    scheduledAt: scheduledAt || new Date().toISOString(),
+    lateCutoffMinutes: Number(lateCutoffMinutes),
+    notes: notes || null,
+  });
+  return { id: res.id, ...res };
+}
+
+const FE_ATTENDANCE_TO_STATUS = { Present: "PRESENT", Late: "LATE", Absent: "ABSENT", Excused: "EXCUSED" };
+
+// POST /api/v1/standups/{id}/attendance — PM override of one student's status.
+export async function overrideAttendance(standupId, userUuid, feStatus, blockerNotes = "") {
+  return apiClient.post(`/standups/${standupId}/attendance`, {
+    userUuid,
+    status: FE_ATTENDANCE_TO_STATUS[feStatus] || feStatus,
+    blockerNotes: blockerNotes || null,
+  });
+}
+
 // GET /api/v1/reviews/queue — IN_REVIEW tasks awaiting the caller's review,
 // each enriched (best-effort) with its latest submission's PR / video links.
 export async function getReviewQueue() {

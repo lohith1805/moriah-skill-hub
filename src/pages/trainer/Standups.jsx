@@ -1,130 +1,155 @@
-import { useState } from "react";
-import { Check, X, Clock } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, X, Clock, CalendarPlus } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card, { CardHeader } from "../../components/ui/Card";
 import Table from "../../components/ui/Table";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import { Select } from "../../components/ui/FormField";
+import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import { useToast } from "../../context/ToastContext";
+import {
+  getBatches,
+  getStudentsForBatch,
+  getStandups,
+  scheduleStandup,
+  overrideAttendance,
+} from "../../services/trainerService";
 
-const ROSTER = [];
-const todayStr = () => new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+const todayIso = () => new Date().toISOString().slice(0, 10);
+const TONE = { Present: "success", Late: "warning", Absent: "error", Excused: "neutral" };
 
 export default function TrainerStandups() {
-  const [roster, setRoster] = useState(() => {
-    const rawList = localStorage.getItem("mORIAH_REGISTERED_USERS");
-    let students = [];
-    if (rawList) {
-      try {
-        const parsed = JSON.parse(rawList);
-        students = parsed.filter((u) => u.role === "student");
-      } catch (e) {
-        students = [];
-      }
-    }
-    
-    // Read today's check-ins from HR database logs
-    let todayLogs = [];
-    try {
-      const rawLogs = localStorage.getItem("msh_attendance_logs");
-      if (rawLogs) {
-        const parsed = JSON.parse(rawLogs);
-        const today = todayStr();
-        todayLogs = parsed.filter((l) => l.date === today);
-      }
-    } catch (e) {
-      console.warn("Failed to load today's attendance logs:", e);
-    }
-
-    const dynamicRoster = [];
-    students.forEach((s) => {
-      const checkin = todayLogs.find((l) => l.name.toLowerCase() === s.name.toLowerCase());
-      dynamicRoster.push({
-        id: s.id,
-        name: s.name,
-        status: checkin ? checkin.status : "Absent",
-        blocker: checkin ? checkin.notes : "No check-in yet",
-        checkIn: checkin ? checkin.checkIn || checkin.time : null,
-        checkOut: checkin && checkin.checkOut && checkin.checkOut !== "--" ? checkin.checkOut : null
-      });
-    });
-    return dynamicRoster;
-  });
   const { notify } = useToast();
+  const [batches, setBatches] = useState([]);
+  const [batchId, setBatchId] = useState("");
+  const [standup, setStandup] = useState(null);
+  const [roster, setRoster] = useState([]); // { userUuid, name, status, marked }
+  const [loading, setLoading] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
 
-  // Shared helper: create or update today's attendance log row for a
-  // student with whatever fields are passed in `patch`.
-  const upsertLog = (student, patch) => {
+  useEffect(() => {
+    getBatches()
+      .then((b) => {
+        setBatches(b);
+        if (b.length) setBatchId(String(b[0].id));
+      })
+      .catch((e) => notify(e.message || "Could not load batches.", { type: "error" }));
+  }, [notify]);
+
+  const load = (id) => {
+    if (!id) return;
+    setLoading(true);
+    Promise.all([getStandups(id, todayIso()), getStudentsForBatch(id)])
+      .then(([standups, students]) => {
+        const active = standups.find((s) => s.status !== "Cancelled") || null;
+        setStandup(active);
+        setRoster(
+          students
+            .filter((s) => s.status === "ACTIVE" || s.status === "ON_PIP")
+            .map((s) => ({ userUuid: s.userUuid, name: s.name, status: "Absent", marked: false }))
+        );
+      })
+      .catch((e) => notify(e.message || "Could not load the standup.", { type: "error" }))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    load(batchId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batchId]);
+
+  const schedule = async () => {
+    setScheduling(true);
     try {
-      const rawLogs = localStorage.getItem("msh_attendance_logs") || "[]";
-      const logs = JSON.parse(rawLogs);
-      const today = todayStr();
-      const idx = logs.findIndex((l) => l.date === today && l.name.toLowerCase() === student.name.toLowerCase());
-      if (idx > -1) {
-        logs[idx] = { ...logs[idx], ...patch };
-      } else {
-        logs.unshift({
-          id: `log-${Date.now()}`,
-          name: student.name,
-          role: "Student",
-          date: today,
-          checkIn: null,
-          checkOut: "--",
-          hours: 0,
-          deviceId: "BIO-GATE-01",
-          status: "Present",
-          notes: "Manually logged by Trainer",
-          loggedBy: "trainer",
-          ...patch
-        });
-      }
-      localStorage.setItem("msh_attendance_logs", JSON.stringify(logs));
-    } catch (e) {
-      console.warn("Failed to save manual log:", e);
+      await scheduleStandup({ batchId, scheduledAt: new Date().toISOString(), lateCutoffMinutes: 15 });
+      notify("Today's standup scheduled.", { type: "success" });
+      load(batchId);
+    } catch (err) {
+      notify(err.message || "Could not schedule the standup.", { type: "error" });
+    } finally {
+      setScheduling(false);
     }
   };
 
-  const mark = (id, status) => {
-    setRoster((prev) => {
-      const next = prev.map((r) => (r.id === id ? { ...r, status } : r));
-      const student = prev.find((r) => r.id === id);
-      if (student) upsertLog(student, { status, checkIn: student.checkIn || new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) });
-      return next;
-    });
-    notify(`Attendance marked as ${status}.`, { type: "success" });
+  const mark = async (userUuid, feStatus) => {
+    if (!standup) return;
+    setRoster((prev) => prev.map((r) => (r.userUuid === userUuid ? { ...r, status: feStatus } : r)));
+    try {
+      await overrideAttendance(standup.id, userUuid, feStatus);
+      setRoster((prev) => prev.map((r) => (r.userUuid === userUuid ? { ...r, marked: true } : r)));
+      notify(`Marked ${feStatus}.`, { type: "success" });
+    } catch (err) {
+      notify(err.message || "Could not record attendance.", { type: "error" });
+    }
   };
+
+  const batchName = batches.find((b) => String(b.id) === String(batchId))?.name || "";
 
   return (
     <div>
       <PageHeader
         title="Daily Standups & Attendance"
-        subtitle="Log blockers and mark attendance for today's standup"
+        subtitle="Mark attendance for today's standup"
         breadcrumbs={[{ label: "Dashboard", to: "/trainer/dashboard" }, { label: "Standups" }]}
-        action={<Select options={[{ value: "b1", label: "FS-Batch-14" }, { value: "b2", label: "DA-Batch-07" }]} value="b1" onChange={() => {}} className="w-48" />}
+        action={
+          <Select
+            className="w-56"
+            value={batchId}
+            onChange={(e) => setBatchId(e.target.value)}
+            options={batches.map((b) => ({ value: String(b.id), label: b.name }))}
+            placeholder={batches.length ? "Select a batch" : "No batches"}
+          />
+        }
       />
 
       <Card>
-        <CardHeader title="Today's Standup — FS-Batch-14" subtitle={new Date().toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "long" })} />
-        <Table
-          data={roster}
-          columns={[
-            { key: "name", header: "Student" },
-            { key: "blocker", header: "Blocker Notes" },
-            { key: "checkIn", header: "Clock In", className: "font-mono text-xs", render: (r) => r.checkIn || "--" },
-            { key: "checkOut", header: "Clock Out", className: "font-mono text-xs", render: (r) => r.checkOut || "--" },
-            { key: "status", header: "Status", render: (r) => (
-              <Badge tone={r.status === "Present" ? "success" : r.status === "Late" ? "warning" : "error"}>{r.status}</Badge>
-            ) },
-            { key: "markAttendance", header: "Mark Attendance", render: (r) => (
-              <div className="flex items-center gap-1.5">
-                <Button size="sm" variant={r.status === "Present" ? "primary" : "secondary"} icon={Check} onClick={() => mark(r.id, "Present")} />
-                <Button size="sm" variant={r.status === "Late" ? "primary" : "secondary"} icon={Clock} onClick={() => mark(r.id, "Late")} />
-                <Button size="sm" variant={r.status === "Absent" ? "danger" : "secondary"} icon={X} onClick={() => mark(r.id, "Absent")} />
-              </div>
-            ) },
-          ]}
+        <CardHeader
+          title={`Today's Standup — ${batchName || "—"}`}
+          subtitle={new Date().toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "long" })}
         />
+
+        {loading ? (
+          <div className="flex justify-center py-16"><LoadingSpinner label="Loading…" /></div>
+        ) : !standup ? (
+          <div className="py-12 flex flex-col items-center text-center gap-3">
+            <p className="text-sm text-ink-500">No standup scheduled for today in this batch.</p>
+            <Button icon={CalendarPlus} loading={scheduling} onClick={schedule} disabled={!batchId}>
+              Schedule today's standup
+            </Button>
+          </div>
+        ) : (
+          <Table
+            data={roster}
+            emptyTitle="No active students in this batch"
+            columns={[
+              { key: "name", header: "Student", className: "text-left font-medium text-ink-900" },
+              {
+                key: "status",
+                header: "Status",
+                className: "text-left",
+                render: (r) => (
+                  <span className="flex items-center gap-2">
+                    <Badge tone={TONE[r.status] || "neutral"}>{r.status}</Badge>
+                    {r.marked && <Check size={13} className="text-success-600" />}
+                  </span>
+                ),
+              },
+              {
+                key: "mark",
+                header: "Mark Attendance",
+                className: "text-right",
+                render: (r) => (
+                  <div className="flex items-center gap-1.5 justify-end">
+                    <Button size="sm" variant={r.status === "Present" ? "primary" : "secondary"} icon={Check} onClick={() => mark(r.userUuid, "Present")} />
+                    <Button size="sm" variant={r.status === "Late" ? "primary" : "secondary"} icon={Clock} onClick={() => mark(r.userUuid, "Late")} />
+                    <Button size="sm" variant={r.status === "Absent" ? "danger" : "secondary"} icon={X} onClick={() => mark(r.userUuid, "Absent")} />
+                  </div>
+                ),
+              },
+            ]}
+          />
+        )}
       </Card>
     </div>
   );
