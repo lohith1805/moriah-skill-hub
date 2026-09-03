@@ -11,6 +11,7 @@ import Button from "../../components/ui/Button";
 import { Input, Select } from "../../components/ui/FormField";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import { getAuditLogs } from "../../services/adminService";
+import { readLocalAuditLogs } from "../../utils/auditLog";
 import { formatDateTime } from "../../utils/formatters";
 import { useToast } from "../../context/ToastContext";
 
@@ -21,6 +22,7 @@ const CATEGORIES = [
   { value: "FINANCIAL_TXN", label: "Financial & Gateway Transactions" },
   { value: "GRADE_CHANGE", label: "Academic Grade Changes" },
   { value: "DOCUMENT_GEN", label: "Document & Offer Issuances" },
+  { value: "PIP_STATUS_CHANGE", label: "PIP Status Alterations" },
 ];
 
 export default function AdminAuditLogs() {
@@ -32,17 +34,27 @@ export default function AdminAuditLogs() {
   const { notify } = useToast();
 
   useEffect(() => {
-    getAuditLogs().then((l) => {
-      setLogs(l);
-      setLoading(false);
-    });
+    // Server trail (GET /api/v1/admin/audit) is authoritative; the client-side
+    // trail (utils/auditLog.js) adds browser-only signals. Merge, newest first.
+    getAuditLogs()
+      .then((server) => server)
+      .catch(() => [])
+      .then((server) => {
+        const merged = [...server, ...readLocalAuditLogs()].sort(
+          (a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0)
+        );
+        setLogs(merged);
+        setLoading(false);
+      });
   }, []);
 
   const filteredLogs = logs.filter((l) => {
+    const q = search.toLowerCase();
     const matchSearch =
-      l.action.toLowerCase().includes(search.toLowerCase()) ||
-      l.actor.toLowerCase().includes(search.toLowerCase()) ||
-      l.target.toLowerCase().includes(search.toLowerCase());
+      !q ||
+      (l.action || "").toLowerCase().includes(q) ||
+      (l.actor || "").toLowerCase().includes(q) ||
+      (l.target || "").toLowerCase().includes(q);
     const matchCat = !categoryFilter || l.category === categoryFilter;
     const matchSev = !severityFilter || l.severity === severityFilter;
     return matchSearch && matchCat && matchSev;
@@ -146,7 +158,12 @@ export default function AdminAuditLogs() {
               className: "text-left text-xs",
               render: (r) => (
                 <div>
-                  <p className="font-medium text-ink-800">{r.actor}</p>
+                  <p className="font-medium text-ink-800 flex items-center gap-1.5">
+                    {r.actor}
+                    {r.source === "local" && (
+                      <span className="text-[9px] uppercase tracking-wide bg-cream-100 text-ink-500 border border-border rounded px-1 py-px">client</span>
+                    )}
+                  </p>
                   {r.ip && <p className="text-[10px] font-mono text-ink-400">{r.ip}</p>}
                 </div>
               )

@@ -19,6 +19,7 @@ import {
   FE_ROLE_TO_BACKEND,
   PLAN_CODE_TO_FE,
 } from "../utils/constants";
+import { logAudit, AUDIT_CATEGORIES } from "../utils/auditLog";
 
 // ---- metrics ---------------------------------------------------------
 
@@ -94,12 +95,24 @@ export async function updateUserStatus(uuid, status) {
       String(status).toLowerCase()
     ] || status;
   const updated = await apiClient.put(`/admin/users/${uuid}/status`, { status: backend });
+  logAudit({
+    category: AUDIT_CATEGORIES.ROLE_PERMISSION_CHANGE,
+    severity: backend === "ACTIVE" ? "Info" : "Warning",
+    action: `User status changed to ${backend}`,
+    target: uuid,
+  });
   return toFeUserRow(updated);
 }
 
 export async function updateUserRoles(uuid, feRoles) {
   const roles = (feRoles || []).map((r) => FE_ROLE_TO_BACKEND[r] || r);
-  return toFeUserRow(await apiClient.put(`/admin/users/${uuid}/roles`, { roles }));
+  const updated = toFeUserRow(await apiClient.put(`/admin/users/${uuid}/roles`, { roles }));
+  logAudit({
+    category: AUDIT_CATEGORIES.ROLE_PERMISSION_CHANGE,
+    action: `User roles set to [${roles.join(", ")}]`,
+    target: uuid,
+  });
+  return updated;
 }
 
 // B1.17 — profile fields only (name / phone / github / linkedin).
@@ -188,16 +201,54 @@ export async function getTransactionSummary() {
 }
 
 export async function refundTransaction(gatewayOrderId, reason) {
-  return toFeTransaction(
+  const out = toFeTransaction(
     await apiClient.post(`/admin/payments/${gatewayOrderId}/refund`, reason ? { reason } : undefined)
   );
+  logAudit({
+    category: AUDIT_CATEGORIES.FINANCIAL_TXN,
+    severity: "Warning",
+    action: `Refund issued${reason ? ` — ${reason}` : ""}`,
+    target: gatewayOrderId,
+  });
+  return out;
 }
 
 // ---- audit --------------------------------------------------------
 
+// The backend has no "category" or "severity" — bucket its action codes into
+// the same six categories the client-side trail (utils/auditLog.js) uses so the
+// admin page can filter both sources uniformly.
+function categoryForAuditAction(action = "") {
+  const a = String(action).toUpperCase();
+  if (/LOGIN|LOGOUT|PASSWORD_RESET|REFRESH_TOKEN|STAFF_INVITE/.test(a)) return "SECURITY_LOGIN";
+  if (/USER_ROLES|USER_STATUS|STAFF_INVITED|PORTAL_USER_PROVISIONED|REGISTRATION_(APPROVED|REJECTED)/.test(a))
+    return "ROLE_PERMISSION_CHANGE";
+  if (/PAYMENT|REFUND|COUPON|PAYROLL|INVOICE/.test(a)) return "FINANCIAL_TXN";
+  if (/GRADUAT|CERTIFICATE|QUIZ|CODE_REVIEW|GRADE/.test(a)) return "GRADE_CHANGE";
+  if (/PIP_/.test(a)) return "PIP_STATUS_CHANGE";
+  if (/LETTER|DOCUMENT|REQUIREMENT_DOCUMENT/.test(a)) return "DOCUMENT_GEN";
+  return "";
+}
+
+// Backend AuditLogResponse -> the flat row shape /admin/audit-logs renders.
+function toFeAuditRow(r) {
+  return {
+    id: r.id,
+    timestamp: r.createdAt,
+    category: categoryForAuditAction(r.action),
+    severity: "Info",
+    actor: r.userUuid || "System",
+    action: (r.action || "").replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()),
+    target: r.entityUuid || (r.entityType ? `${r.entityType}#${r.entityId ?? "?"}` : "—"),
+    ip: r.ipAddress || "—",
+    source: "server",
+  };
+}
+
 export async function getAuditLogs({ page = 0, size = 50, action, entityType, userUuid } = {}) {
   const res = await apiClient.get("/admin/audit", { page, size, action, entityType, userUuid });
-  return res && res.content ? res.content : [];
+  const rows = res && res.content ? res.content : [];
+  return rows.map(toFeAuditRow);
 }
 
 // ---- exports -----------------------------------------------------

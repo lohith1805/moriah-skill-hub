@@ -12,6 +12,7 @@ import {
   FE_ROLE_TO_BACKEND,
   ACCOUNT_STATUS,
 } from "../utils/constants";
+import { logAudit, AUDIT_CATEGORIES } from "../utils/auditLog";
 
 const USER_KEY = "msh_user";
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api/v1";
@@ -135,11 +136,28 @@ export async function updateProfile(patch = {}) {
 // Returns either { user } (logged in) or { twoFactorRequired, twoFactorSetupRequired,
 // challengeToken } (caller must complete 2FA before a session exists).
 export async function login({ email, identifier, password }) {
-  const res = await apiClient.post("/auth/login", {
-    email: (email || identifier || "").trim(),
-    password,
+  const who = (email || identifier || "").trim();
+  let res;
+  try {
+    res = await apiClient.post("/auth/login", { email: who, password });
+  } catch (err) {
+    logAudit({
+      category: AUDIT_CATEGORIES.SECURITY_LOGIN,
+      severity: "Warning",
+      actor: who || "unknown",
+      action: "Login failed",
+      target: who || "—",
+    });
+    throw err;
+  }
+  const result = await finishAuth(res);
+  logAudit({
+    category: AUDIT_CATEGORIES.SECURITY_LOGIN,
+    actor: result.user?.name || who,
+    action: result.twoFactorRequired ? "Login challenge issued — 2FA required" : "Login succeeded",
+    target: who || "—",
   });
-  return finishAuth(res);
+  return result;
 }
 
 export async function acceptInvite(token, password) {
@@ -163,10 +181,28 @@ async function finishAuth(loginResponse) {
 
 // Complete a 2FA-gated login: exchange the challenge token + TOTP code for a session.
 export async function verifyTwoFactor({ challengeToken, totpCode }) {
-  const res = await apiClient.post("/auth/2fa/verify", { challengeToken, totpCode });
+  let res;
+  try {
+    res = await apiClient.post("/auth/2fa/verify", { challengeToken, totpCode });
+  } catch (err) {
+    logAudit({
+      category: AUDIT_CATEGORIES.SECURITY_LOGIN,
+      severity: "Warning",
+      action: "2FA verification failed — invalid code",
+      target: "self",
+    });
+    throw err;
+  }
   const tokens = res && res.tokens ? res.tokens : res;
   tokenStore.set(tokens);
-  return getMe();
+  const user = await getMe();
+  logAudit({
+    category: AUDIT_CATEGORIES.SECURITY_LOGIN,
+    actor: user?.name || user?.email,
+    action: "2FA verification succeeded",
+    target: user?.email || "self",
+  });
+  return user;
 }
 
 // Start mandatory-2FA setup (LoginResponse.twoFactorSetupRequired). Returns
@@ -207,6 +243,7 @@ export async function logout() {
   } catch {
     /* best effort — clear locally regardless */
   }
+  logAudit({ category: AUDIT_CATEGORIES.SECURITY_LOGIN, action: "User logged out" });
   clearSession();
 }
 

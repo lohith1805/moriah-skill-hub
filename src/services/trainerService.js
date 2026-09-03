@@ -1,4 +1,5 @@
 import { mockRequest, apiClient } from "./apiClient";
+import { logAudit, AUDIT_CATEGORIES } from "../utils/auditLog";
 
 // ---------------------------------------------------------------------------
 // WIRED to the backend (this session): batch list + create (/api/v1/batches),
@@ -492,10 +493,17 @@ export async function removePipCase() {
 export async function updatePipCaseStatus(id, newStatus, _repeatBatchName = "", reviewNotes = "") {
   const outcome = FE_PIP_ACTION_TO_OUTCOME[newStatus];
   if (!outcome) throw new Error(`Unsupported PIP outcome: ${newStatus}`);
-  return apiClient.post(`/pip/${id}/review`, {
+  const res = await apiClient.post(`/pip/${id}/review`, {
     outcome,
     reviewNotes: reviewNotes || `Day-15 review — outcome ${outcome}.`,
   });
+  logAudit({
+    category: AUDIT_CATEGORIES.PIP_STATUS_CHANGE,
+    severity: outcome === "TERMINATED" ? "Critical" : outcome === "REASSIGNED" ? "Warning" : "Info",
+    action: `PIP day-15 review — outcome ${outcome}`,
+    target: `pip#${id}`,
+  });
+  return res;
 }
 
 export async function completePipMilestone(pipId, milestoneId) {
@@ -509,11 +517,23 @@ export async function completePipMilestone(pipId, milestoneId) {
 // PM-visible "students in a batch" endpoint yet (same Part B gap that blocks
 // task assignment). Once that lands, switch the page to these two calls.
 export async function graduateStudent(batchId, userUuid) {
-  return apiClient.post(`/batches/${batchId}/students/${userUuid}/graduate`, {});
+  const res = await apiClient.post(`/batches/${batchId}/students/${userUuid}/graduate`, {});
+  logAudit({
+    category: AUDIT_CATEGORIES.GRADE_CHANGE,
+    action: `Student graduated from batch ${batchId}`,
+    target: userUuid,
+  });
+  return res;
 }
 
 export async function issueCertificate(batchId, userUuid, certificateType = "COMPLETION") {
-  return apiClient.post("/certificates/issue", { batchId, userUuid, certificateType });
+  const res = await apiClient.post("/certificates/issue", { batchId, userUuid, certificateType });
+  logAudit({
+    category: AUDIT_CATEGORIES.DOCUMENT_GEN,
+    action: `Certificate issued (${certificateType})`,
+    target: userUuid,
+  });
+  return res;
 }
 
 // Approving graduation now actually issues a certificate — writes into the
