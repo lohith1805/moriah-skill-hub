@@ -1,5 +1,5 @@
 import { mockRequest, apiClient } from "./apiClient";
-import { CLIENT_PROJECTS, TALENT_POOL, REQUIREMENT_DOCS } from "./mockData";
+import { CLIENT_PROJECTS, REQUIREMENT_DOCS } from "./mockData";
 import { getPersistedUser } from "./authService";
 
 // Converts an uploaded File to a base64 data URL so it can be persisted in

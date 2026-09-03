@@ -1,5 +1,5 @@
 import { mockRequest, apiClient } from "./apiClient";
-import { TASKS, PIP_RECORDS, CERTIFICATES, BATCHES, SPRINTS } from "./mockData";
+import { TASKS, BATCHES } from "./mockData";
 import { SUBSCRIPTION_PLANS, PLAN_CODE_TO_FE } from "../utils/constants";
 import { getPersistedUser } from "./authService";
 import { evaluateStudentAutoPip } from "./pipEngine";

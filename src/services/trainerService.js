@@ -1,6 +1,4 @@
 import { mockRequest, apiClient } from "./apiClient";
-import { BATCHES, SPRINTS, TASKS, PIP_RECORDS } from "./mockData";
-import { runPipAutoCheckForAll } from "./pipEngine";
 
 // ---------------------------------------------------------------------------
 // WIRED to the backend (this session): batch list + create (/api/v1/batches),
@@ -43,91 +41,6 @@ function toFeBatch(b) {
     status: b.status === "ACTIVE" ? "Active" : b.status === "PLANNED" ? "Onboarding" : humanize(b.status),
     backendStatus: b.status,
   };
-}
-
-// TASKS/SPRINTS imported above are only a SNAPSHOT taken when this module
-// first loaded. Several writers (createTask, reviewSubmission, createSprint,
-// the Student portal's task actions, etc.) persist their changes straight to
-// localStorage without mutating that in-memory snapshot — so anything that
-// read TASKS/SPRINTS directly (instead of re-reading localStorage) kept
-// showing stale/empty data after a task was completed or a sprint was added,
-// even though Attendance and other localStorage-backed views updated fine.
-// getBatches/getAnalytics used to do exactly that, which is why Performance
-// Analytics could sit on "No completed sprint tasks yet" / "No assessments
-// submitted yet" forever even after a trainer approved a submission. These
-// two helpers are now the single source of truth: always re-read from
-// localStorage, falling back to the initial snapshot only if nothing is
-// stored yet (fresh install) or the stored value is corrupt.
-function getStoredTasks() {
-  try {
-    const raw = localStorage.getItem("msh_sprint_tasks");
-    if (raw) return JSON.parse(raw);
-  } catch (e) {}
-  return TASKS;
-}
-
-function getStoredSprints() {
-  try {
-    const raw = localStorage.getItem("msh_sprints");
-    if (raw) return JSON.parse(raw);
-  } catch (e) {}
-  return SPRINTS;
-}
-
-// Shared by getAnalytics + getPipCases: every registered student (minus the
-// seeded demo account so a fresh install doesn't show a phantom row) plus
-// anyone who already has tasks/attempts under their name, mapped to their
-// batch — this is the roster the auto-PIP rule engine checks on every load.
-function getStudentRosterWithBatch(attempts) {
-  let roster = {};
-  try {
-    const raw = localStorage.getItem("mORIAH_REGISTERED_USERS");
-    const users = raw ? JSON.parse(raw) : [];
-    users
-      .filter((u) => u.role === "student" && u.email !== "ananya.student@moriah.io")
-      .forEach((u) => { roster[u.name] = u.batch || ""; });
-  } catch (e) {
-    roster = {};
-  }
-  getStoredTasks().forEach((t) => { if (t.assignee && !(t.assignee in roster)) roster[t.assignee] = ""; });
-  (attempts || []).forEach((a) => { if (a.studentName && !(a.studentName in roster)) roster[a.studentName] = ""; });
-  return roster;
-}
-
-function getStoredAttempts() {
-  try {
-    const raw = localStorage.getItem("msh_assessment_attempts");
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    return [];
-  }
-}
-
-// Batch "health" is derived, never stored — it's recomputed on every load
-// from that batch's REAL signals (its students' task completion + quiz
-// average), then nudged down per active PIP case in the batch.
-//
-// Returns null (NOT 0) when there is no signal yet — e.g. a batch that
-// already has enrolled students but no sprints/tasks/quiz attempts created
-// for it yet. That's "no activity to measure", not "0% healthy" — treating
-// it as 0 would paint a batch that just hasn't started work as red/failing,
-// which is exactly the bug: a batch with a real student was showing 0
-// purely because no sprint/task/quiz data existed for it yet, not because
-// anyone actually performed badly. Callers (Batches table, PM Dashboard)
-// render null as "No activity yet" instead of a 0% bar.
-function computeBatchHealth(tasksForBatch, attemptsForBatch, activePipCount) {
-  const signals = [];
-  if (tasksForBatch.length) {
-    const completion = (tasksForBatch.filter((t) => t.status === "Completed").length / tasksForBatch.length) * 100;
-    signals.push(completion);
-  }
-  if (attemptsForBatch.length) {
-    const quizAvg = attemptsForBatch.reduce((sum, a) => sum + a.score, 0) / attemptsForBatch.length;
-    signals.push(quizAvg);
-  }
-  if (!signals.length) return null;
-  const base = signals.reduce((a, b) => a + b, 0) / signals.length;
-  return Math.max(0, Math.round(base) - activePipCount * 10);
 }
 
 const DEV_PROJECTS_KEY = "msh_developer_projects";
@@ -458,33 +371,6 @@ export async function reviewSubmission(taskId, { submissionId, score, decision, 
       .map((c) => ({ filePath: c.file || c.filePath || "unknown", line: c.line || 1, comment: c.comment })),
   };
   return apiClient.post("/reviews", body);
-}
-
-// legacy localStorage review path, kept only for reference — no longer called.
-async function reviewSubmissionMock(taskId, { score, decision, comment, inlineComments = [] }) {
-  let allTasks = TASKS;
-  try {
-    const raw = localStorage.getItem("msh_sprint_tasks");
-    if (raw) allTasks = JSON.parse(raw);
-  } catch (e) {
-    allTasks = TASKS;
-  }
-
-  const idx = allTasks.findIndex((t) => t.id === taskId);
-  if (idx > -1) {
-    allTasks[idx] = {
-      ...allTasks[idx],
-      status: decision === "Approved" ? "Completed" : "In Progress",
-      reviewScore: score,
-      reviewComment: comment,
-      reviewDecision: decision,
-      reviewedAt: new Date().toISOString(),
-      inlineComments,
-    };
-    localStorage.setItem("msh_sprint_tasks", JSON.stringify(allTasks));
-  }
-  await mockRequest(null, { delay: 700 });
-  return allTasks[idx];
 }
 
 // Analytics is fully derived from real records — real Sprints/Tasks for
