@@ -131,7 +131,7 @@ admin services. `npm install` done (`node_modules` gitignored). **Every commit v
   `getCoupons`/`createCoupon`/`updateCoupon`/`deleteCoupon` → `/admin/coupons` (B1.12).
   Backend enum codes translated; `PageResponse.content` unwrapped.
 
-### FRONTEND — Part A integration status (branch `master`, HEAD `a5a4582`)
+### FRONTEND — Part A integration status (branch `master`, HEAD `fe7fb5d`)
 
 `npm run build` green after every commit (2796 modules, Node v24). **Nothing browser-tested yet.**
 Commit trail (…`fd63107` student resume+profile) → **BE `04368c0` `GET /batches/{id}/students`
@@ -195,8 +195,11 @@ and now-wired: PM task assignment, `trainer/Graduation.jsx`, `trainer/Standups.j
   client-side). Wiring it = a rewrite that drops the runner for server-side grading + a plain code
   textarea (CODE questions land `PENDING_MANUAL_GRADING`). Product call: keep the runner as a
   practice aid, or go fully server-graded? Not started.
-- **No `GET /api/v1/hr/leaves`** (LeaveController is POST + PUT decision only) → `hr/AttendanceLeave.jsx`
-  + `ApplyLeaveWidget` stay mock. Needs a list endpoint (same shape as the batch roster just built).
+- ~~`GET /api/v1/hr/leaves`~~ **DONE** (BE `7758f89`): isAuthenticated; employee sees own,
+  HR/ADMIN see all (status/userUuid filters). `LeaveRequestResponse` gained `userFullName` +
+  `createdAt`. `hrService` leave fns wired; `hr/AttendanceLeave.jsx` Leave-Approvals tab + the
+  `ApplyLeaveWidget` are LIVE (FE `fe7fb5d`). The page's Attendance-ledger + biometric-checkin
+  tabs stay mock — still no HR staff-attendance endpoint.
 - **No `GET /api/v1/hr/documents`** list → `hr/Documents.jsx` KYC list can't load. (Letters COULD
   wire via `getEmployees()` uuid → `POST /hr/letters/{type}`, but the page is 1193 lines fused
   with the placement pipeline — needs a dedicated rebuild.)
@@ -220,7 +223,7 @@ drop the dead Register plan/payment handlers.
 
 **Recommended Part B round 2, smallest first:**
 1. ~~`GET /api/v1/batches/{id}/students`~~ **DONE** (`04368c0`).
-2. `GET /api/v1/hr/leaves` (+ status/employeeId filters) — mirrors the batch-roster pattern.
+2. ~~`GET /api/v1/hr/leaves`~~ **DONE** (`7758f89`).
 3. `POST /api/v1/subscriptions/checkout` surfaced on SubscriptionController (or document that the
    FE calls the payment module directly).
 4. `GET /api/v1/hr/documents` list.
@@ -279,5 +282,5 @@ pick from:
    `mockData.js`/`pipEngine.js`/`placementPipeline.js`, strip dead trainerService helpers, drop
    Register's dead plan/payment code.
 4. Refresh `docs/integrated-testing-flow.md` for everything wired after Flow L.
-Frontend HEAD `a5a4582`. Backend code HEAD `04368c0` (`GET /batches/{id}/students`).
+Frontend HEAD `fe7fb5d`. Backend code HEAD `7758f89` (`GET /hr/leaves`).
 `README.md` still has the user's uncommitted Razorpay-test-key edit — never `git add -A`.
