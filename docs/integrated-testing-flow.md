@@ -94,14 +94,19 @@ backend with no CORS setup. To point at a deployed backend instead, set
 | Client | `/client/talent-pool` (candidate list + "recruit") | ✅ wired (list + request) | `/api/v1/talent-pool`, `/api/v1/recruitment-requests` |
 | HR | `/hr/onboarding` | ✅ wired | `/api/v1/hr/onboardings**`, `/hr/employees` |
 | HR | `/hr/exit` (Exit + Disciplinary tabs) | ✅ wired | `/api/v1/hr/exits**`, `/hr/disciplinary**`, `/hr/employees` |
+| Student | `/student/learning` (video lessons + quiz) | ✅ wired | `/api/v1/lessons**` (+ `/quiz`, `/progress`, `/quiz/submit`) |
+| Student | `/student/certificates` | ✅ wired | `GET /api/v1/certificates/me` |
+| Student | `/student/pip-status` | ✅ wired | `GET /api/v1/pip/me` |
+| Student | `/student/subscription` (plan list only) | ✅ partial | `GET /api/v1/plans`, `GET /api/v1/subscriptions/me` (checkout still mock) |
+| Trainer | `/trainer/batches` (list + create) | ✅ wired | `GET`/`POST /api/v1/batches` |
 | — | **everything below is still localStorage mock** | ❌ | — |
 | Lead-gen | `/leads/pipeline`, `/leads/targets`, campaign "Send" helper | ❌ mock | `/leads` has no per-lead detail / activity list / delete yet |
 | BA | `/ba/documents`, `/ba/resource-planning`, `/ba/client-review` | ❌ mock | doc API is text-only (no file upload); no resource-plan endpoint |
 | Client | `/client/talent-pool` pipeline (shortlist→offer→sign→placed), `/client/projects`, `/client/demos` | ❌ mock | no backend for the placement state machine |
 | HR | `/hr/attendance`, `/hr/payroll`, `/hr/documents` (letters), Exit page's **PIP tab** | ❌ mock | different backend shapes / no endpoint yet |
 | Developer | `/developer/projects`, `/developer/assessments` (publish), bug challenges | ❌ mock | project publish + in-browser bug runner unmigrated |
-| Student | `/student/*` (tasks, sprint board, subscription, interviews, lessons view) | ❌ mock | studentService not migrated yet |
-| Trainer | `/trainer/*` | ❌ mock | trainerService not migrated yet |
+| Student | `/student/tasks`, `/student/submissions`, `/student/assessments`, `/student/interviews` (placement), `/student/projects` | ❌ mock | no "my tasks across sprints" endpoint; assessments = dev in-browser runner |
+| Trainer | `/trainer/sprints`, `/trainer/sprint-planning`, `/trainer/code-review`, `/trainer/analytics`, `/trainer/pip-management`, `/trainer/graduation` | ❌ mock | interlocked sprint↔task rewrite + name→uuid remapping still pending |
 
 > If a screen is in the ❌ half, its data lives in `localStorage` keys like `msh_*` and never
 > reaches the backend. Clearing site data resets it.
@@ -352,7 +357,66 @@ the backend `/api/v1/pip`. Ignore it for integrated testing.
 
 ---
 
-## 12 · Regression checklist (fast pass after any FE/BE change)
+## 12 · Flow J — Student learning: video lessons + quiz (`student1@moriah.test`)
+
+Prereq: as `dev@` create + publish a lesson with ≥2 quiz questions (Flow D2).
+
+`/student/learning`.
+
+**J1 · Lesson list.** `GET /api/v1/lessons?size=100` on load → cards for published lessons; the
+progress bar counts lessons whose quiz you've passed.
+
+**J2 · Open a lesson.** Click a card → `GET /api/v1/lessons/{id}` + `GET /api/v1/lessons/{id}/quiz`
+in parallel. After ~4s the player fires `POST /api/v1/lessons/{id}/progress`
+`{watchedSeconds, completed:false}` → the "Watched" badge appears.
+- Verify: the quiz panel shows the question count; the questions carry **no** answer key.
+
+**J3 · Take the quiz.** **Take Quiz** → answer each question → **Submit** →
+`POST /api/v1/lessons/{id}/quiz/submit` `{answers:[optionIndex,…]}` (positional, in quiz order).
+- Verify: the results screen shows the server's `score/total` and pass/fail. On ≥60% the lesson's
+  progress flips to COMPLETED (re-open the list — the card shows a pass badge).
+- Cross-check: `GET /api/v1/lessons/{id}` → `progress.status` is `COMPLETED`, `completedAt` set.
+
+---
+
+## 13 · Flow K — Student certificates / PIP / subscription (`student1@moriah.test`)
+
+**K1 · Certificates.** `/student/certificates` → `GET /api/v1/certificates/me`. Empty until a PM
+issues one (`testing-flow.md` Flow 6). After issue: the card shows the certificate number,
+verification code and a download link; a revoked cert shows status **Revoked**.
+
+**K2 · PIP status.** `/student/pip-status` → `GET /api/v1/pip/me`. `404` → the page shows the
+"no active plan" state. If the nightly job (or a manual `pip_records` insert) raised one, the page
+shows the trigger reason, status and dates.
+
+**K3 · Subscription — plan list.** `/student/subscription` → `GET /api/v1/plans` renders the real
+plan cards (price, features from the backend flags) and `GET /api/v1/subscriptions/me` marks your
+current plan. **Checkout is still mock** — clicking "Upgrade" completes locally, it does not hit a
+payment gateway (the real flow is `POST /subscriptions/checkout`, `testing-flow.md` Flow 5).
+
+---
+
+## 14 · Flow L — Trainer batches (`pm@moriah.test`)
+
+`/trainer/batches`.
+
+**L1 · List.** `GET /api/v1/batches?size=100` on load → every batch (a PM/ADMIN token sees all).
+The seed batch `FS-2026-01` appears. "Health" shows **No activity yet** (no backend metric).
+"Students" = the backend `enrolledCount`.
+
+**L2 · Create.** **New Batch** → name + track (FE name → `trackCode`, e.g. Full-Stack Development
+→ `FULL_STACK`) + start/end dates (start must be today or later) + capacity → `POST
+/api/v1/batches` → you become the batch PM.
+- Verify: the row appears with status **Onboarding** (backend `PLANNED`) → **Active** once the
+  backend flips it.
+
+> Student enrolment, project assignment, and everything on `/trainer/sprints` /
+> `/trainer/sprint-planning` / `/trainer/code-review` / `/trainer/analytics` on this persona is
+> **still the mock** — see the matrix.
+
+---
+
+## 15 · Regression checklist (fast pass after any FE/BE change)
 
 1. `admin@` 2FA login → `/admin/dashboard` renders, metrics cards populated.
 2. Bell badge shows a number; opening it lists notifications.
@@ -364,4 +428,7 @@ the backend `/api/v1/pip`. Ignore it for integrated testing.
 8. `client@` → talent list loads; a recruitment request shows up for `hr@` via the API.
 9. `hr@` → start an onboarding, tick the checklist, mark COMPLETED.
 10. `hr@` → record an exit, finalise it, confirm the employee is EXITED via the API.
-11. Hard-refresh on any dashboard → no bounce to `/login`.
+11. `student1@` → `/student/learning` lists lessons, quiz submit returns a server score.
+12. `student1@` → `/student/certificates` + `/student/pip-status` load without error (empty is fine).
+13. `pm@` → `/trainer/batches` lists `FS-2026-01`; creating a batch adds a row.
+14. Hard-refresh on any dashboard → no bounce to `/login`.

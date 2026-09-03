@@ -134,8 +134,10 @@ admin services. `npm install` done (`node_modules` gitignored). **Every commit v
 ### FRONTEND — service migration progress
 
 Frontend commits (branch `master`): `a86db27` baseline · `b0e4b21` auth · `c80e0e0` notif+admin ·
-`534db75` developerService · `d67633f` lead campaigns · `71de48d` BA meetings + talent pool.
-`npm run build` green after each (2795 modules, Node v24).
+`534db75` developerService · `d67633f` lead campaigns · `71de48d` BA meetings + talent pool ·
+`238ef3d` HR exits/onboarding/disciplinary · `4662f79` onboarding route · `c60f083` studentService
+reads · `9b41df3` trainerService batches + review queue.
+`npm run build` green after each (2796 modules, Node v24). **HEAD `9b41df3`.**
 
 **DONE (wired to backend):**
 - notificationService, adminService, developerService (see above list) — from earlier.
@@ -168,17 +170,42 @@ Frontend commits (branch `master`): `a86db27` baseline · `b0e4b21` auth · `c80
   (employee picker, checklist, status, notes) AND **wired into routing** — it was an orphan page;
   added `/hr/onboarding` route + sidebar entry. Leave/payroll/attendance stay MOCK.
 
-**STILL TO DO — services:**
-1. **studentService** (556 L) — `student/interviews` → `GET /api/v1/interviews/me` (B1.8);
-   student resources → `/api/v1/resources`; student lessons+quiz → `/api/v1/lessons` (+ `/quiz`);
-   tasks/sprint board/submissions → existing `/api/v1/tasks|sprints|submissions` (STUDENT-scoped).
-2. **trainerService** (599 L) — question banks → `/api/v1/assessments/banks` (B1.15); interview
-   scheduling → `POST/GET/PUT/DELETE /api/v1/interviews` (B1.8).
-3. HR leave/payroll/attendance — check `/api/v1/hr/leaves` + `/hr/payroll` shapes, then migrate
+- **studentService** — reads wired: video lessons + quiz → `/api/v1/lessons` (+ `/{id}/quiz`,
+  `/progress`, `/quiz/submit`, B1.4); `getCertificates` → `/certificates/me`; `getMyPipStatus` →
+  `/pip/me` (404→null); `getPlans` → `/plans` (falls back to static list); new `getMySubscription`
+  → `/subscriptions/me`; new `getMyInterviews` → `/interviews/me` (B1.8, no page yet).
+  **`student/Learning.jsx`** patched — `finishQuiz` now sends a positional answer-index array and
+  uses the server score (no client-side answer key; quiz % cached in `msh_lesson_quiz_scores`).
+  **Still MOCK:** sprint board / tasks / submissions (no "my tasks across sprints" endpoint —
+  needs batch→sprint→task fan-out), assessments + bug challenges, resume upload, `subscribeToPlan`
+  (no checkout endpoint on the subscription controller).
+- **trainerService** — `getBatches` → `/api/v1/batches` (`toFeBatch`: trackCode↔FE track name,
+  enrolledCount→students, ACTIVE/PLANNED→Active/Onboarding, health=null); `createBatch` →
+  `POST /batches` (FE track→trackCode, capacity defaults 20); new `getReviewQueue` →
+  `/reviews/queue`. **Still MOCK:** `getSprints`/`createSprint`/`getSprintTasks`/`createTask`/
+  `reviewSubmission` (need a coordinated batch↔sprint↔task rewrite — name→uuid, no epic/userStory
+  fields on the API), `getAnalytics`, `getPipCases`/`triggerManualPip` (PIP is nightly-job
+  triggered — only `POST /pip/{id}/review` exists), `approveGraduation` (→ needs
+  `/batches/{id}/students/{uuid}/graduate` + `/certificates/issue`), trainer student mgmt.
+
+**STILL TO DO — services (next session):**
+1. **trainer sprint/task planning** — the interlocked rewrite: `getSprints`+`createSprint`+
+   `activateSprint` (`/api/v1/sprints`, `POST /{id}/activate`), `getSprintTasks`+`createTask`+
+   `/tasks/{id}/assign`, plus `getStudentsForBatch` from `/batches/{id}` roster. Touches
+   `trainer/Sprints.jsx`, `SprintPlanning.jsx`, and `student/Tasks.jsx`/`Submissions.jsx` on the
+   student side. Backend has NO epic/userStory/acceptanceCriteria — drop or sidecar them.
+2. **trainer CodeReview** — `getReviewQueue` (done) → per task `GET /submissions?taskId=` → pick
+   latest → `POST /api/v1/reviews {submissionId, score 1-10, verdict APPROVED|CHANGES_REQUESTED}`.
+3. **HR leave/payroll/attendance** — `/api/v1/hr/leaves` + `/hr/payroll` shapes, then
    `hr/AttendanceLeave.jsx` + `hr/Payroll.jsx` + `ApplyLeaveWidget.jsx`.
-4. Register wizard reorder (#3 below), OAuth backend redirect (#4 below).
-5. Delete `mockData.js` / `pipEngine.js` / `placementPipeline.js` once nothing imports them
-   (`clientService.js` still imports `TALENT_POOL` unused — safe, remove later).
+4. **trainer analytics / PIP / graduation** — analytics has no aggregate endpoint (derive client
+   side from real sprints/tasks, or add a Part B endpoint); PIP list → `GET /api/v1/pip`,
+   review → `POST /pip/{id}/review`; graduation → `/batches/{id}/students/{uuid}/graduate` +
+   `/certificates/issue`.
+5. Register wizard reorder, OAuth backend redirect.
+6. Delete `mockData.js` / `pipEngine.js` / `placementPipeline.js` once nothing imports them
+   (`clientService.js` still imports `TALENT_POOL` unused; `trainerService.computeBatchHealth` now
+   dead — safe, remove later).
    **Pattern reminder:** most old services are `getX()` + `saveX(wholeList)` which does NOT map to
    REST — each migration = rewrite the consuming page's state (load + per-item create/update/delete).
 
@@ -243,11 +270,13 @@ Ends with an 11-point regression checklist. Update it as more services migrate.
 
 ## Next session starts with
 Continue **Frontend Part A**. Nothing tested in a browser yet — all migrations are build-verified
-only (`npm run build` green, 2796 modules). Next targets in order:
-1. **studentService** — `student/interviews` → `/interviews/me` (B1.8); student resources +
-   lessons/quiz; tasks/sprints/submissions (STUDENT-scoped, already exist).
-2. **trainerService** — question banks (B1.15) + interview scheduling (B1.8).
-3. HR leave/payroll/attendance shapes → migrate those 3 screens + `ApplyLeaveWidget`.
-4. Register wizard reorder, OAuth backend redirect, delete mock layer.
+only (`npm run build` green, 2796 modules). Next targets in order (details in "STILL TO DO —
+services (next session)"):
+1. **trainer sprint/task planning** — the interlocked `/api/v1/sprints` + `/api/v1/tasks` rewrite
+   (also unblocks `student/Tasks.jsx` + `Submissions.jsx`).
+2. **trainer CodeReview** — `getReviewQueue` is done; add submission lookup + `POST /reviews`.
+3. HR leave/payroll/attendance.
+4. trainer analytics / PIP / graduation; Register wizard reorder; OAuth backend redirect; delete
+   the mock layer.
 Keep `docs/integrated-testing-flow.md` current as services migrate.
-Frontend HEAD: `4662f79`. Backend HEAD: `<this commit>` (docs; code HEAD `1761ae9`).
+Frontend HEAD: `9b41df3`. Backend HEAD: `<this commit>` (docs; code HEAD `1761ae9`).
