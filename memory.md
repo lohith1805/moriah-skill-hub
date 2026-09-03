@@ -346,9 +346,20 @@ with matching `DB_PORT` (+ `DB_REPLICA_PORT` same value), `redis-cli FLUSHALL` i
 biometric attendance, trainer cross-batch student mgmt, student `getPerformanceSummary` +
 auto-PIP). `placementPipeline.js` stays too (display-helper + backend adapter).
 
-**HEADs:** Frontend `fd86bc2` (landing page wired). Backend `25f3dd4` (docs re-export) on top of
-`6351d26` (public `site/` endpoints + inbound lead + big seed). Full surefire = **547 tests
-green** (Testcontainers `*IT` still need Docker; `mvn -o test` alone is unit-only, ~15s).
+**Two bugs fixed after the seed/spec work (verified against a live instance):**
+1. **Admin dashboard "Loading executive metrics…" forever** — `MetricsService` + admin exports
+   query `replicaJdbcTemplate` *only*; locally there's no real replica, so `/admin/metrics/*`
+   500'd ("table doesn't exist" on the empty `mysql-replica` container). Fix `5c80beb`:
+   `application-dev.yml` now sets `moriah.datasource.replica.url` to fall back to the primary
+   (`${DB_REPLICA_HOST:${DB_HOST}}:${DB_REPLICA_PORT:${DB_PORT}}`). No `.env` change needed.
+2. **Settings shows "2FA: Disabled" for every role even when it's on** (and Enable → `409
+   TWO_FACTOR_ALREADY_ENABLED`) — `GET /users/me` never returned the flag. Fix: `UserProfileResponse`
+   + `ProfileService.toResponse` now carry `twoFactorEnabled` (backend `32e81ac`, openapi patched);
+   `Settings.jsx` also self-heals on the 409 (FE `b7abb1e`). FE `toFeUser` already read the field.
+
+**HEADs:** Frontend `b7abb1e`. Backend `5c80beb` on top of `25f3dd4` (docs re-export) / `6351d26`
+(public `site/` endpoints + inbound lead + big seed). Full surefire = **547 tests green**
+(Testcontainers `*IT` still need Docker; `mvn -o test` alone is unit-only, ~15s).
 
 **Local run state right now:** Docker `skillhub-mysql` / `-redis` / `-minio` are UP but MySQL is
 published on **3316** (I remapped it — native Windows service `MySQL97`, StartMode Auto, squats
