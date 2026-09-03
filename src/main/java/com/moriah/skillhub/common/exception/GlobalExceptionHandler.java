@@ -11,8 +11,11 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -128,6 +131,38 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(ErrorCode.VALIDATION_FAILED.status())
                 .body(ApiResponse.failure(ErrorDetail.of(
                         ErrorCode.VALIDATION_FAILED, "The request body is malformed or unreadable.")));
+    }
+
+    /**
+     * A required {@code @RequestParam} the caller left off (e.g. {@code GET /api/v1/standups}
+     * with no {@code batchId}), or one whose value won't bind to the target type ({@code
+     * ?batchId=abc} for a {@code Long}). Both are client mistakes — without this they fall
+     * through to {@link #handleUnexpected} and surface as a misleading 500 instead of a 400 that
+     * tells the caller which parameter is wrong.
+     */
+    @ExceptionHandler({MissingServletRequestParameterException.class, MethodArgumentTypeMismatchException.class})
+    public ResponseEntity<ApiResponse<Void>> handleBadRequestParam(Exception ex) {
+        String param = ex instanceof MissingServletRequestParameterException missing
+                ? missing.getParameterName()
+                : ((MethodArgumentTypeMismatchException) ex).getName();
+        String message = ex instanceof MissingServletRequestParameterException
+                ? "Required request parameter '" + param + "' is missing."
+                : "Request parameter '" + param + "' has an invalid value.";
+        log.warn("[error/VALIDATION_FAILED] {}", message);
+        return ResponseEntity.status(ErrorCode.VALIDATION_FAILED.status())
+                .body(ApiResponse.failure(ErrorDetail.of(ErrorCode.VALIDATION_FAILED, message)));
+    }
+
+    /**
+     * The path exists but not for this verb (e.g. {@code GET /api/v1/admin/plans}, which is
+     * {@code POST}/{@code PUT}/{@code DELETE}-only). Spring's default surfaces this as a 500
+     * through {@link #handleUnexpected}; a 405 is the correct, non-alarming answer.
+     */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex) {
+        log.warn("[error/METHOD_NOT_ALLOWED] {} not supported for this endpoint", ex.getMethod());
+        return ResponseEntity.status(ErrorCode.METHOD_NOT_ALLOWED.status())
+                .body(ApiResponse.failure(ErrorDetail.of(ErrorCode.METHOD_NOT_ALLOWED)));
     }
 
     @ExceptionHandler(Exception.class)

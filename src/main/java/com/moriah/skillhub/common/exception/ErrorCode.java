@@ -45,6 +45,9 @@ public enum ErrorCode {
     NOT_REPORTING_MANAGER(HttpStatus.FORBIDDEN, "You are not this employee's reporting manager."),
     SELF_DECISION_NOT_ALLOWED(HttpStatus.FORBIDDEN, "You cannot decide on your own request."),
 
+    // 405 — the path exists but not for this HTTP method
+    METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "This HTTP method is not supported for this endpoint."),
+
     // 404 — generic fallback; prefer a feature-specific *_NOT_FOUND code where one exists
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "The requested resource was not found."),
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "User not found."),
