@@ -4117,6 +4117,37 @@
           "response": []
         },
         {
+          "name": "GET /api/v1/batches/pending-allocations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/batches/pending-allocations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "batches",
+                "pending-allocations"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{pmAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Students who paid for a batch plan but have no matching batch yet \u2014 auto-placed the moment a batch for their track is created\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first."
+          },
+          "response": []
+        },
+        {
           "name": "GET /api/v1/batches/{id}",
           "request": {
             "method": "GET",

@@ -451,9 +451,44 @@ uses unique email+phone per run (`users.phone` is UNIQUE); resets `admin@` 2FA t
   interview events still fire a FE toast only — each needs an `enqueueAfterCommit` added at its
   service to land in the bell (not done).
 
-**HEADs:** Frontend `8aa7de0` (branch `master`). Backend `9e4e8b7` on top of `0e2c13c` /
-`f7cacfc` (openapi re-export) / `fe85aa6` (400/405 handlers). Targeted unit slices green this
-pass; full surefire (547) not re-run since the seed/spec work. Testcontainers `*IT` need Docker.
+**Batch auto-assignment pass (2026-09-03, BE `70645f1` / FE `88327dc`):** a student who paid for
+a batch plan while no matching batch existed sat forever in `pending_batch_allocations` (only PMs
+notified). Now: `BatchService.create` publishes `BatchCreatedEvent` → `PendingAllocationDrainer`
+(`@Async @TransactionalEventListener AFTER_COMMIT`) re-runs `BatchAllocationService.allocate` for
+every unresolved pending row on that track, oldest first, each its own tx. **Event indirection is
+mandatory** — a direct `BatchService → BatchAllocationService` call closes a bean cycle via
+`UserService → TaskService → SprintService → BatchService` (confirmed: `BeanCurrentlyInCreationException`).
+New `GET /api/v1/batches/pending-allocations` (TRAINER_PM/ADMIN) + a card in `trainer/Batches.jsx`
+Students tab. openapi/postman re-exported (155 paths / 204 ops, commit pending).
+
+**Still-open items the user flagged (NOT yet done):**
+- **#1 wire `developerService` → real `/projects`** — endpoints all exist (`GET/POST/PUT /projects`,
+  `/publish`, `/projects/{id}/challenges`, `/challenges/{id}`); `developer/Projects.jsx` + the
+  Bug-Challenges tab consume the mock shape, so it's a page migration not a swap.
+- **#3 admin invoice list + PDF download** — no admin invoice endpoint (student has
+  `/subscriptions/me/invoices`); add an admin-scoped variant + a column in admin Payments.
+- **#4 "all downloads should be PDF"** — backend already renders real PDFs (certificates, invoices,
+  HR letters) served via presigned URLs; several FE "download" buttons render client-side HTML/txt
+  instead. Each needs pointing at the backend's presigned PDF.
+- **#7 client "view projects" → 403 "no access to this document"** — `GET /api/v1/projects` excludes
+  CLIENT by design (internal training catalogue); there is **no `GET /clients/projects` list**
+  endpoint (only `POST /clients/projects` + `GET /clients/projects/{id}/progress`). `clientService`
+  project fns are localStorage mocks (no API call) so the failing request is something else on that
+  page — NEED the exact failing URL from the user's Network tab to pin it.
+
+**Explained (no code bug):**
+- **Invoice appears ~30 min late / payment missing from Admin Audit** — there is NO scheduled
+  invoice job; `InvoiceGenerationJob` fires the instant the webhook tx commits. A delay = the
+  gateway **redelivering** the webhook after an earlier delivery failed / never reached localhost.
+  `AuditQueryService` uses `LEFT JOIN users actor` so null-actor `PAYMENT_CAPTURED` rows DO show —
+  they're just never created if the webhook doesn't fire. Root fix for both: make the first webhook
+  delivery succeed (tunnel up, MinIO up, `RAZORPAY_WEBHOOK_SECRET` set). `WebhookReconciliationJob`
+  (every 10 min) is the backstop.
+
+**HEADs:** Frontend `88327dc` (branch `master`). Backend `70645f1` on top of `9e4e8b7` / `0e2c13c` /
+`f7cacfc`. Targeted unit slices green each pass; full surefire (547) not re-run since the seed/spec
+work. `*IT` need Docker (the cycle showed up as a `BatchFlowIT` context-load failure — good to keep
+running an IT after bean-wiring changes).
 
 **Local run state right now:** Docker `skillhub-mysql` / `-redis` / `-minio` are UP but MySQL is
 published on **3316** (I remapped it — native Windows service `MySQL97`, StartMode Auto, squats

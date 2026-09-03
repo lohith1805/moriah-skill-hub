@@ -1,6 +1,6 @@
 # Moriah Skill Hub — API Documentation
 
-> Generated from `docs/openapi.json` (OpenAPI 3.1.0). 203 endpoints across 32 groups. Auth/role column is read from each controller's `@PreAuthorize`.
+> Generated from `docs/openapi.json` (OpenAPI 3.1.0). 204 endpoints across 32 groups. Auth/role column is read from each controller's `@PreAuthorize`.
 
 ## Conventions
 
@@ -91,7 +91,7 @@ On success the callback returns the **same `LoginResponse` envelope as `POST /ap
 - [Attendance](#attendance) — 4 endpoints
 - [Auth](#auth) — 14 endpoints
 - [BA](#ba) — 8 endpoints
-- [Batches](#batches) — 8 endpoints
+- [Batches](#batches) — 9 endpoints
 - [Bug Challenges](#bug-challenges) — 5 endpoints
 - [CRM](#crm) — 15 endpoints
 - [Certificates](#certificates) — 4 endpoints
@@ -2840,6 +2840,36 @@ Create a batch — the caller becomes its PM
     "enrolledCount": 0,
     "status": "PLANNED"
   },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `GET` `/api/v1/batches/pending-allocations`
+
+Students who paid for a batch plan but have no matching batch yet — auto-placed the moment a batch for their track is created
+
+**Auth:** Role: TRAINER_PM or ADMIN
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "studentUuid": "string",
+      "studentName": "string",
+      "studentEmail": "string",
+      "trackCode": "string",
+      "planCode": "string",
+      "reason": "string",
+      "requestedAt": "2026-01-15T10:30:00Z"
+    }
+  ],
   "error": null
 }
 ```

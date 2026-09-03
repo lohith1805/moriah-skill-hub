@@ -8003,6 +8003,27 @@
                 }
             }
         },
+        "/api/v1/batches/pending-allocations": {
+            "get": {
+                "tags": [
+                    "Batches"
+                ],
+                "summary": "Students who paid for a batch plan but have no matching batch yet — auto-placed the moment a batch for their track is created",
+                "operationId": "pendingAllocations",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseListPendingAllocationResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/attendance/me": {
             "get": {
                 "tags": [
@@ -17885,6 +17906,54 @@
                     },
                     "finalScore": {
                         "type": "number"
+                    }
+                }
+            },
+            "ApiResponseListPendingAllocationResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PendingAllocationResponse"
+                        }
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ErrorDetail"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "PendingAllocationResponse": {
+                "type": "object",
+                "properties": {
+                    "studentUuid": {
+                        "type": "string"
+                    },
+                    "studentName": {
+                        "type": "string"
+                    },
+                    "studentEmail": {
+                        "type": "string"
+                    },
+                    "trackCode": {
+                        "type": "string"
+                    },
+                    "planCode": {
+                        "type": "string"
+                    },
+                    "reason": {
+                        "type": "string"
+                    },
+                    "requestedAt": {
+                        "type": "string",
+                        "format": "date-time"
                     }
                 }
             },
