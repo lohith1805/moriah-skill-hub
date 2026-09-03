@@ -86,7 +86,11 @@ public class SecurityConfig {
             "/api/v1/plans",
             "/api/v1/webhooks/**",
             "/api/v1/portfolio/**",
-            "/api/v1/certificates/verify/**"
+            "/api/v1/certificates/verify/**",
+            // Marketing landing page: aggregate stats + the anonymous lead-capture form. Both
+            // GET-or-single-POST only, non-personal / self-submitted, rate-limited per IP.
+            "/api/v1/public/**",
+            "/api/v1/leads/inbound"
     };
 
     private final CorsProperties corsProperties;

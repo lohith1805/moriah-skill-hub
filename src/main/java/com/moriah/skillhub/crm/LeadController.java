@@ -5,6 +5,7 @@ import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.common.security.CurrentUser;
 import com.moriah.skillhub.crm.dto.AddLeadActivityRequest;
 import com.moriah.skillhub.crm.dto.CreateLeadRequest;
+import com.moriah.skillhub.crm.dto.InboundLeadRequest;
 import com.moriah.skillhub.crm.dto.LeadActivityResponse;
 import com.moriah.skillhub.crm.dto.LeadResponse;
 import com.moriah.skillhub.crm.dto.SalesLeaderboardRowResponse;
@@ -49,6 +50,14 @@ public class LeadController {
 
         LeadResponse response = leadService.create(request, userId);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
+    }
+
+    /** Public at the filter level ({@code SecurityConfig.PUBLIC_PATHS}) — the landing-page
+     * capture form, no {@code @PreAuthorize}, same explicit-public pattern as {@code
+     * PlanController}. Rate-limited per-IP by {@code RateLimitFilter} like every other request. */
+    @PostMapping("/inbound")
+    public ResponseEntity<ApiResponse<LeadResponse>> inbound(@Valid @RequestBody InboundLeadRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(leadService.ingestInbound(request)));
     }
 
     @GetMapping

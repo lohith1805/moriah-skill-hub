@@ -6,6 +6,7 @@ import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
 import com.moriah.skillhub.crm.dto.AddLeadActivityRequest;
 import com.moriah.skillhub.crm.dto.CreateLeadRequest;
+import com.moriah.skillhub.crm.dto.InboundLeadRequest;
 import com.moriah.skillhub.crm.dto.LeadActivityResponse;
 import com.moriah.skillhub.crm.dto.LeadResponse;
 import com.moriah.skillhub.crm.dto.SalesLeaderboardRowResponse;
@@ -70,6 +71,9 @@ public class LeadService {
      * {@code agentUuid} filter should return an empty page, not silently ignore the filter. */
     private static final Long NO_SUCH_AGENT_ID = -1L;
 
+    /** {@code callerUserId} is the ingesting agent, or {@code null} for an anonymous
+     * landing-page submission ({@code POST /api/v1/leads/inbound}) — an unassigned lead a
+     * lead-gen agent picks up later. */
     @Transactional
     public LeadResponse create(CreateLeadRequest request, Long callerUserId) {
         if (request.interestedPlanId() != null && !subscriptionPlanRepository.existsById(request.interestedPlanId())) {
@@ -83,8 +87,25 @@ public class LeadService {
                 .orElseGet(() -> tryCreateNew(request, dedupeHash, callerUserId));
     }
 
+    /** {@code POST /api/v1/leads/inbound} — public, unauthenticated. Same dedupe-upsert as
+     * {@link #create}, with no assigned agent and any {@code message} logged as a NOTE. */
+    @Transactional
+    public LeadResponse ingestInbound(InboundLeadRequest request) {
+        CreateLeadRequest cr = new CreateLeadRequest(
+                request.name(), request.email(), request.phone(),
+                request.source() != null ? request.source() : LeadSource.LANDING_PAGE,
+                request.leadType() != null && !request.leadType().isBlank() ? request.leadType() : "B2C",
+                null, null, null);
+        LeadResponse lead = create(cr, null);
+        if (request.message() != null && !request.message().isBlank()) {
+            recordActivity(leadRepository.getReferenceById(lead.id()), null, LeadActivityType.NOTE,
+                    "INBOUND_MESSAGE", request.message().trim(), null, Instant.now());
+        }
+        return lead;
+    }
+
     private LeadResponse tryCreateNew(CreateLeadRequest request, String dedupeHash, Long callerUserId) {
-        User agent = userRepository.getReferenceById(callerUserId);
+        User agent = callerUserId == null ? null : userRepository.getReferenceById(callerUserId);
 
         Lead lead = new Lead();
         lead.setName(request.name());
@@ -130,7 +151,8 @@ public class LeadService {
         }
         leadRepository.save(lead);
 
-        recordActivity(lead, userRepository.getReferenceById(callerUserId), LeadActivityType.NOTE,
+        User actor = callerUserId == null ? null : userRepository.getReferenceById(callerUserId);
+        recordActivity(lead, actor, LeadActivityType.NOTE,
                 "DUPLICATE_SUBMISSION",
                 "Re-submitted via source=" + request.source() + ", leadType=" + request.leadType(),
                 null, Instant.now());

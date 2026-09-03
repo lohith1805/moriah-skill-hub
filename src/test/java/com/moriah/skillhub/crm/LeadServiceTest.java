@@ -5,6 +5,7 @@ import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
 import com.moriah.skillhub.crm.dto.AddLeadActivityRequest;
 import com.moriah.skillhub.crm.dto.CreateLeadRequest;
+import com.moriah.skillhub.crm.dto.InboundLeadRequest;
 import com.moriah.skillhub.crm.dto.LeadActivityResponse;
 import com.moriah.skillhub.crm.dto.LeadResponse;
 import com.moriah.skillhub.crm.dto.SalesLeaderboardRowResponse;
@@ -95,6 +96,26 @@ class LeadServiceTest {
         assertThat(response.name()).isEqualTo("Ada Lovelace");
         assertThat(response.assignedAgentUuid()).isNotNull();
         verify(leadActivityRepository, times(1)).save(any(LeadActivity.class));
+    }
+
+    @Test
+    void ingestInbound_createsAnUnassignedLeadAndLogsTheMessage() {
+        when(leadRepository.findByDedupeHash(any())).thenReturn(Optional.empty());
+        when(leadWriter.tryCreate(any())).thenAnswer(inv -> {
+            Lead lead = inv.getArgument(0);
+            lead.setId(3L);
+            return Optional.of(lead);
+        });
+        when(leadRepository.getReferenceById(3L)).thenReturn(leadWithStatus(LeadStatus.NEW));
+
+        LeadResponse response = service().ingestInbound(new InboundLeadRequest(
+                "Site Visitor", "visitor@example.com", "+91 90000 11111",
+                "Want to know about the weekend batch.", null, null));
+
+        assertThat(response.status()).isEqualTo(LeadStatus.NEW);
+        assertThat(response.assignedAgentUuid()).isNull();
+        // one LEAD_CREATED activity + one INBOUND_MESSAGE activity
+        verify(leadActivityRepository, times(2)).save(any(LeadActivity.class));
     }
 
     @Test

@@ -192,3 +192,201 @@ SELECT u.id, 'EMP-0002', 'Engineering', 'Content Developer', 'FULL_TIME', DATE_S
        (SELECT id FROM employees WHERE employee_code = 'EMP-0001'), 'ACTIVE'
 FROM users u WHERE u.email = 'dev@moriah.test'
   AND NOT EXISTS (SELECT 1 FROM employees e WHERE e.user_id = u.id);
+
+-- =============================================================================================
+-- Expanded sample data (2026-09) — more students, batches, sprints/tasks, a question-bank
+-- library, learning resources, notifications, one graduate + certificate. Every statement is
+-- idempotent on a natural key, same as everything above.
+-- =============================================================================================
+
+-- ---- Six more students -------------------------------------------------------------------
+INSERT IGNORE INTO users (uuid, full_name, email, password_hash, github_username, status, email_verified_at) VALUES
+ ('11111111-0000-0000-0000-000000000011', 'Ishaan Student Four',  'student4@moriah.test', '$2a$12$f6U44aOOdmmxhJLSBN2D4uMCxyUemT3/K/IufvQj58SDMh6/PmLMC', 'ishaan-s4', 'ACTIVE', NOW(6)),
+ ('11111111-0000-0000-0000-000000000012', 'Diya Student Five',    'student5@moriah.test', '$2a$12$f6U44aOOdmmxhJLSBN2D4uMCxyUemT3/K/IufvQj58SDMh6/PmLMC', 'diya-s5',   'ACTIVE', NOW(6)),
+ ('11111111-0000-0000-0000-000000000013', 'Kabir Student Six',    'student6@moriah.test', '$2a$12$f6U44aOOdmmxhJLSBN2D4uMCxyUemT3/K/IufvQj58SDMh6/PmLMC', 'kabir-s6',  'ACTIVE', NOW(6)),
+ ('11111111-0000-0000-0000-000000000014', 'Anaya Student Seven',  'student7@moriah.test', '$2a$12$f6U44aOOdmmxhJLSBN2D4uMCxyUemT3/K/IufvQj58SDMh6/PmLMC', NULL,        'ACTIVE', NOW(6)),
+ ('11111111-0000-0000-0000-000000000015', 'Vivaan Student Eight', 'student8@moriah.test', '$2a$12$f6U44aOOdmmxhJLSBN2D4uMCxyUemT3/K/IufvQj58SDMh6/PmLMC', NULL,        'ACTIVE', NOW(6)),
+ ('11111111-0000-0000-0000-000000000016', 'Myra Student Nine',    'student9@moriah.test', '$2a$12$f6U44aOOdmmxhJLSBN2D4uMCxyUemT3/K/IufvQj58SDMh6/PmLMC', NULL,        'ACTIVE', NOW(6));
+
+INSERT IGNORE INTO user_roles (user_id, role_id)
+SELECT u.id, r.id FROM users u JOIN roles r ON r.code = 'STUDENT'
+WHERE u.email IN ('student4@moriah.test','student5@moriah.test','student6@moriah.test',
+                  'student7@moriah.test','student8@moriah.test','student9@moriah.test');
+
+INSERT IGNORE INTO user_profiles (user_id, bio, location, current_title, experience_level, skills, portfolio_slug, is_complete, completion_percent)
+SELECT u.id,
+       CONCAT(SUBSTRING_INDEX(u.full_name, ' ', 1), ' - learner in the 2026 cohort.'),
+       ELT(1 + (u.id % 5), 'Bengaluru', 'Pune', 'Chennai', 'Hyderabad', 'Remote'),
+       'Trainee Engineer', 'JUNIOR',
+       JSON_ARRAY('Java', 'SQL', 'Git'),
+       LOWER(REPLACE(SUBSTRING_INDEX(u.email, '@', 1), '.', '-')),
+       FALSE, 55
+FROM users u WHERE u.email IN ('student4@moriah.test','student5@moriah.test','student6@moriah.test',
+                               'student7@moriah.test','student8@moriah.test','student9@moriah.test');
+
+-- ACTIVE PROJECT_BASED subscription for each (entitlements without a payments row).
+INSERT INTO user_subscriptions (user_id, plan_id, payment_id, start_date, end_date, status, auto_renew)
+SELECT u.id, p.id, NULL, CURDATE(), DATE_ADD(CURDATE(), INTERVAL p.duration_days DAY), 'ACTIVE', FALSE
+FROM users u JOIN subscription_plans p ON p.code = 'PROJECT_BASED'
+WHERE u.email IN ('student4@moriah.test','student5@moriah.test','student6@moriah.test',
+                  'student7@moriah.test','student8@moriah.test','student9@moriah.test')
+  AND NOT EXISTS (SELECT 1 FROM user_subscriptions s WHERE s.user_id = u.id AND s.status = 'ACTIVE');
+
+-- ---- Three more batches (PM = pm@moriah.test) ------------------------------------------
+INSERT INTO batches (name, track_code, pm_id, plan_tier_min_id, start_date, end_date, capacity, enrolled_count, status)
+SELECT v.name, v.track_code,
+       (SELECT id FROM users WHERE email = 'pm@moriah.test'),
+       (SELECT id FROM subscription_plans WHERE code = 'PROJECT_BASED'),
+       v.start_date, v.end_date, v.capacity, v.enrolled_count, v.status
+FROM (
+    SELECT 'FS-2026-02' AS name, 'FULL_STACK'     AS track_code, CURDATE()                          AS start_date,
+           DATE_ADD(CURDATE(), INTERVAL 90 DAY)   AS end_date,   15 AS capacity, 3 AS enrolled_count, 'ACTIVE'  AS status
+    UNION ALL SELECT 'DA-2026-01', 'DATA_ANALYTICS', DATE_SUB(CURDATE(), INTERVAL 20 DAY),
+           DATE_ADD(CURDATE(), INTERVAL 70 DAY),  12, 2, 'ACTIVE'
+    UNION ALL SELECT 'BE-2026-01', 'BACKEND',        DATE_ADD(CURDATE(), INTERVAL 14 DAY),
+           DATE_ADD(CURDATE(), INTERVAL 104 DAY), 10, 1, 'PLANNED'
+) v
+WHERE NOT EXISTS (SELECT 1 FROM batches b WHERE b.name = v.name);
+
+-- ---- Enrolments -----------------------------------------------------------------------
+INSERT INTO batch_students (batch_id, user_id, status)
+SELECT b.id, u.id, 'ACTIVE'
+FROM batches b JOIN users u
+  ON  (b.name = 'FS-2026-02' AND u.email IN ('student4@moriah.test','student5@moriah.test','student6@moriah.test'))
+   OR (b.name = 'DA-2026-01' AND u.email IN ('student7@moriah.test','student8@moriah.test'))
+   OR (b.name = 'BE-2026-01' AND u.email = 'student9@moriah.test')
+WHERE NOT EXISTS (SELECT 1 FROM batch_students bs WHERE bs.batch_id = b.id AND bs.user_id = u.id);
+
+-- student6 has finished FS-2026-02 - mark GRADUATED so /trainer/graduation and a certificate
+-- have real data.
+UPDATE batch_students bs
+JOIN batches b ON b.id = bs.batch_id AND b.name = 'FS-2026-02'
+JOIN users u  ON u.id = bs.user_id  AND u.email = 'student6@moriah.test'
+SET bs.status = 'GRADUATED',
+    bs.final_score = 82.50,
+    bs.graduated_at = DATE_SUB(NOW(6), INTERVAL 3 DAY),
+    bs.graduated_by = (SELECT id FROM users WHERE email = 'pm@moriah.test')
+WHERE bs.status <> 'GRADUATED';
+
+INSERT INTO certificates (user_id, batch_id, certificate_number, certificate_type, verification_code, issued_by, issued_at)
+SELECT u.id, b.id, 'MSH-2026-900001', 'COMPLETION', 'SEEDCERT0006',
+       (SELECT id FROM users WHERE email = 'pm@moriah.test'), DATE_SUB(NOW(6), INTERVAL 2 DAY)
+FROM users u JOIN batches b ON b.name = 'FS-2026-02'
+WHERE u.email = 'student6@moriah.test'
+  AND NOT EXISTS (SELECT 1 FROM certificates c WHERE c.verification_code = 'SEEDCERT0006');
+
+-- ---- One ACTIVE sprint per running batch + a PLANNED one for BE ------------------------
+INSERT INTO sprints (batch_id, sprint_number, goal, start_date, end_date, status, planned_points, completed_points)
+SELECT b.id, 1, v.goal, v.start_date, v.end_date, v.status, v.planned_points, 0
+FROM batches b JOIN (
+    SELECT 'FS-2026-02' AS name, 'Auth + user CRUD, one PR merged each.' AS goal,
+           CURDATE() AS start_date, DATE_ADD(CURDATE(), INTERVAL 14 DAY) AS end_date, 'ACTIVE' AS status, 24 AS planned_points
+    UNION ALL SELECT 'DA-2026-01', 'Clean + load the sales dataset; first dashboard.',
+           DATE_SUB(CURDATE(), INTERVAL 5 DAY), DATE_ADD(CURDATE(), INTERVAL 9 DAY), 'ACTIVE', 18
+    UNION ALL SELECT 'BE-2026-01', 'Environment setup + REST fundamentals.',
+           DATE_ADD(CURDATE(), INTERVAL 14 DAY), DATE_ADD(CURDATE(), INTERVAL 28 DAY), 'PLANNED', 20
+) v ON v.name = b.name
+WHERE NOT EXISTS (SELECT 1 FROM sprints s WHERE s.batch_id = b.id AND s.sprint_number = 1);
+
+-- Tasks in FS-2026-02 sprint 1 (one BACKLOG, one ASSIGNED, one COMPLETED).
+INSERT INTO tasks (sprint_id, title, description, task_type, assigned_to, story_points, due_at, status, completed_at)
+SELECT s.id, v.title, v.descr, 'STORY', v.assignee, v.points, DATE_ADD(NOW(6), INTERVAL v.due_days DAY), v.status, v.completed
+FROM sprints s JOIN batches b ON b.id = s.batch_id AND b.name = 'FS-2026-02' AND s.sprint_number = 1
+JOIN (
+    SELECT 'Login + JWT issue' AS title, 'POST /auth/login returning an access token.' AS descr,
+           NULL AS assignee, 5 AS points, 7 AS due_days, 'BACKLOG' AS status, NULL AS completed
+    UNION ALL SELECT 'User profile GET/PUT', 'Self-service profile read + update.',
+           (SELECT id FROM users WHERE email = 'student4@moriah.test'), 5, 5, 'ASSIGNED', NULL
+    UNION ALL SELECT 'Project scaffolding', 'Spring Boot project skeleton + CI.',
+           (SELECT id FROM users WHERE email = 'student5@moriah.test'), 3, -2, 'COMPLETED', DATE_SUB(NOW(6), INTERVAL 1 DAY)
+) v
+WHERE NOT EXISTS (SELECT 1 FROM tasks t WHERE t.sprint_id = s.id AND t.title = v.title);
+
+-- Tasks in DA-2026-01 sprint 1.
+INSERT INTO tasks (sprint_id, title, description, task_type, assigned_to, story_points, due_at, status)
+SELECT s.id, v.title, v.descr, 'ASSIGNMENT', v.assignee, v.points, DATE_ADD(NOW(6), INTERVAL v.due_days DAY), v.status
+FROM sprints s JOIN batches b ON b.id = s.batch_id AND b.name = 'DA-2026-01' AND s.sprint_number = 1
+JOIN (
+    SELECT 'Ingest sales.csv' AS title, 'Load + validate the raw sales extract.' AS descr,
+           (SELECT id FROM users WHERE email = 'student7@moriah.test') AS assignee, 3 AS points, 3 AS due_days, 'IN_PROGRESS' AS status
+    UNION ALL SELECT 'Revenue-by-region chart', 'First Looker/Metabase view.',
+           (SELECT id FROM users WHERE email = 'student8@moriah.test'), 5, 6, 'ASSIGNED'
+) v
+WHERE NOT EXISTS (SELECT 1 FROM tasks t WHERE t.sprint_id = s.id AND t.title = v.title);
+
+-- ---- Question-bank library (author = dev@moriah.test) ---------------------------------
+INSERT INTO question_banks (name, topic, description, created_by, is_active)
+SELECT v.name, v.topic, v.descr, (SELECT id FROM users WHERE email = 'dev@moriah.test'), TRUE
+FROM (
+    SELECT 'Java Fundamentals'      AS name, 'Java'   AS topic, 'Core language: types, OOP, collections, exceptions.' AS descr
+    UNION ALL SELECT 'Spring Boot Essentials', 'Spring', 'DI, REST controllers, data access, validation.'
+    UNION ALL SELECT 'SQL and Data Modelling', 'SQL',   'SELECT/JOIN, indexing, normalisation, transactions.'
+) v
+WHERE NOT EXISTS (SELECT 1 FROM question_banks qb WHERE qb.name = v.name);
+
+INSERT INTO question_bank_items (bank_id, question_text, question_type, options, correct_answer, marks, explanation, difficulty, created_by)
+SELECT qb.id, v.qtext, v.qtype, v.opts, v.ans, v.marks, v.expl, v.diff,
+       (SELECT id FROM users WHERE email = 'dev@moriah.test')
+FROM question_banks qb JOIN (
+    SELECT 'Java Fundamentals' AS bank, 'Which keyword prevents a class from being subclassed?' AS qtext, 'MCQ' AS qtype,
+           JSON_ARRAY('static','final','sealed','private') AS opts, JSON_ARRAY(1) AS ans, 1 AS marks,
+           'final on a class forbids extension.' AS expl, 'EASY' AS diff
+    UNION ALL SELECT 'Java Fundamentals', 'Pick the collections that allow duplicate elements.', 'MULTI_SELECT',
+           JSON_ARRAY('ArrayList','HashSet','LinkedList','TreeSet'), JSON_ARRAY(0,2), 2,
+           'List implementations allow duplicates; Set implementations do not.', 'MEDIUM'
+    UNION ALL SELECT 'Java Fundamentals', 'What does Optional.orElseThrow() do when the value is present?', 'MCQ',
+           JSON_ARRAY('Throws immediately','Returns the contained value','Returns null','Logs a warning'), JSON_ARRAY(1), 1,
+           'It returns the value; it only throws when empty.', 'EASY'
+    UNION ALL SELECT 'Spring Boot Essentials', 'Which annotation marks a class as a REST endpoint holder?', 'MCQ',
+           JSON_ARRAY('@Service','@Component','@RestController','@Repository'), JSON_ARRAY(2), 1,
+           '@RestController = @Controller + @ResponseBody.', 'EASY'
+    UNION ALL SELECT 'Spring Boot Essentials', 'Select valid ways to inject a dependency in Spring.', 'MULTI_SELECT',
+           JSON_ARRAY('Constructor injection','Field injection','Setter injection','Static block injection'), JSON_ARRAY(0,1,2), 2,
+           'Constructor is preferred; field and setter also work. There is no static-block injection.', 'MEDIUM'
+    UNION ALL SELECT 'Spring Boot Essentials', 'Where does spring.datasource.url belong?', 'MCQ',
+           JSON_ARRAY('pom.xml','application.yml','SecurityConfig.java','schema.sql'), JSON_ARRAY(1), 1,
+           'Datasource settings are configuration properties.', 'EASY'
+    UNION ALL SELECT 'SQL and Data Modelling', 'Which JOIN keeps unmatched left-table rows?', 'MCQ',
+           JSON_ARRAY('INNER JOIN','LEFT JOIN','CROSS JOIN','SELF JOIN'), JSON_ARRAY(1), 1,
+           'LEFT JOIN returns all left rows, NULL-filled where no match.', 'EASY'
+    UNION ALL SELECT 'SQL and Data Modelling', 'Pick the statements that are true about a PRIMARY KEY.', 'MULTI_SELECT',
+           JSON_ARRAY('It is unique','It can be NULL','It creates an index','You can have many per table'), JSON_ARRAY(0,2), 2,
+           'A PK is unique, non-null, backed by an index, and there is exactly one per table.', 'MEDIUM'
+) v ON v.bank = qb.name
+WHERE NOT EXISTS (
+    SELECT 1 FROM question_bank_items qbi WHERE qbi.bank_id = qb.id AND qbi.question_text = v.qtext);
+
+-- ---- Learning resource library (author = dev@moriah.test) ----------------------------
+INSERT INTO learning_resources (title, description, category, url, tags, created_by, is_active)
+SELECT v.title, v.descr, v.cat, v.url, v.tags, (SELECT id FROM users WHERE email = 'dev@moriah.test'), TRUE
+FROM (
+    SELECT 'Spring Boot Reference - Getting Started' AS title, 'Official guide to your first Spring Boot app.' AS descr,
+           'ARTICLE' AS cat, 'https://docs.spring.io/spring-boot/index.html' AS url, JSON_ARRAY('spring','backend') AS tags
+    UNION ALL SELECT 'Java Collections in 20 Minutes', 'Short video tour of List/Set/Map.',
+           'VIDEO', 'https://www.youtube.com/watch?v=rzA7tch1D_E', JSON_ARRAY('java','collections')
+    UNION ALL SELECT 'Use The Index, Luke', 'A practical primer on SQL indexing.',
+           'BOOK', 'https://use-the-index-luke.com/', JSON_ARRAY('sql','performance')
+    UNION ALL SELECT 'HTTPie', 'A friendlier curl for testing your endpoints.',
+           'TOOL', 'https://httpie.io/', JSON_ARRAY('http','testing')
+    UNION ALL SELECT 'PR Description Template', 'Copy-paste checklist for every pull request.',
+           'TEMPLATE', 'https://github.com/moriah/skillhub/blob/main/pull_request_template.md', JSON_ARRAY('git','process')
+) v
+WHERE NOT EXISTS (SELECT 1 FROM learning_resources lr WHERE lr.title = v.title);
+
+-- ---- A few IN_APP notifications for student1 -----------------------------------------
+INSERT INTO notifications (user_id, channel, template_code, payload, status, sent_at)
+SELECT (SELECT id FROM users WHERE email = 'student1@moriah.test'), 'IN_APP', v.tpl,
+       JSON_OBJECT('title', v.title, 'body', v.body), v.status, v.sent_at
+FROM (
+    SELECT 'SUBMISSION_REVIEWED' AS tpl, 'Your PR was reviewed' AS title,
+           'Priya PM approved "Implement DELETE /todos/{id}" - nice work.' AS body, 'SENT' AS status,
+           DATE_SUB(NOW(6), INTERVAL 6 HOUR) AS sent_at
+    UNION ALL SELECT 'ASSESSMENT_PUBLISHED', 'New assessment available',
+           'A timed quiz for Sprint 1 has been published to your batch.', 'SENT', DATE_SUB(NOW(6), INTERVAL 2 DAY)
+    UNION ALL SELECT 'STANDUP_REMINDER', 'Standup at 10:00',
+           'Todays standup for FS-2026-01 starts at 10:00. Post your update.', 'QUEUED', NULL
+) v
+WHERE NOT EXISTS (
+    SELECT 1 FROM notifications n
+    WHERE n.user_id = (SELECT id FROM users WHERE email = 'student1@moriah.test')
+      AND n.template_code = v.tpl);
