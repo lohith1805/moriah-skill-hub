@@ -183,6 +183,165 @@ export async function createBatch(payload) {
   return toFeBatch(await apiClient.post("/batches", body));
 }
 
+// --- Sprints ------------------------------------------------------------
+
+const SPRINT_STATUS_TO_FE = { PLANNED: "Planned", ACTIVE: "Active", COMPLETED: "Completed" };
+
+function toFeSprint(s) {
+  return {
+    id: s.id,
+    batchId: s.batchId,
+    number: s.sprintNumber,
+    goal: s.goal,
+    startDate: s.startDate || null,
+    endDate: s.endDate || null,
+    status: SPRINT_STATUS_TO_FE[s.status] || s.status,
+    backendStatus: s.status,
+    plannedPoints: s.plannedPoints ?? null,
+    completedPoints: s.completedPoints ?? null,
+  };
+}
+
+// GET /api/v1/sprints?batchId= — the backend requires batchId, so a no-arg
+// call fans out over every batch the caller can see.
+export async function getSprints(batchId) {
+  if (batchId) {
+    const res = await apiClient.get("/sprints", { batchId, size: 100 });
+    return asRows(res).map(toFeSprint);
+  }
+  const batches = await getBatches();
+  const perBatch = await Promise.all(
+    batches.map((b) =>
+      apiClient.get("/sprints", { batchId: b.id, size: 100 }).then(asRows).catch(() => [])
+    )
+  );
+  return perBatch
+    .flat()
+    .map(toFeSprint)
+    .sort((a, b) => new Date(b.startDate || 0) - new Date(a.startDate || 0));
+}
+
+// POST /api/v1/sprints — sprintNumber 1-52, goal required, 7-14 day window.
+export async function createSprint(payload) {
+  const body = {
+    batchId: Number(payload.batchId),
+    sprintNumber: Number(payload.number) || 1,
+    goal: (payload.goal || "").trim(),
+    startDate: payload.startDate,
+    endDate: payload.endDate,
+    plannedPoints:
+      payload.plannedPoints === "" || payload.plannedPoints == null
+        ? null
+        : Number(payload.plannedPoints),
+  };
+  return toFeSprint(await apiClient.post("/sprints", body));
+}
+
+// POST /api/v1/sprints/{id}/activate — needs the previous sprint COMPLETED.
+export async function activateSprint(id) {
+  return toFeSprint(await apiClient.post(`/sprints/${id}/activate`, {}));
+}
+
+// --- Tasks --------------------------------------------------------------
+
+const TASK_STATUS_TO_FE = {
+  BACKLOG: "Backlog",
+  ASSIGNED: "Assigned",
+  IN_PROGRESS: "In Progress",
+  IN_REVIEW: "Review",
+  COMPLETED: "Completed",
+  REJECTED: "Rejected",
+};
+const TASK_TYPE_TO_FE = { STORY: "User Story", BUGFIX: "Bug", ASSIGNMENT: "Task", DAILY: "Daily" };
+const FE_TYPE_TO_TASK = { "User Story": "STORY", Bug: "BUGFIX", Task: "ASSIGNMENT", Daily: "DAILY" };
+
+export function toFeTask(t) {
+  return {
+    id: t.id,
+    sprintId: t.sprintId,
+    projectId: t.projectId ?? null,
+    title: t.title,
+    description: t.description || "",
+    type: TASK_TYPE_TO_FE[t.taskType] || "Task",
+    epic: "General", // no epic field on the API — folded into description on create
+    userStory: "",
+    acceptanceCriteria: "",
+    assignee: t.assignedToName || "Unassigned",
+    assigneeUuid: t.assignedToUuid || null,
+    points: t.storyPoints ?? 0,
+    due: t.dueAt ? t.dueAt.slice(0, 10) : "",
+    dueAt: t.dueAt || null,
+    status: TASK_STATUS_TO_FE[t.status] || t.status,
+    backendStatus: t.status,
+    githubPr: null,
+    videoUrl: null,
+    completedCriteria: [],
+  };
+}
+
+// GET /api/v1/tasks?sprintId= — required param; no-arg fans out over every
+// sprint the caller can see.
+export async function getSprintTasks(sprintId) {
+  if (sprintId) {
+    const res = await apiClient.get("/tasks", { sprintId, size: 100 });
+    return asRows(res).map(toFeTask);
+  }
+  const sprints = await getSprints();
+  const perSprint = await Promise.all(
+    sprints.map((s) =>
+      apiClient.get("/tasks", { sprintId: s.id, size: 100 }).then(asRows).catch(() => [])
+    )
+  );
+  return perSprint.flat().map(toFeTask);
+}
+
+// POST /api/v1/tasks — starts BACKLOG (unassigned); students self-pull it.
+// epic / user story / acceptance criteria have no API field, so they are
+// stitched into `description`.
+export async function createTask({ sprintId, title, type, points, dueDate, description, userStory, acceptanceCriteria, epic }) {
+  const descParts = [
+    description,
+    epic ? `Epic: ${epic}` : "",
+    userStory ? `User story: ${userStory}` : "",
+    acceptanceCriteria ? `Acceptance criteria:\n${acceptanceCriteria}` : "",
+  ].filter(Boolean);
+  const body = {
+    sprintId: Number(sprintId),
+    projectId: null,
+    title: (title || "").trim(),
+    description: descParts.join("\n\n") || null,
+    taskType: FE_TYPE_TO_TASK[type] || "ASSIGNMENT",
+    storyPoints: points === "" || points == null ? null : Number(points),
+    dueAt: dueDate ? new Date(`${dueDate}T18:00:00`).toISOString() : null,
+  };
+  return toFeTask(await apiClient.post("/tasks", body));
+}
+
+// PM assigns a BACKLOG task to a specific student by uuid.
+export async function assignTask(taskId, userUuid) {
+  return toFeTask(await apiClient.post(`/tasks/${taskId}/assign`, { userUuid }));
+}
+
+// PM drives a task's status forward (PUT /tasks/{id} — full body).
+export async function updateTask(taskId, current, nextStatus) {
+  const body = {
+    title: current.title,
+    description: current.description || null,
+    taskType: FE_TYPE_TO_TASK[current.type] || "ASSIGNMENT",
+    storyPoints: current.points ?? null,
+    dueAt: current.dueAt || null,
+    status: nextStatus,
+  };
+  return toFeTask(await apiClient.put(`/tasks/${taskId}`, body));
+}
+
+// No batch-roster endpoint exists for a PM — task assignment is by uuid, or
+// students self-pull from the backlog. Returns [] so the pages fall back to
+// "create as backlog" instead of a student dropdown.
+export async function getStudentsForBatch() {
+  return [];
+}
+
 // GET /api/v1/reviews/queue — IN_REVIEW tasks awaiting the caller's review.
 export async function getReviewQueue() {
   const res = await apiClient.get("/reviews/queue", { size: 50 });
@@ -199,64 +358,6 @@ export async function getReviewQueue() {
   }));
 }
 
-export async function getSprints(batchId) {
-  const allSprints = getStoredSprints();
-  const data = batchId ? allSprints.filter((s) => s.batchId === batchId) : allSprints;
-  return mockRequest(data);
-}
-
-// Real students registered for a given batch, so Sprint Planning's "assign
-// to" dropdown offers actual people instead of free-typed names that could
-// typo-drift from what the student's own account is called.
-export async function getStudentsForBatch(batchId) {
-  const batch = BATCHES.find((b) => b.id === batchId);
-  if (!batch) return mockRequest([]);
-  try {
-    const raw = localStorage.getItem("mORIAH_REGISTERED_USERS");
-    const users = raw ? JSON.parse(raw) : [];
-    const students = users
-      .filter((u) => u.role === "student" && u.batch === batch.name)
-      .map((u) => u.name);
-    return mockRequest(students);
-  } catch (e) {
-    return mockRequest([]);
-  }
-}
-
-// A sprint is just a time-boxed goal until real backlog items exist inside
-// it — this is how a trainer actually turns "Sprint 6: goal" into work a
-// specific student sees on their own Sprint Board (see studentService's
-// getMyTasks, which reads this same TASKS array by assignee name).
-export async function createTask({ sprintId, title, points, dueDate, assignee, epic, userStory, acceptanceCriteria, type }) {
-  const task = {
-    id: `t${Date.now()}`,
-    sprintId,
-    title,
-    points: Number(points) || 0,
-    due: dueDate,
-    assignee,
-    status: "Backlog",
-    githubPr: null,
-    epic: epic || "General",
-    userStory: userStory || "",
-    acceptanceCriteria: acceptanceCriteria || "",
-    type: type || "Task",
-    completedCriteria: []
-  };
-
-  let allTasks = TASKS;
-  try {
-    const raw = localStorage.getItem("msh_sprint_tasks");
-    if (raw) allTasks = JSON.parse(raw);
-  } catch (e) {
-    allTasks = TASKS;
-  }
-
-  allTasks.unshift(task);
-  localStorage.setItem("msh_sprint_tasks", JSON.stringify(allTasks));
-  return mockRequest(task, { delay: 400 });
-}
-
 export async function getStaffableClientProjects() {
   try {
     const raw = localStorage.getItem("msh_client_projects");
@@ -265,54 +366,6 @@ export async function getStaffableClientProjects() {
   } catch (e) {
     return mockRequest([]);
   }
-}
-
-// If `clientProjectId` is passed, this sprint is the delivery kickoff for an
-// approved client requirement: link the sprint to it and update the client's
-// project card (batch assigned, live milestone, demo date) so the Client
-// portal reflects real progress instead of a static placeholder.
-export async function createSprint(payload) {
-  const { clientProjectId, ...sprintFields } = payload;
-  const sprint = { id: `sp${Date.now()}`, status: "Active", ...sprintFields };
-  
-  let allSprints = SPRINTS;
-  try {
-    const raw = localStorage.getItem("msh_sprints");
-    if (raw) allSprints = JSON.parse(raw);
-  } catch (e) {}
-
-  allSprints.unshift(sprint);
-  localStorage.setItem("msh_sprints", JSON.stringify(allSprints));
-
-  if (clientProjectId) {
-    try {
-      const raw = localStorage.getItem("msh_client_projects");
-      const projects = raw ? JSON.parse(raw) : [];
-      const batch = BATCHES.find((b) => b.id === sprintFields.batchId);
-      const updated = projects.map((p) =>
-        p.id === clientProjectId
-          ? { ...p, batch: batch?.name || p.batch, milestone: `Sprint ${sprintFields.number} — ${sprintFields.goal}`, progress: 10, demoDate: sprintFields.endDate }
-          : p
-      );
-      localStorage.setItem("msh_client_projects", JSON.stringify(updated));
-    } catch (err) {
-      console.warn("[trainerService] Could not link sprint to client project:", err.message);
-    }
-  }
-
-  return mockRequest(sprint, { delay: 700 });
-}
-
-export async function getSprintTasks(sprintId) {
-  let allTasks = TASKS;
-  try {
-    const raw = localStorage.getItem("msh_sprint_tasks");
-    if (raw) allTasks = JSON.parse(raw);
-  } catch (e) {
-    allTasks = TASKS;
-  }
-  const data = sprintId ? allTasks.filter((t) => t.sprintId === sprintId) : allTasks;
-  return mockRequest(data);
 }
 
 export async function reviewSubmission(taskId, { score, decision, comment, inlineComments = [] }) {

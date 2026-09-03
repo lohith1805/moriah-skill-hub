@@ -8,7 +8,7 @@ import Modal from "../../components/ui/Modal";
 import { Input, Select, Textarea } from "../../components/ui/FormField";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import EmptyState from "../../components/ui/EmptyState";
-import { getBatches, getSprints, createSprint, getStaffableClientProjects, getSprintTasks, getStudentsForBatch, createTask } from "../../services/trainerService";
+import { getBatches, getSprints, createSprint, getStaffableClientProjects, getSprintTasks, createTask } from "../../services/trainerService";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required } from "../../utils/validators";
 
@@ -26,8 +26,7 @@ export default function TrainerSprintPlanning() {
 
   // Task creation, scoped to whichever sprint's "Add Task" was clicked.
   const [activeSprint, setActiveSprint] = useState(null);
-  const [taskStudents, setTaskStudents] = useState([]);
-  const [taskValues, setTaskValues] = useState({ title: "", points: "3", dueDate: "", assignee: "" });
+  const [taskValues, setTaskValues] = useState({ title: "", points: "3", dueDate: "" });
   const [taskErrors, setTaskErrors] = useState({});
   const [taskSubmitting, setTaskSubmitting] = useState(false);
 
@@ -74,28 +73,27 @@ export default function TrainerSprintPlanning() {
 
   const batchName = (id) => batches.find((b) => b.id === id)?.name || "—";
 
-  const openTaskModal = async (sprint) => {
+  const openTaskModal = (sprint) => {
     setActiveSprint(sprint);
-    setTaskValues({ title: "", points: "3", dueDate: "", assignee: "" });
+    setTaskValues({ title: "", points: "3", dueDate: "" });
     setTaskErrors({});
-    setTaskStudents([]);
-    const students = await getStudentsForBatch(sprint.batchId);
-    setTaskStudents(students);
   };
 
   const closeTaskModal = () => setActiveSprint(null);
 
   const submitTask = async (e) => {
     e.preventDefault();
-    const validation = validateForm(taskValues, { title: [required], dueDate: [required], assignee: [required] });
+    const validation = validateForm(taskValues, { title: [required], dueDate: [required] });
     setTaskErrors(validation);
     if (Object.keys(validation).length) return;
     setTaskSubmitting(true);
     try {
       await createTask({ sprintId: activeSprint.id, ...taskValues });
-      notify(`Task assigned to ${taskValues.assignee} — it'll show up on their Sprint Board.`, { type: "success", title: "Task created" });
+      notify("Backlog item added — students pull it from their sprint board.", { type: "success", title: "Task created" });
       setActiveSprint(null);
       load();
+    } catch (err) {
+      notify(err.message || "Failed to create the task.", { type: "error" });
     } finally {
       setTaskSubmitting(false);
     }
@@ -219,22 +217,14 @@ export default function TrainerSprintPlanning() {
           <Button loading={taskSubmitting} onClick={submitTask}>Add Task</Button>
         </>}
       >
-        {activeSprint && taskStudents.length === 0 ? (
-          <EmptyState
-            icon={Users}
-            title="No registered students in this batch yet"
-            description="Students need to have registered and been assigned to this batch before you can assign them a task."
-          />
-        ) : (
-          <form className="flex flex-col gap-4" onSubmit={submitTask}>
-            <Input label="Task title" required placeholder="e.g. Build login & OAuth screen" value={taskValues.title} onChange={(e) => setTaskValues((v) => ({ ...v, title: e.target.value }))} error={taskErrors.title} />
-            <Select label="Assign to" required placeholder="Select a student" options={taskStudents.map((name) => ({ value: name, label: name }))} value={taskValues.assignee} onChange={(e) => setTaskValues((v) => ({ ...v, assignee: e.target.value }))} error={taskErrors.assignee} />
-            <div className="grid grid-cols-2 gap-4">
-              <Input label="Points" type="number" min="1" value={taskValues.points} onChange={(e) => setTaskValues((v) => ({ ...v, points: e.target.value }))} />
-              <Input label="Due date" type="date" required value={taskValues.dueDate} onChange={(e) => setTaskValues((v) => ({ ...v, dueDate: e.target.value }))} error={taskErrors.dueDate} />
-            </div>
-          </form>
-        )}
+        <form className="flex flex-col gap-4" onSubmit={submitTask}>
+          <Input label="Task title" required placeholder="e.g. Build login & OAuth screen" value={taskValues.title} onChange={(e) => setTaskValues((v) => ({ ...v, title: e.target.value }))} error={taskErrors.title} />
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Points" type="number" min="1" value={taskValues.points} onChange={(e) => setTaskValues((v) => ({ ...v, points: e.target.value }))} />
+            <Input label="Due date" type="date" required value={taskValues.dueDate} onChange={(e) => setTaskValues((v) => ({ ...v, dueDate: e.target.value }))} error={taskErrors.dueDate} />
+          </div>
+          <p className="text-xs text-ink-500">Starts in the Backlog — students pull it onto their own board.</p>
+        </form>
       </Modal>
     </div>
   );

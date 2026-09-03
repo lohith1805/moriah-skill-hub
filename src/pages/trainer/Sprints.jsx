@@ -9,7 +9,7 @@ import { Input, Select, Textarea } from "../../components/ui/FormField";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import EmptyState from "../../components/ui/EmptyState";
 import Breadcrumbs from "../../components/widgets/Breadcrumbs";
-import { getBatches, getSprints, createSprint, createTask, getSprintTasks, getStudentsForBatch } from "../../services/trainerService";
+import { getBatches, getSprints, createSprint, activateSprint, createTask, getSprintTasks } from "../../services/trainerService";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required } from "../../utils/validators";
 import { formatDate } from "../../utils/formatters";
@@ -27,9 +27,9 @@ export default function Sprints() {
   // Selected Sprint Details & Backlog States
   const [selectedSprint, setSelectedSprint] = useState(null);
   const [sprintTasks, setSprintTasks] = useState([]);
-  const [students, setStudents] = useState([]);
   const [openTaskModal, setOpenTaskModal] = useState(false);
   const [taskSaving, setTaskSaving] = useState(false);
+  const [activating, setActivating] = useState(false);
   const [taskValues, setTaskValues] = useState({
     title: "",
     type: "User Story",
@@ -38,7 +38,6 @@ export default function Sprints() {
     acceptanceCriteria: "",
     points: "3",
     dueDate: "",
-    assignee: ""
   });
   const [taskErrors, setTaskErrors] = useState({});
 
@@ -55,20 +54,28 @@ export default function Sprints() {
 
   useEffect(() => { load(); }, []);
 
-  // Fetch tasks and students when selected sprint changes
+  // Fetch tasks when the selected sprint changes.
   useEffect(() => {
     if (selectedSprint) {
-      getSprintTasks(selectedSprint.id).then((data) => {
-        setSprintTasks(data);
-      });
-      getStudentsForBatch(selectedSprint.batchId).then((data) => {
-        setStudents(data);
-      });
+      getSprintTasks(selectedSprint.id).then(setSprintTasks);
     } else {
       setSprintTasks([]);
-      setStudents([]);
     }
   }, [selectedSprint]);
+
+  const onActivate = async () => {
+    if (!selectedSprint) return;
+    setActivating(true);
+    try {
+      await activateSprint(selectedSprint.id);
+      notify(`Sprint ${selectedSprint.number} is now active.`, { type: "success" });
+      load(selectedSprint.id);
+    } catch (err) {
+      notify(err.message || "Couldn't activate the sprint (the previous one must be completed).", { type: "error" });
+    } finally {
+      setActivating(false);
+    }
+  };
 
   const batchName = (id) => batches.find((b) => b.id === id)?.name || "—";
   const onChange = (e) => setValues((v) => ({ ...v, [e.target.name]: e.target.value }));
@@ -92,7 +99,7 @@ export default function Sprints() {
 
     setSaving(true);
     try {
-      const scheduledNum = sprints.filter(s => s.batchId === values.batchId).length + 1;
+      const scheduledNum = sprints.filter((s) => String(s.batchId) === String(values.batchId)).length + 1;
       const res = await createSprint({ ...values, number: Number(values.number) || scheduledNum });
       notify("Sprint scheduled successfully.", { type: "success", title: "Sprint created" });
       setOpen(false);
@@ -107,17 +114,14 @@ export default function Sprints() {
 
   const onCreateTask = async (e) => {
     e.preventDefault();
-    const nextErrors = validateForm(taskValues, { title: [required], dueDate: [required], assignee: [required] });
+    const nextErrors = validateForm(taskValues, { title: [required], dueDate: [required] });
     setTaskErrors(nextErrors);
     if (Object.keys(nextErrors).length) return;
 
     setTaskSaving(true);
     try {
-      await createTask({
-        ...taskValues,
-        sprintId: selectedSprint.id
-      });
-      notify("Backlog task created and assigned successfully.", { type: "success" });
+      await createTask({ ...taskValues, sprintId: selectedSprint.id });
+      notify("Backlog item added — students can pull it from their sprint board.", { type: "success" });
       setOpenTaskModal(false);
       setTaskValues({
         title: "",
@@ -127,13 +131,11 @@ export default function Sprints() {
         acceptanceCriteria: "",
         points: "3",
         dueDate: "",
-        assignee: ""
       });
-      // Refresh tasks
       const data = await getSprintTasks(selectedSprint.id);
       setSprintTasks(data);
-    } catch {
-      notify("Failed to create backlog item.", { type: "error" });
+    } catch (err) {
+      notify(err.message || "Failed to create backlog item.", { type: "error" });
     } finally {
       setTaskSaving(false);
     }
@@ -204,7 +206,14 @@ export default function Sprints() {
                       <Calendar size={12} /> {formatDate(selectedSprint.startDate)} – {formatDate(selectedSprint.endDate)}
                     </p>
                   </div>
-                  <Button icon={Plus} size="sm" onClick={() => setOpenTaskModal(true)}>Add Backlog Item</Button>
+                  <div className="flex gap-2">
+                    {selectedSprint.status !== "Active" && selectedSprint.status !== "Completed" && (
+                      <Button size="sm" variant="secondary" loading={activating} onClick={onActivate}>
+                        Activate Sprint
+                      </Button>
+                    )}
+                    <Button icon={Plus} size="sm" onClick={() => setOpenTaskModal(true)}>Add Backlog Item</Button>
+                  </div>
                 </div>
 
                 <div className="rounded-lg bg-cream-50/60 border border-border/80 p-4 mb-6 text-left">
@@ -358,7 +367,7 @@ export default function Sprints() {
               rows={3}
             />
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               <Select
                 label="Estimation Points"
                 name="points"
@@ -382,17 +391,10 @@ export default function Sprints() {
                 error={taskErrors.dueDate}
                 required
               />
-              <Select
-                label="Assignee"
-                name="assignee"
-                placeholder="Select student"
-                value={taskValues.assignee}
-                onChange={onTaskChange}
-                error={taskErrors.assignee}
-                required
-                options={students.map((name) => ({ value: name, label: name }))}
-              />
             </div>
+            <p className="text-xs text-ink-500">
+              New items start in the <strong>Backlog</strong> unassigned — students pull them onto their own board.
+            </p>
           </form>
         </Modal>
       )}
