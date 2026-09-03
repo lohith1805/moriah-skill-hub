@@ -7,41 +7,56 @@ import Badge from "../../components/ui/Badge";
 import Table from "../../components/ui/Table";
 import Modal from "../../components/ui/Modal";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
-import { getPlans, subscribeToPlan } from "../../services/studentService";
+import { getPlans, subscribeToPlan, getMySubscription } from "../../services/studentService";
 import { useToast } from "../../context/ToastContext";
 import { CURRENCY } from "../../utils/constants";
 import { useAuth } from "../../context/AuthContext";
-import RazorpayMockModal from "../../components/ui/RazorpayMockModal";
+import { useNavigate } from "react-router-dom";
 
+const TRACK_CODES = [
+  { value: "FULL_STACK", label: "Full-Stack Development" },
+  { value: "DATA_ANALYTICS", label: "Data Analytics" },
+  { value: "PRODUCT_DESIGN", label: "Product Design" },
+  { value: "BACKEND_ENGINEERING", label: "Backend Engineering" },
+];
 
-const INVOICES = [];
-
-const loadRazorpayScript = () => {
-  return new Promise((resolve) => {
-    if (window.Razorpay) {
-      resolve(true);
-      return;
-    }
+const loadRazorpayScript = () =>
+  new Promise((resolve) => {
+    if (window.Razorpay) return resolve(true);
     const script = document.createElement("script");
     script.src = "https://checkout.razorpay.com/v1/checkout.js";
     script.onload = () => resolve(true);
     script.onerror = () => resolve(false);
     document.body.appendChild(script);
   });
-};
+
+// The subscription is activated by the (signed) gateway webhook, not by the
+// browser — after the widget closes, poll /subscriptions/me a few times.
+async function waitForActivation(tries = 5) {
+  for (let i = 0; i < tries; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const sub = await getMySubscription().catch(() => null);
+    if (sub && sub.status === "ACTIVE") return sub;
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  return null;
+}
 
 export default function StudentSubscription() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
   const [processing, setProcessing] = useState(false);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [gateway, setGateway] = useState("Razorpay");
+  const [trackCode, setTrackCode] = useState("FULL_STACK");
   const [invoiceList, setInvoiceList] = useState([]);
   const { notify } = useToast();
 
-  const currentPlanCode = user?.subscription?.planCode || "project_based";
+  const [mySub, setMySub] = useState(null);
+  const currentPlanCode = mySub?.planCode || null;
 
   useEffect(() => {
     if (user) {
@@ -65,15 +80,67 @@ export default function StudentSubscription() {
   }, [user]);
 
   useEffect(() => {
-    getPlans().then((data) => {
+    Promise.all([getPlans(), getMySubscription().catch(() => null)]).then(([data, sub]) => {
       setPlans(data);
+      setMySub(sub);
       setLoading(false);
     });
   }, []);
 
-  const confirmUpgrade = () => {
+  const confirmUpgrade = async () => {
+    if (!selected) return;
     setProcessing(true);
-    setShowPaymentModal(true);
+    try {
+      const checkout = await subscribeToPlan(selected.backendCode || selected.code, gateway, { trackCode });
+
+      if (checkout.stripeCheckoutUrl) {
+        window.location.href = checkout.stripeCheckoutUrl;
+        return;
+      }
+
+      const ok = await loadRazorpayScript();
+      if (!ok || !window.Razorpay) {
+        notify("Couldn't load the Razorpay checkout script.", { type: "error" });
+        setProcessing(false);
+        return;
+      }
+
+      const rzp = new window.Razorpay({
+        key: checkout.razorpayKeyId,
+        order_id: checkout.razorpayOrderId,
+        amount: Math.round((checkout.amount || selected.price) * 100),
+        currency: checkout.currency || "INR",
+        name: "Moriah Skill Hub",
+        description: `${selected.name} plan`,
+        prefill: { name: user?.name, email: user?.email, contact: user?.phone },
+        theme: { color: "#1E4A78" },
+        handler: async () => {
+          notify("Payment captured — activating your subscription…", { type: "success" });
+          const sub = await waitForActivation();
+          setProcessing(false);
+          setSelected(null);
+          if (sub) {
+            notify(`You're on the ${sub.planName || selected.name} plan.`, { type: "success", title: "Subscription active" });
+            navigate("/student/dashboard", { replace: true });
+          } else {
+            notify("Payment received. Your subscription will activate shortly — refresh in a moment.", { type: "info" });
+          }
+        },
+        modal: { ondismiss: () => setProcessing(false) },
+      });
+      rzp.on("payment.failed", (resp) => {
+        notify(resp?.error?.description || "Payment failed.", { type: "error" });
+        setProcessing(false);
+      });
+      rzp.open();
+    } catch (err) {
+      notify(
+        err.message ||
+          "Checkout failed. In local dev this needs real Razorpay/Stripe test-mode keys (see required-integrations.md).",
+        { type: "error", title: "Checkout error" }
+      );
+      setProcessing(false);
+    }
   };
 
   const viewInvoicePDF = (invoice) => {
@@ -182,87 +249,6 @@ export default function StudentSubscription() {
     
     printWindow.document.write(htmlContent);
     printWindow.document.close();
-  };
-
-  const handlePaymentSuccess = async (response) => {
-    setShowPaymentModal(false);
-    setProcessing(true);
-    try {
-      await subscribeToPlan(selected.code, "razorpay");
-      
-      if (user) {
-        const updatedUser = {
-          ...user,
-          subscription: {
-            planCode: selected.code,
-            planName: selected.name,
-            price: selected.price,
-            model: selected.model,
-            paidAt: new Date().toISOString(),
-            paymentId: response.razorpay_payment_id || `rzp_${Date.now()}`,
-            gateway: gateway,
-          }
-        };
-        localStorage.setItem("msh_user", JSON.stringify(updatedUser));
-
-        const rawList = localStorage.getItem("mORIAH_REGISTERED_USERS");
-        if (rawList) {
-          const list = JSON.parse(rawList);
-          const idx = list.findIndex((u) => u.id === user.id);
-          if (idx > -1) {
-            list[idx] = updatedUser;
-            localStorage.setItem("mORIAH_REGISTERED_USERS", JSON.stringify(list));
-          }
-        }
-
-        // Record transaction
-        try {
-          const rawTx = localStorage.getItem("msh_transactions");
-          const txList = rawTx ? JSON.parse(rawTx) : [];
-          const txId = `tx${Date.now()}`;
-          txList.unshift({
-            id: txId,
-            student: user.name,
-            plan: selected.name,
-            amount: selected.price,
-            gateway: gateway,
-            status: "Success",
-            date: new Date().toISOString().slice(0, 10),
-          });
-          localStorage.setItem("msh_transactions", JSON.stringify(txList));
-
-          // Record receipt confirmation notification
-          const rawNotif = localStorage.getItem("msh_notifications");
-          const notifList = rawNotif ? JSON.parse(rawNotif) : [];
-          notifList.unshift({
-            id: `notif-${Date.now()}`,
-            title: "Subscription Upgraded",
-            body: `Successfully upgraded to the ${selected.name} plan. Paid ₹${selected.price} via ${gateway}. Receipt code: ${response.razorpay_payment_id || txId.replace("tx", "INV-")}.`,
-            time: new Date().toISOString(),
-            read: false,
-          });
-          localStorage.setItem("msh_notifications", JSON.stringify(notifList));
-        } catch (err) {
-          console.warn("[Subscription] Could not record transaction:", err.message);
-        }
-      }
-
-      notify(`You are now successfully subscribed to ${selected.name}.`, { type: "success", title: "Payment Completed" });
-      setSelected(null);
-
-      setTimeout(() => {
-        window.location.reload();
-      }, 800);
-    } catch (e) {
-      notify("Failed to link subscription after payment confirmation.", { type: "error", title: "Sync failed" });
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  const handlePaymentClose = () => {
-    setShowPaymentModal(false);
-    setProcessing(false);
   };
 
   return (
@@ -377,21 +363,22 @@ export default function StudentSubscription() {
                 </button>
               </div>
             </div>
+
+            <div className="border-t border-border pt-4 text-left">
+              <p className="text-xs font-semibold text-ink-800 mb-2">Learning Track</p>
+              <select
+                value={trackCode}
+                onChange={(e) => setTrackCode(e.target.value)}
+                className="w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-primary-500 bg-white"
+              >
+                {TRACK_CODES.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+            </div>
           </div>
         )}
       </Modal>
-
-      <RazorpayMockModal
-        isOpen={showPaymentModal}
-        onClose={handlePaymentClose}
-        onSuccess={handlePaymentSuccess}
-        amount={selected?.price || 0}
-        planName={selected?.name}
-        userName={user?.name}
-        userEmail={user?.email}
-        userPhone={user?.phone}
-        gateway={gateway}
-      />
     </div>
   );
 }

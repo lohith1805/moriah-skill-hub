@@ -415,12 +415,29 @@ export async function getMySubscription() {
   }
 }
 
-// No checkout endpoint on the subscription controller yet — the real payment
-// flow is POST /subscriptions/checkout in the payment module (see
-// testing-flow.md Flow 5). Kept mock so the UI still completes.
-export async function subscribeToPlan(planCode, paymentMethod) {
-  await mockRequest(null, { delay: 900 });
-  return { invoiceId: `INV-${Date.now()}`, status: "success", planCode, paymentMethod };
+// POST /api/v1/subscriptions/checkout — creates a gateway order/session. It
+// NEVER activates the subscription directly; the (signed) gateway webhook
+// does that after the payment is captured. Returns what the FE needs to open
+// the Razorpay widget or redirect to Stripe. Without real test-mode keys the
+// backend responds 502 PAYMENT_GATEWAY_ERROR.
+// `feGateway` is "Razorpay" | "Stripe"; `feBackendCode` is a backend plan code
+// (STARTER / PROFESSIONAL / …) — the caller resolves it from the FE plan.
+export async function subscribeToPlan(backendPlanCode, feGateway = "Razorpay", { trackCode = "FULL_STACK", couponCode = null } = {}) {
+  const res = await apiClient.post("/subscriptions/checkout", {
+    planCode: backendPlanCode,
+    gateway: (feGateway || "Razorpay").toUpperCase() === "STRIPE" ? "STRIPE" : "RAZORPAY",
+    couponCode: couponCode || null,
+    trackCode,
+  });
+  return {
+    gateway: res.gateway,
+    paymentId: res.paymentId,
+    amount: res.amount != null ? Number(res.amount) : null,
+    currency: res.currency || "INR",
+    razorpayOrderId: res.razorpayOrderId || null,
+    razorpayKeyId: res.razorpayKeyId || null,
+    stripeCheckoutUrl: res.stripeCheckoutUrl || null,
+  };
 }
 
 // GET /api/v1/interviews/me — mock/technical/HR/placement interviews a PM
