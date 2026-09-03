@@ -346,7 +346,16 @@ with matching `DB_PORT` (+ `DB_REPLICA_PORT` same value), `redis-cli FLUSHALL` i
 biometric attendance, trainer cross-batch student mgmt, student `getPerformanceSummary` +
 auto-PIP). `placementPipeline.js` stays too (display-helper + backend adapter).
 
-Frontend HEAD `fd86bc2` (landing page wired). Backend HEAD = the "crm: public site + inbound
-lead" commit + its docs-regen follow-up (this session's last two backend commits).
+**HEADs:** Frontend `fd86bc2` (landing page wired). Backend `25f3dd4` (docs re-export) on top of
+`6351d26` (public `site/` endpoints + inbound lead + big seed). Full surefire = **547 tests
+green** (Testcontainers `*IT` still need Docker; `mvn -o test` alone is unit-only, ~15s).
+
+**Local run state right now:** Docker `skillhub-mysql` / `-redis` / `-minio` are UP but MySQL is
+published on **3316** (I remapped it — native Windows service `MySQL97`, StartMode Auto, squats
+3306). A plain `mvn -o spring-boot:run` will hit MySQL97 and fail `Access denied for
+'moriah_migrate'`. Fix: `Stop-Service MySQL97` in an admin PowerShell (optionally
+`Set-Service MySQL97 -StartupType Manual`), then `docker compose up -d` restores 3306 — or keep
+passing `DB_PORT=3316` + `DB_REPLICA_PORT=3316`.
+
 `README.md` still has the user's uncommitted Razorpay-test-key edit — never `git add -A`; scope
 every `git add`. Untracked `*_Integration*.zip` / `bun.lock` in both repos are the user's — leave them.
