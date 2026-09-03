@@ -128,6 +128,7 @@ public enum ErrorCode {
     LEAD_ALREADY_TERMINAL(HttpStatus.CONFLICT, "This lead has already reached a terminal status (ENROLLED or LOST)."),
     LEAD_STATUS_UNCHANGED(HttpStatus.CONFLICT, "This lead is already in that status."),
     LEAD_BACKWARD_REASON_REQUIRED(HttpStatus.CONFLICT, "A reason is required to move a lead backward in the pipeline."),
+    LEAD_ALREADY_ARCHIVED(HttpStatus.CONFLICT, "This lead has already been archived."),
     EMPLOYEE_ALREADY_EXISTS(HttpStatus.CONFLICT, "This user already has an employee record."),
     HR_DOCUMENT_ALREADY_DECIDED(HttpStatus.CONFLICT, "This document has already been verified or rejected."),
     LEAVE_REQUEST_ALREADY_DECIDED(HttpStatus.CONFLICT, "This leave request has already been decided."),

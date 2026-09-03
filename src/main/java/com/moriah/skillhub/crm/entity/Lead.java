@@ -14,6 +14,9 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.math.BigDecimal;
+import java.time.Instant;
+
 /**
  * {@code interestedPlanId} is a bare FK, not a real {@code @ManyToOne} to {@code SubscriptionPlan}
  * — same reasoning as {@code PendingBatchAllocation.planId} (architecture.md's shared-kernel
@@ -49,6 +52,10 @@ public class Lead extends BaseEntity {
     @Column(name = "interested_plan_id")
     private Long interestedPlanId;
 
+    /** Per-lead estimated / closed deal amount. Nullable — see V34's own comment. */
+    @Column(name = "deal_value", precision = 12, scale = 2)
+    private BigDecimal dealValue;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private LeadStatus status;
@@ -63,6 +70,15 @@ public class Lead extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "converted_user_id")
     private User convertedUser;
+
+    /** Denormalised cache of the latest follow-up date across this lead's activities — set by
+     * {@code LeadService.addActivity} so the board view doesn't N+1 over {@code lead_activities}. */
+    @Column(name = "next_follow_up_at")
+    private Instant nextFollowUpAt;
+
+    /** Soft delete — set by {@code DELETE /api/v1/leads/{id}}; every list query filters it out. */
+    @Column(name = "archived_at")
+    private Instant archivedAt;
 
     // columnDefinition matches V12's CHAR(64) exactly — a SHA-256 hex digest is always exactly
     // 64 characters, and Hibernate's default for a String column is VARCHAR, not CHAR (same fix

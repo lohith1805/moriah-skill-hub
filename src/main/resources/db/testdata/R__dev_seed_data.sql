@@ -136,12 +136,50 @@ SELECT 'Todo API', 'todo-api', 'A REST API for a todo list - the sprint-1 refere
        (SELECT id FROM users WHERE email = 'dev@moriah.test')
 WHERE NOT EXISTS (SELECT 1 FROM projects WHERE slug = 'todo-api');
 
--- ---- One NEW lead for the sales rep --------------------------------------------------
-INSERT INTO leads (name, email, phone, source, lead_type, institution, status, assigned_agent_id, dedupe_hash)
-SELECT 'Nikhil Prospect', 'nikhil.prospect@example.com', '919900112233', 'LANDING_PAGE', 'B2C', 'Self',
-       'NEW', (SELECT id FROM users WHERE email = 'sales@moriah.test'),
-       'seeddeadbeef0000000000000000000000000000000000000000000000000000'
-WHERE NOT EXISTS (SELECT 1 FROM leads WHERE email = 'nikhil.prospect@example.com');
+-- ---- A small CRM pipeline for the sales rep -----------------------------------------
+--   One lead per pipeline stage so /leads/pipeline, the leaderboard and the activity
+--   history all have something to show on a fresh `dev` boot. dedupe_hash is just any
+--   unique 64-hex value here (SHA2 of email+phone) — the real hasher runs only on the
+--   POST /leads path.
+INSERT INTO leads (name, email, phone, source, lead_type, institution, deal_value, status, assigned_agent_id, dedupe_hash)
+SELECT v.name, v.email, v.phone, v.source, v.lead_type, v.institution, v.deal_value, v.status,
+       (SELECT id FROM users WHERE email = 'sales@moriah.test'),
+       SHA2(CONCAT(v.email, v.phone), 256)
+FROM (
+    SELECT 'Nikhil Prospect'  AS name, 'nikhil.prospect@example.com' AS email, '919900112233' AS phone,
+           'LANDING_PAGE' AS source, 'B2C' AS lead_type, 'Self' AS institution,
+           CAST(NULL AS DECIMAL(12,2)) AS deal_value, 'NEW' AS status
+    UNION ALL SELECT 'Priya Menon',   'priya.menon@example.com',   '919812345670', 'REFERRAL',     'B2C', 'Self',            29999.00, 'CONTACTED'
+    UNION ALL SELECT 'Arjun Rao',     'arjun.rao@example.com',     '919845000021', 'COLLEGE',      'B2B2C', 'VIT Chennai',   0.00,     'DEMO_SCHEDULED'
+    UNION ALL SELECT 'Meera Nair',    'meera.nair@example.com',    '919820777310', 'CORPORATE',    'B2B', 'Zoho Corp',       450000.00, 'COUNSELLING_DONE'
+    UNION ALL SELECT 'Rohan Gupta',   'rohan.gupta@example.com',   '919811223344', 'LANDING_PAGE', 'B2C', 'Self',            29999.00, 'ENROLLED'
+) v
+WHERE NOT EXISTS (SELECT 1 FROM leads l WHERE l.email = v.email);
+
+-- A couple of activities on the CONTACTED lead so the detail drawer isn't empty.
+INSERT INTO lead_activities (lead_id, agent_id, activity_type, outcome, notes, occurred_at)
+SELECT l.id, l.assigned_agent_id, 'CALL', 'NO_ANSWER', 'First dial — went to voicemail.',
+       DATE_SUB(NOW(6), INTERVAL 2 DAY)
+FROM leads l WHERE l.email = 'priya.menon@example.com'
+  AND NOT EXISTS (SELECT 1 FROM lead_activities a WHERE a.lead_id = l.id AND a.outcome = 'NO_ANSWER');
+INSERT INTO lead_activities (lead_id, agent_id, activity_type, outcome, notes, next_follow_up_at, occurred_at)
+SELECT l.id, l.assigned_agent_id, 'WHATSAPP', 'SENT', 'Sent the syllabus brochure template.',
+       DATE_ADD(NOW(6), INTERVAL 2 DAY), DATE_SUB(NOW(6), INTERVAL 1 DAY)
+FROM leads l WHERE l.email = 'priya.menon@example.com'
+  AND NOT EXISTS (SELECT 1 FROM lead_activities a WHERE a.lead_id = l.id AND a.outcome = 'SENT');
+UPDATE leads SET next_follow_up_at = DATE_ADD(NOW(6), INTERVAL 2 DAY)
+WHERE email = 'priya.menon@example.com' AND next_follow_up_at IS NULL;
+
+-- A sales target for the current month so /leads/targets/me and the leaderboard's quota
+-- columns are populated for `sales@`.
+INSERT INTO sales_targets (agent_id, period_month, calls_target, calls_made, conversions_target,
+                           conversions_made, revenue_target, revenue_achieved)
+SELECT (SELECT id FROM users WHERE email = 'sales@moriah.test'),
+       DATE_FORMAT(CURDATE(), '%Y-%m-01'), 120, 34, 8, 1, 500000.00, 29999.00
+WHERE NOT EXISTS (
+    SELECT 1 FROM sales_targets s
+    WHERE s.agent_id = (SELECT id FROM users WHERE email = 'sales@moriah.test')
+      AND s.period_month = DATE_FORMAT(CURDATE(), '%Y-%m-01'));
 
 -- ---- Two employee records (HR + payroll testing) -----------------------------------
 INSERT INTO employees (user_id, employee_code, department, designation, employment_type, date_of_joining, base_salary, status)

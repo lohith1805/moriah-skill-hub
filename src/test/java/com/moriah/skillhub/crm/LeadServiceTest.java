@@ -7,8 +7,11 @@ import com.moriah.skillhub.crm.dto.AddLeadActivityRequest;
 import com.moriah.skillhub.crm.dto.CreateLeadRequest;
 import com.moriah.skillhub.crm.dto.LeadActivityResponse;
 import com.moriah.skillhub.crm.dto.LeadResponse;
+import com.moriah.skillhub.crm.dto.SalesLeaderboardRowResponse;
 import com.moriah.skillhub.crm.dto.SalesTargetResponse;
+import com.moriah.skillhub.crm.dto.UpdateLeadRequest;
 import com.moriah.skillhub.crm.dto.UpdateLeadStatusRequest;
+import com.moriah.skillhub.crm.repository.LeadAgentStatsView;
 import com.moriah.skillhub.crm.entity.Lead;
 import com.moriah.skillhub.crm.entity.LeadActivity;
 import com.moriah.skillhub.crm.entity.LeadActivityType;
@@ -64,7 +67,7 @@ class LeadServiceTest {
 
     private CreateLeadRequest createRequest() {
         return new CreateLeadRequest("Ada Lovelace", "ada@example.com", "+1 555 000 1111",
-                LeadSource.LANDING_PAGE, "INDIVIDUAL", null, null);
+                LeadSource.LANDING_PAGE, "INDIVIDUAL", null, null, null);
     }
 
     private User user(long id) {
@@ -105,7 +108,7 @@ class LeadServiceTest {
         });
 
         CreateLeadRequest request = new CreateLeadRequest("Ada Lovelace", "  ADA@Example.com  ",
-                "+1 (555) 000-1111", LeadSource.LANDING_PAGE, "INDIVIDUAL", null, null);
+                "+1 (555) 000-1111", LeadSource.LANDING_PAGE, "INDIVIDUAL", null, null, null);
         LeadResponse response = service().create(request, 9L);
 
         assertThat(response.email()).isEqualTo("ada@example.com");
@@ -149,7 +152,7 @@ class LeadServiceTest {
     @Test
     void create_unknownInterestedPlan_throwsNotFound() {
         CreateLeadRequest request = new CreateLeadRequest("Ada Lovelace", "ada@example.com",
-                "+1 555 000 1111", LeadSource.LANDING_PAGE, "INDIVIDUAL", null, 42L);
+                "+1 555 000 1111", LeadSource.LANDING_PAGE, "INDIVIDUAL", null, 42L, null);
         when(subscriptionPlanRepository.existsById(42L)).thenReturn(false);
 
         assertThatThrownBy(() -> service().create(request, 9L))
@@ -186,7 +189,7 @@ class LeadServiceTest {
         when(userRepository.getReferenceById(9L)).thenReturn(user(9L));
 
         LeadResponse response = service().updateStatus(1L,
-                new UpdateLeadStatusRequest(LeadStatus.CONTACTED, null, null, null), 9L);
+                new UpdateLeadStatusRequest(LeadStatus.CONTACTED, null, null, null, null), 9L);
 
         assertThat(response.status()).isEqualTo(LeadStatus.CONTACTED);
         verify(leadActivityRepository).save(any(LeadActivity.class));
@@ -198,7 +201,7 @@ class LeadServiceTest {
         when(leadRepository.findById(1L)).thenReturn(Optional.of(lead));
 
         assertThatThrownBy(() -> service().updateStatus(1L,
-                new UpdateLeadStatusRequest(LeadStatus.DEMO_SCHEDULED, null, null, null), 9L))
+                new UpdateLeadStatusRequest(LeadStatus.DEMO_SCHEDULED, null, null, null, null), 9L))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.LEAD_PIPELINE_SKIP);
     }
@@ -209,7 +212,7 @@ class LeadServiceTest {
         when(leadRepository.findById(1L)).thenReturn(Optional.of(lead));
 
         assertThatThrownBy(() -> service().updateStatus(1L,
-                new UpdateLeadStatusRequest(LeadStatus.CONTACTED, null, null, null), 9L))
+                new UpdateLeadStatusRequest(LeadStatus.CONTACTED, null, null, null, null), 9L))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.LEAD_BACKWARD_REASON_REQUIRED);
     }
@@ -221,7 +224,7 @@ class LeadServiceTest {
         when(userRepository.getReferenceById(9L)).thenReturn(user(9L));
 
         LeadResponse response = service().updateStatus(1L,
-                new UpdateLeadStatusRequest(LeadStatus.CONTACTED, "Demo no-show, resetting.", null, null), 9L);
+                new UpdateLeadStatusRequest(LeadStatus.CONTACTED, "Demo no-show, resetting.", null, null, null), 9L);
 
         assertThat(response.status()).isEqualTo(LeadStatus.CONTACTED);
     }
@@ -232,7 +235,7 @@ class LeadServiceTest {
         when(leadRepository.findById(1L)).thenReturn(Optional.of(lead));
 
         assertThatThrownBy(() -> service().updateStatus(1L,
-                new UpdateLeadStatusRequest(LeadStatus.CONTACTED, "reason", null, null), 9L))
+                new UpdateLeadStatusRequest(LeadStatus.CONTACTED, "reason", null, null, null), 9L))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.LEAD_ALREADY_TERMINAL);
     }
@@ -243,7 +246,7 @@ class LeadServiceTest {
         when(leadRepository.findById(1L)).thenReturn(Optional.of(lead));
 
         assertThatThrownBy(() -> service().updateStatus(1L,
-                new UpdateLeadStatusRequest(LeadStatus.CONTACTED, null, null, null), 9L))
+                new UpdateLeadStatusRequest(LeadStatus.CONTACTED, null, null, null, null), 9L))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.LEAD_STATUS_UNCHANGED);
     }
@@ -255,7 +258,7 @@ class LeadServiceTest {
         when(userRepository.getReferenceById(9L)).thenReturn(user(9L));
 
         LeadResponse response = service().updateStatus(1L,
-                new UpdateLeadStatusRequest(LeadStatus.LOST, null, "Chose a competitor.", null), 9L);
+                new UpdateLeadStatusRequest(LeadStatus.LOST, null, "Chose a competitor.", null, null), 9L);
 
         assertThat(response.status()).isEqualTo(LeadStatus.LOST);
         assertThat(response.lostReason()).isEqualTo("Chose a competitor.");
@@ -270,7 +273,7 @@ class LeadServiceTest {
         when(userRepository.getReferenceById(9L)).thenReturn(user(9L));
 
         LeadResponse response = service().updateStatus(1L,
-                new UpdateLeadStatusRequest(LeadStatus.ENROLLED, null, null, convertedUser.getUuid()), 9L);
+                new UpdateLeadStatusRequest(LeadStatus.ENROLLED, null, null, convertedUser.getUuid(), null), 9L);
 
         assertThat(response.status()).isEqualTo(LeadStatus.ENROLLED);
         assertThat(response.convertedUserUuid()).isEqualTo(convertedUser.getUuid());
@@ -283,7 +286,7 @@ class LeadServiceTest {
         when(userRepository.findByUuid("no-such-uuid")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service().updateStatus(1L,
-                new UpdateLeadStatusRequest(LeadStatus.ENROLLED, null, null, "no-such-uuid"), 9L))
+                new UpdateLeadStatusRequest(LeadStatus.ENROLLED, null, null, "no-such-uuid", null), 9L))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.USER_NOT_FOUND);
     }
@@ -293,7 +296,7 @@ class LeadServiceTest {
         when(leadRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service().updateStatus(99L,
-                new UpdateLeadStatusRequest(LeadStatus.CONTACTED, null, null, null), 9L))
+                new UpdateLeadStatusRequest(LeadStatus.CONTACTED, null, null, null, null), 9L))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.LEAD_NOT_FOUND);
     }
@@ -367,5 +370,130 @@ class LeadServiceTest {
         assertThatThrownBy(() -> service().myTargets(9L))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.SALES_TARGET_NOT_FOUND);
+    }
+
+    // --- get / update / archive / listActivities / leaderboard ---
+
+    @Test
+    void get_archivedLead_isTreatedAsNotFound() {
+        Lead lead = leadWithStatus(LeadStatus.CONTACTED);
+        lead.setArchivedAt(Instant.now());
+        when(leadRepository.findById(1L)).thenReturn(Optional.of(lead));
+
+        assertThatThrownBy(() -> service().get(1L))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.LEAD_NOT_FOUND);
+    }
+
+    @Test
+    void update_partialFields_onlyChangesWhatWasProvidedAndLogsAnActivity() {
+        Lead lead = leadWithStatus(LeadStatus.CONTACTED);
+        lead.setName("Old Name");
+        lead.setLeadType("B2C");
+        when(leadRepository.findById(1L)).thenReturn(Optional.of(lead));
+        when(userRepository.getReferenceById(9L)).thenReturn(user(9L));
+
+        LeadResponse response = service().update(1L,
+                new UpdateLeadRequest("New Name", null, null, null, new BigDecimal("14999.00")), 9L);
+
+        assertThat(response.name()).isEqualTo("New Name");
+        assertThat(response.leadType()).isEqualTo("B2C");
+        assertThat(response.dealValue()).isEqualByComparingTo("14999.00");
+        verify(leadActivityRepository).save(any(LeadActivity.class));
+    }
+
+    @Test
+    void update_unknownInterestedPlan_throwsNotFound() {
+        Lead lead = leadWithStatus(LeadStatus.CONTACTED);
+        when(leadRepository.findById(1L)).thenReturn(Optional.of(lead));
+        when(subscriptionPlanRepository.existsById(42L)).thenReturn(false);
+
+        assertThatThrownBy(() -> service().update(1L,
+                new UpdateLeadRequest(null, null, null, 42L, null), 9L))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PLAN_NOT_FOUND);
+    }
+
+    @Test
+    void archive_setsArchivedAtAndLogsAnActivity() {
+        Lead lead = leadWithStatus(LeadStatus.CONTACTED);
+        when(leadRepository.findById(1L)).thenReturn(Optional.of(lead));
+        when(userRepository.getReferenceById(9L)).thenReturn(user(9L));
+
+        service().archive(1L, 9L);
+
+        assertThat(lead.getArchivedAt()).isNotNull();
+        verify(leadRepository).save(lead);
+        verify(leadActivityRepository).save(any(LeadActivity.class));
+    }
+
+    @Test
+    void archive_alreadyArchived_throwsConflict() {
+        Lead lead = leadWithStatus(LeadStatus.CONTACTED);
+        lead.setArchivedAt(Instant.now());
+        when(leadRepository.findById(1L)).thenReturn(Optional.of(lead));
+
+        assertThatThrownBy(() -> service().archive(1L, 9L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.LEAD_ALREADY_ARCHIVED);
+    }
+
+    @Test
+    void listActivities_unknownLead_throwsNotFound() {
+        when(leadRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service().listActivities(99L,
+                org.springframework.data.domain.PageRequest.of(0, 30)))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.LEAD_NOT_FOUND);
+    }
+
+    @Test
+    void leaderboard_mergesLeadStatsWithTheCurrentMonthSalesTarget() {
+        LeadAgentStatsView stats = new LeadAgentStatsView() {
+            public Long getAgentId() { return 9L; }
+            public String getAgentUuid() { return "agent-uuid-9"; }
+            public String getAgentName() { return "Agent 9"; }
+            public long getTotalLeads() { return 12; }
+            public long getConverted() { return 3; }
+            public BigDecimal getPipelineValue() { return new BigDecimal("44997.00"); }
+        };
+        SalesTarget target = new SalesTarget();
+        target.setAgent(user(9L));
+        target.setCallsTarget(50);
+        target.setCallsMade(18);
+        target.setConversionsTarget(5);
+        target.setConversionsMade(3);
+        target.setRevenueTarget(new BigDecimal("100000.00"));
+        target.setRevenueAchieved(new BigDecimal("44997.00"));
+        when(leadRepository.agentStats()).thenReturn(java.util.List.of(stats));
+        when(salesTargetRepository.findByPeriodMonth(any())).thenReturn(java.util.List.of(target));
+
+        java.util.List<SalesLeaderboardRowResponse> board = service().leaderboard();
+
+        assertThat(board).hasSize(1);
+        assertThat(board.get(0).agentUuid()).isEqualTo("agent-uuid-9");
+        assertThat(board.get(0).converted()).isEqualTo(3);
+        assertThat(board.get(0).pipelineValue()).isEqualByComparingTo("44997.00");
+        assertThat(board.get(0).callsMade()).isEqualTo(18);
+    }
+
+    @Test
+    void leaderboard_agentWithNoSalesTarget_hasNullQuotaColumns() {
+        LeadAgentStatsView stats = new LeadAgentStatsView() {
+            public Long getAgentId() { return 9L; }
+            public String getAgentUuid() { return "agent-uuid-9"; }
+            public String getAgentName() { return "Agent 9"; }
+            public long getTotalLeads() { return 4; }
+            public long getConverted() { return 0; }
+            public BigDecimal getPipelineValue() { return BigDecimal.ZERO; }
+        };
+        when(leadRepository.agentStats()).thenReturn(java.util.List.of(stats));
+        when(salesTargetRepository.findByPeriodMonth(any())).thenReturn(java.util.List.of());
+
+        java.util.List<SalesLeaderboardRowResponse> board = service().leaderboard();
+
+        assertThat(board.get(0).callsTarget()).isNull();
+        assertThat(board.get(0).revenueAchieved()).isNull();
     }
 }

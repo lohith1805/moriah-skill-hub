@@ -8,7 +8,9 @@ import com.moriah.skillhub.crm.dto.AddLeadActivityRequest;
 import com.moriah.skillhub.crm.dto.CreateLeadRequest;
 import com.moriah.skillhub.crm.dto.LeadActivityResponse;
 import com.moriah.skillhub.crm.dto.LeadResponse;
+import com.moriah.skillhub.crm.dto.SalesLeaderboardRowResponse;
 import com.moriah.skillhub.crm.dto.SalesTargetResponse;
+import com.moriah.skillhub.crm.dto.UpdateLeadRequest;
 import com.moriah.skillhub.crm.dto.UpdateLeadStatusRequest;
 import com.moriah.skillhub.crm.entity.Lead;
 import com.moriah.skillhub.crm.entity.LeadActivity;
@@ -17,6 +19,7 @@ import com.moriah.skillhub.crm.entity.LeadSource;
 import com.moriah.skillhub.crm.entity.LeadStatus;
 import com.moriah.skillhub.crm.entity.SalesTarget;
 import com.moriah.skillhub.crm.repository.LeadActivityRepository;
+import com.moriah.skillhub.crm.repository.LeadAgentStatsView;
 import com.moriah.skillhub.crm.repository.LeadRepository;
 import com.moriah.skillhub.crm.repository.SalesTargetRepository;
 import com.moriah.skillhub.subscription.repository.SubscriptionPlanRepository;
@@ -28,10 +31,15 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * build-plan.md feature 18. Pipeline order and the forward-skip/backward-with-reason rule are
@@ -86,6 +94,7 @@ public class LeadService {
         lead.setLeadType(request.leadType());
         lead.setInstitution(request.institution());
         lead.setInterestedPlanId(request.interestedPlanId());
+        lead.setDealValue(request.dealValue());
         lead.setStatus(LeadStatus.NEW);
         lead.setAssignedAgent(agent);
         lead.setDedupeHash(dedupeHash);
@@ -116,6 +125,9 @@ public class LeadService {
         lead.setLeadType(request.leadType());
         lead.setInstitution(request.institution());
         lead.setInterestedPlanId(request.interestedPlanId());
+        if (request.dealValue() != null) {
+            lead.setDealValue(request.dealValue());
+        }
         leadRepository.save(lead);
 
         recordActivity(lead, userRepository.getReferenceById(callerUserId), LeadActivityType.NOTE,
@@ -132,6 +144,45 @@ public class LeadService {
                 : userRepository.findByUuid(agentUuid).map(User::getId).orElse(NO_SUCH_AGENT_ID);
         Page<Lead> page = leadRepository.search(status, agentId, source, pageable);
         return PageResponse.from(page.map(this::toResponse));
+    }
+
+    /** {@code GET /api/v1/leads/{id}}. An archived lead is treated as gone — a 404, same as one
+     * that never existed (mirrors the soft-delete convention {@code lead_campaigns} established). */
+    @Transactional(readOnly = true)
+    public LeadResponse get(Long leadId) {
+        return toResponse(requireActiveLead(leadId));
+    }
+
+    /** {@code PUT /api/v1/leads/{id}} — partial edit of the descriptive fields. {@code null}
+     * fields are left untouched; {@code email}/{@code phone}/{@code status}/{@code assignedAgent}
+     * are out of scope here ({@link UpdateLeadRequest} Javadoc). */
+    @Transactional
+    public LeadResponse update(Long leadId, UpdateLeadRequest request, Long callerUserId) {
+        Lead lead = requireActiveLead(leadId);
+        if (request.interestedPlanId() != null && !subscriptionPlanRepository.existsById(request.interestedPlanId())) {
+            throw new ResourceNotFoundException(ErrorCode.PLAN_NOT_FOUND, request.interestedPlanId());
+        }
+        if (request.name() != null) {
+            lead.setName(request.name());
+        }
+        if (request.leadType() != null) {
+            lead.setLeadType(request.leadType());
+        }
+        if (request.institution() != null) {
+            lead.setInstitution(request.institution());
+        }
+        if (request.interestedPlanId() != null) {
+            lead.setInterestedPlanId(request.interestedPlanId());
+        }
+        if (request.dealValue() != null) {
+            lead.setDealValue(request.dealValue());
+        }
+        leadRepository.save(lead);
+
+        recordActivity(lead, userRepository.getReferenceById(callerUserId), LeadActivityType.NOTE,
+                "LEAD_UPDATED", "Lead details edited.", null, Instant.now());
+
+        return toResponse(lead);
     }
 
     @Transactional
@@ -164,9 +215,7 @@ public class LeadService {
                 throw new BusinessException(ErrorCode.LEAD_BACKWARD_REASON_REQUIRED);
             }
             if (target == LeadStatus.ENROLLED) {
-                User convertedUser = userRepository.findByUuid(request.convertedUserUuid())
-                        .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.USER_NOT_FOUND, request.convertedUserUuid()));
-                lead.setConvertedUser(convertedUser);
+                lead.setConvertedUser(resolveConvertedUser(request));
             }
             note = request.reason();
         }
@@ -189,6 +238,14 @@ public class LeadService {
                 request.activityType(), request.outcome(), request.notes(),
                 request.nextFollowUpAt(), request.occurredAt());
 
+        // Denormalised board-view cache — the furthest-out follow-up wins, so a later activity
+        // that clears its follow-up (null) never wipes an earlier scheduled one.
+        if (request.nextFollowUpAt() != null
+                && (lead.getNextFollowUpAt() == null || request.nextFollowUpAt().isAfter(lead.getNextFollowUpAt()))) {
+            lead.setNextFollowUpAt(request.nextFollowUpAt());
+            leadRepository.save(lead);
+        }
+
         if (request.activityType() == LeadActivityType.WHATSAPP) {
             leadWhatsAppSender.sendAfterCommit(request.templateCode(), lead.getPhone());
         }
@@ -202,6 +259,81 @@ public class LeadService {
         SalesTarget target = salesTargetRepository.findByAgentIdAndPeriodMonth(callerUserId, currentMonth)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.SALES_TARGET_NOT_FOUND, callerUserId));
         return toTargetResponse(target);
+    }
+
+    /** {@code GET /api/v1/leads/{id}/activities} — this lead's full interaction history, newest
+     * first. */
+    @Transactional(readOnly = true)
+    public PageResponse<LeadActivityResponse> listActivities(Long leadId, Pageable pageable) {
+        requireActiveLead(leadId);
+        return PageResponse.from(leadActivityRepository.findByLeadId(leadId, pageable).map(this::toActivityResponse));
+    }
+
+    /** {@code DELETE /api/v1/leads/{id}} — soft delete. The row stays (activity history, funnel
+     * view, dedupe hash all keep referencing it); it just drops out of every list and the
+     * leaderboard. */
+    @Transactional
+    public void archive(Long leadId, Long callerUserId) {
+        Lead lead = leadRepository.findById(leadId)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.LEAD_NOT_FOUND, leadId));
+        if (lead.getArchivedAt() != null) {
+            throw new BusinessException(ErrorCode.LEAD_ALREADY_ARCHIVED);
+        }
+        lead.setArchivedAt(Instant.now());
+        leadRepository.save(lead);
+        recordActivity(lead, userRepository.getReferenceById(callerUserId), LeadActivityType.NOTE,
+                "LEAD_ARCHIVED", "Lead archived by agent.", null, Instant.now());
+    }
+
+    /** {@code GET /api/v1/leads/targets/leaderboard} — per-agent standings for the current month.
+     * Lead counts / pipeline value are live from {@code leads}; calls-made / quota columns come
+     * from that agent's {@code sales_targets} row when one exists. */
+    @Transactional(readOnly = true)
+    public List<SalesLeaderboardRowResponse> leaderboard() {
+        LocalDate currentMonth = LocalDate.now(ZoneOffset.UTC).withDayOfMonth(1);
+        Map<Long, SalesTarget> targetsByAgent = salesTargetRepository.findByPeriodMonth(currentMonth).stream()
+                .collect(Collectors.toMap(t -> t.getAgent().getId(), Function.identity()));
+
+        return leadRepository.agentStats().stream()
+                .map(row -> toLeaderboardRow(row, targetsByAgent.get(row.getAgentId())))
+                .toList();
+    }
+
+    private SalesLeaderboardRowResponse toLeaderboardRow(LeadAgentStatsView stats, SalesTarget target) {
+        return new SalesLeaderboardRowResponse(
+                stats.getAgentUuid(),
+                stats.getAgentName(),
+                stats.getTotalLeads(),
+                stats.getConverted(),
+                stats.getPipelineValue() == null ? BigDecimal.ZERO : stats.getPipelineValue(),
+                target == null ? null : target.getCallsTarget(),
+                target == null ? null : target.getCallsMade(),
+                target == null ? null : target.getConversionsTarget(),
+                target == null ? null : target.getConversionsMade(),
+                target == null ? null : target.getRevenueTarget(),
+                target == null ? null : target.getRevenueAchieved());
+    }
+
+    /** The converted student for an ENROLLED move — by uuid if given, else by email (the identifier
+     * a lead-gen agent actually has). {@link UpdateLeadStatusRequest} already guaranteed one is set. */
+    private User resolveConvertedUser(UpdateLeadStatusRequest request) {
+        if (request.convertedUserUuid() != null && !request.convertedUserUuid().isBlank()) {
+            return userRepository.findByUuid(request.convertedUserUuid())
+                    .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.USER_NOT_FOUND, request.convertedUserUuid()));
+        }
+        String email = request.convertedUserEmail().trim().toLowerCase(Locale.ROOT);
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.USER_NOT_FOUND, email));
+    }
+
+    /** A lead that exists and has not been soft-deleted. */
+    private Lead requireActiveLead(Long leadId) {
+        Lead lead = leadRepository.findById(leadId)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.LEAD_NOT_FOUND, leadId));
+        if (lead.getArchivedAt() != null) {
+            throw new ResourceNotFoundException(ErrorCode.LEAD_NOT_FOUND, leadId);
+        }
+        return lead;
     }
 
     private LeadActivity recordActivity(Lead lead, User agent, LeadActivityType type, String outcome,
@@ -228,11 +360,13 @@ public class LeadService {
                 lead.getLeadType(),
                 lead.getInstitution(),
                 lead.getInterestedPlanId(),
+                lead.getDealValue(),
                 lead.getStatus(),
                 lead.getAssignedAgent() == null ? null : lead.getAssignedAgent().getUuid(),
                 lead.getAssignedAgent() == null ? null : lead.getAssignedAgent().getFullName(),
                 lead.getLostReason(),
                 lead.getConvertedUser() == null ? null : lead.getConvertedUser().getUuid(),
+                lead.getNextFollowUpAt(),
                 lead.getCreatedAt(),
                 lead.getUpdatedAt());
     }

@@ -7,7 +7,9 @@ import com.moriah.skillhub.crm.dto.AddLeadActivityRequest;
 import com.moriah.skillhub.crm.dto.CreateLeadRequest;
 import com.moriah.skillhub.crm.dto.LeadActivityResponse;
 import com.moriah.skillhub.crm.dto.LeadResponse;
+import com.moriah.skillhub.crm.dto.SalesLeaderboardRowResponse;
 import com.moriah.skillhub.crm.dto.SalesTargetResponse;
+import com.moriah.skillhub.crm.dto.UpdateLeadRequest;
 import com.moriah.skillhub.crm.dto.UpdateLeadStatusRequest;
 import com.moriah.skillhub.crm.entity.LeadSource;
 import com.moriah.skillhub.crm.entity.LeadStatus;
@@ -19,6 +21,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,6 +30,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/leads")
@@ -55,6 +60,44 @@ public class LeadController {
             @PageableDefault(size = 20) Pageable pageable) {
 
         return ResponseEntity.ok(ApiResponse.success(leadService.list(status, agentUuid, source, pageable)));
+    }
+
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('LEAD_GEN','ADMIN')")
+    public ResponseEntity<ApiResponse<LeadResponse>> get(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success(leadService.get(id)));
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('LEAD_GEN','ADMIN')")
+    public ResponseEntity<ApiResponse<LeadResponse>> update(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateLeadRequest request,
+            @CurrentUser Long userId) {
+
+        return ResponseEntity.ok(ApiResponse.success(leadService.update(id, request, userId)));
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('LEAD_GEN','ADMIN')")
+    public ResponseEntity<ApiResponse<Void>> archive(@PathVariable Long id, @CurrentUser Long userId) {
+        leadService.archive(id, userId);
+        return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
+    @GetMapping("/{id}/activities")
+    @PreAuthorize("hasAnyRole('LEAD_GEN','ADMIN')")
+    public ResponseEntity<ApiResponse<PageResponse<LeadActivityResponse>>> activities(
+            @PathVariable Long id,
+            @PageableDefault(size = 30) Pageable pageable) {
+
+        return ResponseEntity.ok(ApiResponse.success(leadService.listActivities(id, pageable)));
+    }
+
+    @GetMapping("/targets/leaderboard")
+    @PreAuthorize("hasAnyRole('LEAD_GEN','ADMIN')")
+    public ResponseEntity<ApiResponse<List<SalesLeaderboardRowResponse>>> leaderboard() {
+        return ResponseEntity.ok(ApiResponse.success(leadService.leaderboard()));
     }
 
     @PutMapping("/{id}/status")
