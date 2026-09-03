@@ -7,6 +7,7 @@ import { useToast } from "../../context/ToastContext";
 import { validateForm, required } from "../../utils/validators";
 import { ROLE_HOME } from "../../utils/roleAccess";
 import { beginTwoFactorSetup, oauthAuthorizeUrl } from "../../services/authService";
+import QrCode from "../../components/ui/QrCode";
 
 /* --------------------------------- Google icon -------------------------------- */
 /* Inline so this page has no extra file dependency. lucide-react has no brand
@@ -180,11 +181,16 @@ export default function Login() {
         {setup ? (
           <div className="mt-3 text-sm text-ink-500">
             <p>
-              Your role requires 2FA. Add this account to an authenticator app (Google
+              Your role requires 2FA. Scan this QR code with an authenticator app (Google
               Authenticator, Authy, 1Password…), then enter the current 6-digit code.
             </p>
+            {setup.provisioningUri && (
+              <div className="mt-3 flex justify-center">
+                <QrCode value={setup.provisioningUri} />
+              </div>
+            )}
             <div className="mt-3 rounded-lg border border-border bg-cream-50 p-3">
-              <p className="text-xs uppercase tracking-wide text-ink-400">Secret key</p>
+              <p className="text-xs uppercase tracking-wide text-ink-400">Setup key (manual entry)</p>
               <code className="block font-mono text-sm text-ink-900 break-all mt-1">{setup.secret}</code>
               {setup.provisioningUri && (
                 <a

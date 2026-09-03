@@ -4,6 +4,7 @@ import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
+import QrCode from "../../components/ui/QrCode";
 import { Input } from "../../components/ui/FormField";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
@@ -202,17 +203,18 @@ export default function SharedSettings() {
         {setup && (
           <div className="flex flex-col gap-4 text-left font-sans">
             <p className="text-sm text-ink-600">
-              Add this secret to your authenticator app (choose “enter a setup key”), then type the current 6-digit code.
+              Scan this QR code with your authenticator app (Google Authenticator, Authy, 1Password…),
+              then enter the current 6-digit code. Can’t scan? Use the setup key below instead.
             </p>
+            {setup.provisioningUri && (
+              <div className="flex justify-center">
+                <QrCode value={setup.provisioningUri} />
+              </div>
+            )}
             <div className="rounded-lg border border-border bg-cream-50 p-3">
-              <p className="text-[10px] font-bold uppercase text-ink-400">Setup key</p>
+              <p className="text-[10px] font-bold uppercase text-ink-400">Setup key (manual entry)</p>
               <p className="font-mono text-sm break-all text-ink-900">{setup.secret}</p>
             </div>
-            {setup.provisioningUri && (
-              <p className="text-[11px] text-ink-400 break-all">
-                otpauth URI: <span className="font-mono">{setup.provisioningUri}</span>
-              </p>
-            )}
             <Input
               label="6-digit code"
               inputMode="numeric"
