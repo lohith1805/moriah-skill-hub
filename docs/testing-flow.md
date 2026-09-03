@@ -43,10 +43,21 @@ All password **`Password123!`**. UUIDs are fixed so you can paste them.
 | `student1@moriah.test` | STUDENT | `…0008` | no — **has ACTIVE PROJECT_BASED sub, enrolled in batch `FS-2026-01`** |
 | `student2@moriah.test` | STUDENT | `…0009` | no — ACTIVE PROJECT_BASED, enrolled |
 | `student3@moriah.test` | STUDENT | `…0010` | no — ACTIVE **STARTER** (use to test `403 ENTITLEMENT_REQUIRED`) |
+| `student4@…` … `student9@…` | STUDENT | `…0011`–`…0016` | no — ACTIVE PROJECT_BASED; distributed across the batches below (`student6` is `GRADUATED`) |
 
-Also seeded: batch `FS-2026-01` (track `FULL_STACK`, PM = `pm@`), sprint 1 (`ACTIVE`), 3 tasks
-(one `BACKLOG` "Implement GET /todos", one `ASSIGNED`, one `IN_REVIEW`), one `SCHEDULED` standup,
-a `PUBLISHED` project "Todo API", one `NEW` lead, two `employees`.
+Also seeded:
+- **Batches** — `FS-2026-01` (`FULL_STACK`, `ACTIVE`, student1/2), `FS-2026-02` (`FULL_STACK`,
+  `ACTIVE`, student4/5/6), `DA-2026-01` (`DATA_ANALYTICS`, `ACTIVE`, student7/8),
+  `BE-2026-01` (`BACKEND`, `PLANNED`, student9). PM for all = `pm@`.
+- **Sprints/tasks** — sprint 1 in each running batch, ~3 tasks each spanning `BACKLOG` /
+  `ASSIGNED` / `IN_REVIEW` / `COMPLETED`; one `SCHEDULED` standup in `FS-2026-01`.
+- **Question banks** — "Java Fundamentals", "Spring Boot Essentials", "SQL and Data Modelling"
+  (author `dev@`), 3 items each (MCQ + MULTI_SELECT), answer keys never serialised.
+- **Learning resources** — 5 rows (ARTICLE/VIDEO/BOOK/TOOL/TEMPLATE, author `dev@`).
+- **Notifications** — 3 `IN_APP` rows for `student1@` (2 `SENT`, 1 `QUEUED`).
+- One `GRADUATED` student (`student6@`, `FS-2026-02`) + a `COMPLETION` certificate
+  (`verification_code = SEEDCERT0006`), a `PUBLISHED` project "Todo API", a CRM pipeline for
+  `sales@` (a lead per stage + activities + a current-month `sales_targets` row), two `employees`.
 
 ### Which token unlocks which flow
 
@@ -713,16 +724,16 @@ require the student to be `GRADUATED` or cleanly `EXITED` — never terminated.
 
 ---
 
-# Flows 12–23 · Post-launch modules
+# Flows 12–24 · Post-launch modules
 
 Every route here is under `/api/v1`. Auth is the controller's `@PreAuthorize` verbatim.
 `«…»` values still carry over exactly as in Appendix C.
 
-> **In the generated docs:** the placement pipeline (`/api/v1/placements**`, Flow 23) plus the
-> three list endpoints wired for the frontend this round — `GET /batches/{id}/students`,
-> `GET /hr/leaves`, `GET /hr/documents` — are now in `openapi.json` / `API-Documentation.md` /
-> the Postman collection. Flows 12–22 are still hand-maintained here only (regenerate
-> `openapi.json` from a running app to fold them in).
+> **`openapi.json` / `API-Documentation.md` / the Postman collection were re-exported from a
+> running app (2026-09) and now cover every endpoint below** — 150 paths / ~200 operations,
+> including the whole CRM, HR, placement, assessment-bank and public-site surface that earlier
+> exports were missing. Re-run `curl localhost:8080/v3/api-docs -o docs/openapi.json` then
+> `python scripts/gen-postman.py && python scripts/gen-api-doc.py` after any new endpoint.
 
 ---
 
@@ -1187,6 +1198,30 @@ HR/ADMIN all. Optional `?stage=TECHNICAL_APPROVED`. → keep a `data.content[].i
 
 **Step 7 (HR) — finalise** · `PUT` «token as HR_MANAGER» `{ "stage": "PLACED" }`. Terminal — any
 further `PUT` → `409`. (`REJECTED` is the other terminal, reachable earlier from client or HR.)
+
+---
+
+## Flow 24 · Public marketing-site endpoints (no token)
+
+Unauthenticated, at the filter level (`SecurityConfig.PUBLIC_PATHS`), rate-limited per IP like
+everything else. These back the landing page (`pages/public/Home.jsx`).
+
+**Step 1 — aggregate stats** · `GET {{baseUrl}}/api/v1/public/stats` →
+`data = { graduates, activeLearners, activeBatches, placements, certificatesIssued, hiringPartners }`.
+Live COUNTs over `batch_students` / `batches` / `placements` / `certificates`; no per-person data.
+With the `dev` seed: `graduates:1, activeLearners:7, activeBatches:3, certificatesIssued:1`.
+
+**Step 2 — plans** · `GET {{baseUrl}}/api/v1/plans` (already public; the site merges curated
+feature copy onto the real price + tier).
+
+**Step 3 — inbound lead (the contact form)** · `POST {{baseUrl}}/api/v1/leads/inbound`
+```json
+{ "name": "Landing Visitor", "email": "visitor@example.com", "phone": "+91 90000 22222",
+  "message": "Interested in the weekend Data Analytics batch.", "leadType": "B2C", "source": "LANDING_PAGE" }
+```
+→ `201`, a `NEW` lead with `assignedAgentUuid: null` (unassigned). `message` is stored as an
+`INBOUND_MESSAGE` NOTE activity. Same email+phone again → updates that lead, never a duplicate.
+It then shows up for `sales@` in `GET /api/v1/leads` and on `/leads/pipeline`.
 
 ---
 

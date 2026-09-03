@@ -321,12 +321,32 @@ takes `convertedUserEmail`. `crmService.js` lead layer + `leadgen/Pipeline.jsx` 
 `msh_crm_leads`. Also wired earlier this session: a **client-side audit trail** (`utils/auditLog.js`,
 FE `88daf4f`) and **2FA QR codes** (`qrcode.react`, FE `fd0c681`).
 
+**Public landing page wired** — new `site/` package: `GET /api/v1/public/stats` (aggregate
+COUNTs, `JdbcTemplate`) + `POST /api/v1/leads/inbound` (unauthenticated contact-form lead,
+`assignedAgent=null`, dedupe-upsert). Both in `SecurityConfig.PUBLIC_PATHS`. FE `siteService.js`
++ `Home.jsx` — hero stats, pricing (real price + curated feature copy), contact form now hit
+the backend. Testimonials / FAQ / feature blurbs stay static (marketing copy, not DB data).
+
+**`R__dev_seed_data.sql` greatly expanded** — 6 more students, 3 more batches
+(`FS-2026-02`/`DA-2026-01` active, `BE-2026-01` planned), sprints+tasks, 3 question banks (9
+items), 5 learning resources, 3 notifications, 1 graduate + certificate. Validated by a live
+`spring-boot:run` (Flyway applied V34 + the repeatable seed clean).
+
+**`openapi.json` / Postman / `API-Documentation.md` RE-EXPORTED from a running app** (2026-09):
+150 paths / ~200 ops — the first complete spec (all prior exports predated flows 12-24).
+`gen-postman.py` → 36 folders / 212 requests; `gen-api-doc.py` → 199 endpoints. To refresh:
+free port 3306 (native `MySQL97` squats it — `Stop-Service MySQL97` in an admin shell), or bring
+Docker MySQL up on another port (`DB_PORT=3316 docker compose up -d`), `mvn -o spring-boot:run`
+with matching `DB_PORT` (+ `DB_REPLICA_PORT` same value), `redis-cli FLUSHALL` if `/plans` 500s
+(stale cache), then `curl :8080/v3/api-docs` + both gen scripts. Pretty-print the export to
+4-space/LF before committing.
+
 **`mockData.js` / `pipEngine.js` still cannot be deleted** — 6 feature areas have no backend
 (BA docs + resource plans, client project briefs, developer projects + bug challenges, HR
 biometric attendance, trainer cross-batch student mgmt, student `getPerformanceSummary` +
-auto-PIP) + the public landing-page lead form (`Home.jsx` — no unauthenticated inbound endpoint).
-`placementPipeline.js` stays too (display-helper + backend adapter).
+auto-PIP). `placementPipeline.js` stays too (display-helper + backend adapter).
 
-Frontend HEAD `d16349f`. Backend HEAD `3208192`.
+Frontend HEAD `fd86bc2` (landing page wired). Backend HEAD = the "crm: public site + inbound
+lead" commit + its docs-regen follow-up (this session's last two backend commits).
 `README.md` still has the user's uncommitted Razorpay-test-key edit — never `git add -A`; scope
 every `git add`. Untracked `*_Integration*.zip` / `bun.lock` in both repos are the user's — leave them.

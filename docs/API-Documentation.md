@@ -1,6 +1,6 @@
 # Moriah Skill Hub — API Documentation
 
-> Generated from `docs/openapi.json` (OpenAPI 3.1.0). 113 endpoints across 24 groups. Auth/role column is read from each controller's `@PreAuthorize`.
+> Generated from `docs/openapi.json` (OpenAPI 3.1.0). 199 endpoints across 31 groups. Auth/role column is read from each controller's `@PreAuthorize`.
 
 ## Conventions
 
@@ -86,27 +86,34 @@ On success the callback returns the **same `LoginResponse` envelope as `POST /ap
 
 ## Contents
 
-- [Admin](#admin) — 13 endpoints
-- [Assessments](#assessments) — 5 endpoints
+- [Admin](#admin) — 25 endpoints
+- [Assessments](#assessments) — 12 endpoints
 - [Attendance](#attendance) — 4 endpoints
 - [Auth](#auth) — 13 endpoints
-- [BA](#ba) — 3 endpoints
+- [BA](#ba) — 8 endpoints
 - [Batches](#batches) — 8 endpoints
-- [Bug Challenges](#bug-challenges) — 1 endpoints
-- [CRM](#crm) — 5 endpoints
+- [Bug Challenges](#bug-challenges) — 5 endpoints
+- [CRM](#crm) — 15 endpoints
 - [Certificates](#certificates) — 4 endpoints
 - [Checkout](#checkout) — 1 endpoints
 - [Clients](#clients) — 3 endpoints
-- [HR](#hr) — 10 endpoints
+- [Dev](#dev) — 3 endpoints
+- [HR](#hr) — 24 endpoints
+- [Interviews](#interviews) — 5 endpoints
+- [Lessons](#lessons) — 12 endpoints
+- [Notifications](#notifications) — 4 endpoints
 - [PIP](#pip) — 6 endpoints
 - [Placements](#placements) — 3 endpoints
 - [Plans](#plans) — 1 endpoints
 - [Projects](#projects) — 5 endpoints
+- [Public](#public) — 1 endpoints
+- [Resources](#resources) — 5 endpoints
 - [Reviews](#reviews) — 3 endpoints
 - [Sprints](#sprints) — 6 endpoints
 - [Standups](#standups) — 3 endpoints
 - [Submissions](#submissions) — 2 endpoints
 - [Subscriptions](#subscriptions) — 1 endpoints
+- [Talent](#talent) — 4 endpoints
 - [Tasks](#tasks) — 5 endpoints
 - [Users](#users) — 5 endpoints
 - [Webhooks](#webhooks) — 3 endpoints
@@ -289,6 +296,166 @@ Decline a client registration — account becomes REJECTED and the applicant is 
 
 ---
 
+### `GET` `/api/v1/admin/coupons`
+
+List all coupons, newest first
+
+**Auth:** Role: ADMIN
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "code": "string",
+        "discountType": "PERCENTAGE",
+        "discountValue": 0.0,
+        "validFrom": "2026-01-15",
+        "validUntil": "2026-01-15",
+        "maxRedemptions": 0,
+        "timesRedeemed": 0,
+        "active": true,
+        "createdAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `POST` `/api/v1/admin/coupons`
+
+Create a coupon
+
+**Auth:** Role: ADMIN
+
+**Request body:**
+
+```json
+{
+  "code": "string",
+  "discountType": "PERCENTAGE",
+  "discountValue": 0.0,
+  "validFrom": "2026-01-15",
+  "validUntil": "2026-01-15",
+  "maxRedemptions": 0,
+  "active": true
+}
+```
+
+**Response `201`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "code": "string",
+    "discountType": "PERCENTAGE",
+    "discountValue": 0.0,
+    "validFrom": "2026-01-15",
+    "validUntil": "2026-01-15",
+    "maxRedemptions": 0,
+    "timesRedeemed": 0,
+    "active": true,
+    "createdAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `201`, `403`, `409`
+
+---
+
+### `PUT` `/api/v1/admin/coupons/{code}`
+
+Replace a coupon's discount, validity window, cap and active flag
+
+**Auth:** Role: ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `code` | string |  |
+
+**Request body:**
+
+```json
+{
+  "discountType": "PERCENTAGE",
+  "discountValue": 0.0,
+  "validFrom": "2026-01-15",
+  "validUntil": "2026-01-15",
+  "maxRedemptions": 0,
+  "active": true
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "code": "string",
+    "discountType": "PERCENTAGE",
+    "discountValue": 0.0,
+    "validFrom": "2026-01-15",
+    "validUntil": "2026-01-15",
+    "maxRedemptions": 0,
+    "timesRedeemed": 0,
+    "active": true,
+    "createdAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `403`, `404`
+
+---
+
+### `DELETE` `/api/v1/admin/coupons/{code}`
+
+Deactivate a coupon (active = false) — never row-deletes, so redemption history is kept
+
+**Auth:** Role: ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `code` | string |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": null,
+  "error": null
+}
+```
+
+**Status codes:** `200`, `403`, `404`
+
+---
+
 ### `POST` `/api/v1/admin/exports/{report}`
 
 Generate an XLSX export (users/revenue/audit) and return a presigned download URL
@@ -395,6 +562,230 @@ Monthly captured revenue for an optional date range, defaults to the trailing 12
 
 ---
 
+### `GET` `/api/v1/admin/payments`
+
+List payments, newest first — optional status / gateway / userUuid filters
+
+**Auth:** Role: ADMIN
+
+**Query parameters:**
+
+| name | type | required | description |
+|---|---|---|---|
+| `status` | string | no |  |
+| `gateway` | string | no |  |
+| `userUuid` | string | no |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "gatewayOrderId": "string",
+        "gatewayPaymentId": "string",
+        "userUuid": "string",
+        "userFullName": "string",
+        "planId": 0,
+        "trackCode": "string",
+        "gateway": "RAZORPAY",
+        "amount": 0.0,
+        "currency": "string",
+        "status": "CREATED",
+        "failureReason": "string",
+        "capturedAt": "2026-01-15T10:30:00Z",
+        "createdAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `GET` `/api/v1/admin/payments/summary`
+
+Payment counts and amount totals per status, plus total captured / refunded
+
+**Auth:** Role: ADMIN
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "byStatus": [
+      {
+        "status": "CREATED",
+        "count": 0,
+        "totalAmount": 0.0
+      }
+    ],
+    "totalCount": 0,
+    "totalCaptured": 0.0,
+    "totalRefunded": 0.0
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `GET` `/api/v1/admin/payments/{gatewayOrderId}`
+
+One payment's detail
+
+**Auth:** Role: ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `gatewayOrderId` | string |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "gatewayOrderId": "string",
+    "gatewayPaymentId": "string",
+    "userUuid": "string",
+    "userFullName": "string",
+    "planId": 0,
+    "trackCode": "string",
+    "gateway": "RAZORPAY",
+    "amount": 0.0,
+    "currency": "string",
+    "status": "CREATED",
+    "failureReason": "string",
+    "capturedAt": "2026-01-15T10:30:00Z",
+    "createdAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `403`, `404`
+
+---
+
+### `POST` `/api/v1/admin/payments/{gatewayOrderId}/refund`
+
+Issue a full refund through the original gateway — only for a CAPTURED payment, once. The gateway's refund webhook reconciles the final state.
+
+**Auth:** Role: ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `gatewayOrderId` | string |  |
+
+**Request body:**
+
+```json
+{
+  "reason": "string"
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "gatewayOrderId": "string",
+    "gatewayPaymentId": "string",
+    "userUuid": "string",
+    "userFullName": "string",
+    "planId": 0,
+    "trackCode": "string",
+    "gateway": "RAZORPAY",
+    "amount": 0.0,
+    "currency": "string",
+    "status": "CREATED",
+    "failureReason": "string",
+    "capturedAt": "2026-01-15T10:30:00Z",
+    "createdAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `403`, `404`, `409`, `502`
+
+---
+
+### `POST` `/api/v1/admin/plans`
+
+Create a subscription plan — cache evicted immediately
+
+**Auth:** Role: ADMIN
+
+**Request body:**
+
+```json
+{
+  "code": "string",
+  "name": "string",
+  "priceInr": 0.0,
+  "tierRank": 0,
+  "durationDays": 0,
+  "maxProjects": 0,
+  "mentorSupport": true,
+  "allowsBatch": true,
+  "allowsSprints": true,
+  "allowsPip": true,
+  "allowsInternshipLetter": true,
+  "allowsClientProject": true,
+  "active": true
+}
+```
+
+**Response `201`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "code": "string",
+    "name": "string",
+    "priceInr": 0.0,
+    "tierRank": 0,
+    "durationDays": 0,
+    "mentorSupport": true,
+    "allowsBatch": true,
+    "allowsSprints": true,
+    "allowsPip": true,
+    "allowsInternshipLetter": true,
+    "allowsClientProject": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `201`, `403`, `409`
+
+---
+
 ### `PUT` `/api/v1/admin/plans/{id}`
 
 Update a subscription plan's pricing/feature flags at runtime — cache evicted immediately
@@ -443,6 +834,32 @@ Update a subscription plan's pricing/feature flags at runtime — cache evicted 
     "allowsInternshipLetter": true,
     "allowsClientProject": true
   },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `403`, `404`
+
+---
+
+### `DELETE` `/api/v1/admin/plans/{id}`
+
+Deactivate a subscription plan (is_active = false) — never row-deletes, so subscription history is kept
+
+**Auth:** Role: ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": null,
   "error": null
 }
 ```
@@ -537,6 +954,101 @@ Invite a staff member — creates an INVITED account and emails an accept-invite
 ```
 
 **Status codes:** `201`, `400`, `403`, `409`
+
+---
+
+### `GET` `/api/v1/admin/users/{userUuid}`
+
+Single-user detail — profile fields, roles, 2FA and login timestamps
+
+**Auth:** Role: ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `userUuid` | string |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "uuid": "string",
+    "fullName": "string",
+    "email": "string",
+    "phone": "string",
+    "githubUsername": "string",
+    "linkedinUrl": "string",
+    "status": "ACTIVE",
+    "roles": [
+      "STUDENT"
+    ],
+    "twoFactorEnabled": true,
+    "emailVerifiedAt": "2026-01-15T10:30:00Z",
+    "lastLoginAt": "2026-01-15T10:30:00Z",
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `403`, `404`
+
+---
+
+### `PUT` `/api/v1/admin/users/{userUuid}`
+
+Edit a user's profile fields (name, phone, GitHub, LinkedIn). Status and roles have their own endpoints.
+
+**Auth:** Role: ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `userUuid` | string |  |
+
+**Request body:**
+
+```json
+{
+  "fullName": "string",
+  "phone": "string",
+  "githubUsername": "string",
+  "linkedinUrl": "string"
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "uuid": "string",
+    "fullName": "string",
+    "email": "string",
+    "phone": "string",
+    "githubUsername": "string",
+    "linkedinUrl": "string",
+    "status": "ACTIVE",
+    "roles": [
+      "STUDENT"
+    ],
+    "twoFactorEnabled": true,
+    "emailVerifiedAt": "2026-01-15T10:30:00Z",
+    "lastLoginAt": "2026-01-15T10:30:00Z",
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `403`, `404`, `409`
 
 ---
 
@@ -894,6 +1406,301 @@ Submit an attempt for grading
 ```
 
 **Status codes:** `200`
+
+---
+
+### `GET` `/api/v1/assessments/banks`
+
+List question banks — optional topic / active filters
+
+**Auth:** Role: TRAINER_PM or ADMIN
+
+**Query parameters:**
+
+| name | type | required | description |
+|---|---|---|---|
+| `topic` | string | no |  |
+| `active` | boolean | no |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 0,
+        "name": "string",
+        "topic": "string",
+        "description": "string",
+        "active": true,
+        "questionCount": 0,
+        "createdByUuid": "string",
+        "createdAt": "2026-01-15T10:30:00Z",
+        "updatedAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `POST` `/api/v1/assessments/banks`
+
+Create a question bank
+
+**Auth:** Role: TRAINER_PM or ADMIN
+
+**Request body:**
+
+```json
+{
+  "name": "string",
+  "topic": "string",
+  "description": "string"
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "name": "string",
+    "topic": "string",
+    "description": "string",
+    "active": true,
+    "questionCount": 0,
+    "createdByUuid": "string",
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `PUT` `/api/v1/assessments/banks/{id}`
+
+Rename / re-topic a bank or toggle its active flag
+
+**Auth:** Role: TRAINER_PM or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Request body:**
+
+```json
+{
+  "name": "string",
+  "topic": "string",
+  "description": "string",
+  "active": true
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "name": "string",
+    "topic": "string",
+    "description": "string",
+    "active": true,
+    "questionCount": 0,
+    "createdByUuid": "string",
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `404`
+
+---
+
+### `DELETE` `/api/v1/assessments/banks/{id}`
+
+Deactivate a bank (is_active = false) — never row-deletes
+
+**Auth:** Role: TRAINER_PM or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": null,
+  "error": null
+}
+```
+
+**Status codes:** `200`, `404`
+
+---
+
+### `GET` `/api/v1/assessments/banks/{id}/questions`
+
+List the questions in a bank (correct-answer keys are never returned)
+
+**Auth:** Role: TRAINER_PM or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 0,
+        "bankId": 0,
+        "questionText": "string",
+        "questionType": "MCQ",
+        "options": [
+          "string"
+        ],
+        "marks": 0,
+        "explanation": "string",
+        "difficulty": "EASY",
+        "createdByUuid": "string",
+        "createdAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `404`
+
+---
+
+### `POST` `/api/v1/assessments/banks/{id}/questions`
+
+Add a question to a bank
+
+**Auth:** Role: TRAINER_PM or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Request body:**
+
+```json
+{
+  "questionText": "string",
+  "questionType": "MCQ",
+  "options": [
+    "string"
+  ],
+  "correctAnswerIndices": [
+    0
+  ],
+  "marks": 0,
+  "explanation": "string",
+  "difficulty": "EASY"
+}
+```
+
+**Response `201`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "bankId": 0,
+    "questionText": "string",
+    "questionType": "MCQ",
+    "options": [
+      "string"
+    ],
+    "marks": 0,
+    "explanation": "string",
+    "difficulty": "EASY",
+    "createdByUuid": "string",
+    "createdAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `201`, `400`, `404`
+
+---
+
+### `DELETE` `/api/v1/assessments/banks/{id}/questions/{questionId}`
+
+Remove a question from a bank
+
+**Auth:** Role: TRAINER_PM or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+| `questionId` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": null,
+  "error": null
+}
+```
+
+**Status codes:** `200`, `404`
 
 ---
 
@@ -1608,6 +2415,58 @@ Allocate a student/staff user and batch to a client project
 
 ---
 
+### `GET` `/api/v1/ba/documents`
+
+List requirement documents — optional clientProjectId / status filters
+
+**Auth:** Role: BUSINESS_ANALYST or ADMIN
+
+**Query parameters:**
+
+| name | type | required | description |
+|---|---|---|---|
+| `clientProjectId` | integer | no |  |
+| `status` | string | no |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 0,
+        "clientProjectId": 0,
+        "docType": "BRD",
+        "title": "string",
+        "version": 0,
+        "status": "DRAFT",
+        "authoredByUuid": "string",
+        "authoredByFullName": "string",
+        "approvedByUuid": "string",
+        "approvedByFullName": "string",
+        "devReviewedByUuid": "string",
+        "devReviewedByFullName": "string",
+        "devReviewedAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
 ### `POST` `/api/v1/ba/documents`
 
 Create a requirement document (BRD/SRS/FRS/USER_STORY) — lands IN_REVIEW directly
@@ -1640,7 +2499,10 @@ Create a requirement document (BRD/SRS/FRS/USER_STORY) — lands IN_REVIEW direc
     "authoredByUuid": "string",
     "authoredByFullName": "string",
     "approvedByUuid": "string",
-    "approvedByFullName": "string"
+    "approvedByFullName": "string",
+    "devReviewedByUuid": "string",
+    "devReviewedByFullName": "string",
+    "devReviewedAt": "2026-01-15T10:30:00Z"
   },
   "error": null
 }
@@ -1677,7 +2539,10 @@ Approve a requirement document — IN_REVIEW to APPROVED
     "authoredByUuid": "string",
     "authoredByFullName": "string",
     "approvedByUuid": "string",
-    "approvedByFullName": "string"
+    "approvedByFullName": "string",
+    "devReviewedByUuid": "string",
+    "devReviewedByFullName": "string",
+    "devReviewedAt": "2026-01-15T10:30:00Z"
   },
   "error": null
 }
@@ -1687,11 +2552,188 @@ Approve a requirement document — IN_REVIEW to APPROVED
 
 ---
 
+### `GET` `/api/v1/ba/meetings`
+
+List meetings — optional status / clientProjectId filters
+
+**Auth:** Role: BUSINESS_ANALYST or ADMIN
+
+**Query parameters:**
+
+| name | type | required | description |
+|---|---|---|---|
+| `status` | string | no |  |
+| `clientProjectId` | integer | no |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 0,
+        "title": "string",
+        "agenda": "string",
+        "clientProjectId": 0,
+        "scheduledAt": "2026-01-15T10:30:00Z",
+        "durationMinutes": 0,
+        "location": "string",
+        "status": "SCHEDULED",
+        "minutes": "string",
+        "createdByUuid": "string",
+        "createdAt": "2026-01-15T10:30:00Z",
+        "updatedAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `POST` `/api/v1/ba/meetings`
+
+Schedule a meeting (starts SCHEDULED)
+
+**Auth:** Role: BUSINESS_ANALYST or ADMIN
+
+**Request body:**
+
+```json
+{
+  "title": "string",
+  "agenda": "string",
+  "clientProjectId": 0,
+  "scheduledAt": "2026-01-15T10:30:00Z",
+  "durationMinutes": 0,
+  "location": "string"
+}
+```
+
+**Response `201`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "title": "string",
+    "agenda": "string",
+    "clientProjectId": 0,
+    "scheduledAt": "2026-01-15T10:30:00Z",
+    "durationMinutes": 0,
+    "location": "string",
+    "status": "SCHEDULED",
+    "minutes": "string",
+    "createdByUuid": "string",
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `201`, `404`
+
+---
+
+### `PUT` `/api/v1/ba/meetings/{id}`
+
+Replace a meeting's fields — including status and minutes
+
+**Auth:** Role: BUSINESS_ANALYST or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Request body:**
+
+```json
+{
+  "title": "string",
+  "agenda": "string",
+  "clientProjectId": 0,
+  "scheduledAt": "2026-01-15T10:30:00Z",
+  "durationMinutes": 0,
+  "location": "string",
+  "status": "SCHEDULED",
+  "minutes": "string"
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "title": "string",
+    "agenda": "string",
+    "clientProjectId": 0,
+    "scheduledAt": "2026-01-15T10:30:00Z",
+    "durationMinutes": 0,
+    "location": "string",
+    "status": "SCHEDULED",
+    "minutes": "string",
+    "createdByUuid": "string",
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `404`
+
+---
+
+### `DELETE` `/api/v1/ba/meetings/{id}`
+
+Cancel a meeting (status = CANCELLED) — never row-deletes
+
+**Auth:** Role: BUSINESS_ANALYST or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": null,
+  "error": null
+}
+```
+
+**Status codes:** `200`, `404`
+
+---
+
 ## Batches
 
 ### `GET` `/api/v1/batches`
 
-List batches
+List batches — a STUDENT sees only the batches they are enrolled in
 
 **Auth:** Role: TRAINER_PM or ADMIN or STUDENT
 
@@ -1779,7 +2821,7 @@ Create a batch — the caller becomes its PM
 
 ### `GET` `/api/v1/batches/{id}`
 
-Get one batch
+Get one batch — a STUDENT may only read a batch they are enrolled in
 
 **Auth:** Role: TRAINER_PM or ADMIN or STUDENT
 
@@ -1868,7 +2910,7 @@ Update a batch
 
 ### `GET` `/api/v1/batches/{id}/students`
 
-The batch roster - enrolled students with their uuid + status (a TRAINER_PM must own the batch). Feeds task assignment, graduation and letters.
+The batch roster — enrolled students with their uuid + status (a TRAINER_PM must own the batch). Feeds task assignment, graduation and letters.
 
 **Auth:** Role: TRAINER_PM or ADMIN
 
@@ -2010,6 +3052,143 @@ Graduate an ACTIVE student — required before a certificate can be issued
 
 ## Bug Challenges
 
+### `GET` `/api/v1/challenges/{challengeId}`
+
+One bug-fix challenge by id
+
+**Auth:** Role: DEVELOPER or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `challengeId` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "title": "string",
+    "expectedBehaviour": "string",
+    "brokenCodeUrl": "string",
+    "testScriptUrl": "string",
+    "difficulty": "BEGINNER"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `404`
+
+---
+
+### `PUT` `/api/v1/challenges/{challengeId}`
+
+Edit a challenge's title / expected behaviour / difficulty — creator or ADMIN only
+
+**Auth:** Role: DEVELOPER or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `challengeId` | integer |  |
+
+**Request body:**
+
+```json
+{
+  "title": "string",
+  "expectedBehaviour": "string",
+  "difficulty": "BEGINNER"
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "title": "string",
+    "expectedBehaviour": "string",
+    "brokenCodeUrl": "string",
+    "testScriptUrl": "string",
+    "difficulty": "BEGINNER"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `403`, `404`, `409`
+
+---
+
+### `DELETE` `/api/v1/challenges/{challengeId}`
+
+Delete a bug-fix challenge — creator or ADMIN only
+
+**Auth:** Role: DEVELOPER or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `challengeId` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": null,
+  "error": null
+}
+```
+
+**Status codes:** `200`, `403`, `404`
+
+---
+
+### `GET` `/api/v1/projects/{id}/challenges`
+
+List every bug-fix challenge on a project
+
+**Auth:** Role: DEVELOPER or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 0,
+      "title": "string",
+      "expectedBehaviour": "string",
+      "brokenCodeUrl": "string",
+      "testScriptUrl": "string",
+      "difficulty": "BEGINNER"
+    }
+  ],
+  "error": null
+}
+```
+
+**Status codes:** `200`, `404`
+
+---
+
 ### `POST` `/api/v1/projects/{id}/challenges`
 
 Attach a bug-fix challenge — brokenCode required, testScript optional
@@ -2092,11 +3271,13 @@ Attach a bug-fix challenge — brokenCode required, testScript optional
         "leadType": "string",
         "institution": "string",
         "interestedPlanId": 0,
+        "dealValue": 0.0,
         "status": "NEW",
         "assignedAgentUuid": "string",
         "assignedAgentName": "string",
         "lostReason": "string",
         "convertedUserUuid": "string",
+        "nextFollowUpAt": "2026-01-15T10:30:00Z",
         "createdAt": "2026-01-15T10:30:00Z",
         "updatedAt": "2026-01-15T10:30:00Z"
       }
@@ -2129,7 +3310,8 @@ Attach a bug-fix challenge — brokenCode required, testScript optional
   "source": "LANDING_PAGE",
   "leadType": "string",
   "institution": "string",
-  "interestedPlanId": 0
+  "interestedPlanId": 0,
+  "dealValue": 0.0
 }
 ```
 
@@ -2147,14 +3329,274 @@ Attach a bug-fix challenge — brokenCode required, testScript optional
     "leadType": "string",
     "institution": "string",
     "interestedPlanId": 0,
+    "dealValue": 0.0,
     "status": "NEW",
     "assignedAgentUuid": "string",
     "assignedAgentName": "string",
     "lostReason": "string",
     "convertedUserUuid": "string",
+    "nextFollowUpAt": "2026-01-15T10:30:00Z",
     "createdAt": "2026-01-15T10:30:00Z",
     "updatedAt": "2026-01-15T10:30:00Z"
   },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `GET` `/api/v1/leads/campaigns`
+
+List campaigns — optional status filter
+
+**Auth:** Role: LEAD_GEN or ADMIN
+
+**Query parameters:**
+
+| name | type | required | description |
+|---|---|---|---|
+| `status` | string | no |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 0,
+        "name": "string",
+        "channel": "EMAIL",
+        "description": "string",
+        "startDate": "2026-01-15",
+        "endDate": "2026-01-15",
+        "budget": 0.0,
+        "targetLeads": 0,
+        "status": "PLANNED",
+        "createdByUuid": "string",
+        "createdAt": "2026-01-15T10:30:00Z",
+        "updatedAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `POST` `/api/v1/leads/campaigns`
+
+Create a campaign (starts PLANNED)
+
+**Auth:** Role: LEAD_GEN or ADMIN
+
+**Request body:**
+
+```json
+{
+  "name": "string",
+  "channel": "EMAIL",
+  "description": "string",
+  "startDate": "2026-01-15",
+  "endDate": "2026-01-15",
+  "budget": 0.0,
+  "targetLeads": 0
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "name": "string",
+    "channel": "EMAIL",
+    "description": "string",
+    "startDate": "2026-01-15",
+    "endDate": "2026-01-15",
+    "budget": 0.0,
+    "targetLeads": 0,
+    "status": "PLANNED",
+    "createdByUuid": "string",
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `PUT` `/api/v1/leads/campaigns/{id}`
+
+Replace a campaign's fields, including its status
+
+**Auth:** Role: LEAD_GEN or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Request body:**
+
+```json
+{
+  "name": "string",
+  "channel": "EMAIL",
+  "description": "string",
+  "startDate": "2026-01-15",
+  "endDate": "2026-01-15",
+  "budget": 0.0,
+  "targetLeads": 0,
+  "status": "PLANNED"
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "name": "string",
+    "channel": "EMAIL",
+    "description": "string",
+    "startDate": "2026-01-15",
+    "endDate": "2026-01-15",
+    "budget": 0.0,
+    "targetLeads": 0,
+    "status": "PLANNED",
+    "createdByUuid": "string",
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `404`
+
+---
+
+### `DELETE` `/api/v1/leads/campaigns/{id}`
+
+Cancel a campaign (status = CANCELLED) — never row-deletes
+
+**Auth:** Role: LEAD_GEN or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": null,
+  "error": null
+}
+```
+
+**Status codes:** `200`, `404`
+
+---
+
+### `POST` `/api/v1/leads/inbound`
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Request body:**
+
+```json
+{
+  "name": "string",
+  "email": "user@example.com",
+  "phone": "string",
+  "message": "string",
+  "leadType": "string",
+  "source": "LANDING_PAGE"
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "name": "string",
+    "email": "string",
+    "phone": "string",
+    "source": "LANDING_PAGE",
+    "leadType": "string",
+    "institution": "string",
+    "interestedPlanId": 0,
+    "dealValue": 0.0,
+    "status": "NEW",
+    "assignedAgentUuid": "string",
+    "assignedAgentName": "string",
+    "lostReason": "string",
+    "convertedUserUuid": "string",
+    "nextFollowUpAt": "2026-01-15T10:30:00Z",
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `GET` `/api/v1/leads/targets/leaderboard`
+
+**Auth:** Role: LEAD_GEN or ADMIN
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "agentUuid": "string",
+      "agentName": "string",
+      "totalLeads": 0,
+      "converted": 0,
+      "pipelineValue": 0.0,
+      "callsTarget": 0,
+      "callsMade": 0,
+      "conversionsTarget": 0,
+      "conversionsMade": 0,
+      "revenueTarget": 0.0,
+      "revenueAchieved": 0.0
+    }
+  ],
   "error": null
 }
 ```
@@ -2182,6 +3624,171 @@ Attach a bug-fix challenge — brokenCode required, testScript optional
     "conversionsMade": 0,
     "revenueTarget": 0.0,
     "revenueAchieved": 0.0
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `GET` `/api/v1/leads/{id}`
+
+**Auth:** Role: LEAD_GEN or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "name": "string",
+    "email": "string",
+    "phone": "string",
+    "source": "LANDING_PAGE",
+    "leadType": "string",
+    "institution": "string",
+    "interestedPlanId": 0,
+    "dealValue": 0.0,
+    "status": "NEW",
+    "assignedAgentUuid": "string",
+    "assignedAgentName": "string",
+    "lostReason": "string",
+    "convertedUserUuid": "string",
+    "nextFollowUpAt": "2026-01-15T10:30:00Z",
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `PUT` `/api/v1/leads/{id}`
+
+**Auth:** Role: LEAD_GEN or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Request body:**
+
+```json
+{
+  "name": "string",
+  "leadType": "string",
+  "institution": "string",
+  "interestedPlanId": 0,
+  "dealValue": 0.0
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "name": "string",
+    "email": "string",
+    "phone": "string",
+    "source": "LANDING_PAGE",
+    "leadType": "string",
+    "institution": "string",
+    "interestedPlanId": 0,
+    "dealValue": 0.0,
+    "status": "NEW",
+    "assignedAgentUuid": "string",
+    "assignedAgentName": "string",
+    "lostReason": "string",
+    "convertedUserUuid": "string",
+    "nextFollowUpAt": "2026-01-15T10:30:00Z",
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `DELETE` `/api/v1/leads/{id}`
+
+**Auth:** Role: LEAD_GEN or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": null,
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `GET` `/api/v1/leads/{id}/activities`
+
+**Auth:** Role: LEAD_GEN or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 0,
+        "leadId": 0,
+        "agentUuid": "string",
+        "agentName": "string",
+        "activityType": "CALL",
+        "outcome": "string",
+        "notes": "string",
+        "nextFollowUpAt": "2026-01-15T10:30:00Z",
+        "occurredAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
   },
   "error": null
 }
@@ -2255,7 +3862,8 @@ Attach a bug-fix challenge — brokenCode required, testScript optional
   "newStatus": "NEW",
   "reason": "string",
   "lostReason": "string",
-  "convertedUserUuid": "string"
+  "convertedUserUuid": "string",
+  "convertedUserEmail": "string"
 }
 ```
 
@@ -2273,11 +3881,13 @@ Attach a bug-fix challenge — brokenCode required, testScript optional
     "leadType": "string",
     "institution": "string",
     "interestedPlanId": 0,
+    "dealValue": 0.0,
     "status": "NEW",
     "assignedAgentUuid": "string",
     "assignedAgentName": "string",
     "lostReason": "string",
     "convertedUserUuid": "string",
+    "nextFollowUpAt": "2026-01-15T10:30:00Z",
     "createdAt": "2026-01-15T10:30:00Z",
     "updatedAt": "2026-01-15T10:30:00Z"
   },
@@ -2623,11 +4233,348 @@ Burndown and milestone completion for one client project — never another clien
 
 ---
 
+## Dev
+
+### `GET` `/api/v1/dev/requirement-documents`
+
+List requirement documents to review — optional clientProjectId / status filters
+
+**Auth:** Role: DEVELOPER or ADMIN
+
+**Query parameters:**
+
+| name | type | required | description |
+|---|---|---|---|
+| `clientProjectId` | integer | no |  |
+| `status` | string | no |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 0,
+        "clientProjectId": 0,
+        "docType": "BRD",
+        "title": "string",
+        "version": 0,
+        "status": "DRAFT",
+        "authoredByUuid": "string",
+        "authoredByFullName": "string",
+        "approvedByUuid": "string",
+        "approvedByFullName": "string",
+        "devReviewedByUuid": "string",
+        "devReviewedByFullName": "string",
+        "devReviewedAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `GET` `/api/v1/dev/requirement-documents/{id}`
+
+One requirement document with its full content
+
+**Auth:** Role: DEVELOPER or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "clientProjectId": 0,
+    "docType": "BRD",
+    "title": "string",
+    "version": 0,
+    "status": "DRAFT",
+    "content": "string",
+    "authoredByUuid": "string",
+    "authoredByFullName": "string",
+    "approvedByUuid": "string",
+    "approvedByFullName": "string",
+    "devReviewedByUuid": "string",
+    "devReviewedByFullName": "string",
+    "devReviewedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `404`
+
+---
+
+### `POST` `/api/v1/dev/requirement-documents/{id}/acknowledge`
+
+Mark a requirement document as reviewed by the caller — idempotent; does not change status
+
+**Auth:** Role: DEVELOPER or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "clientProjectId": 0,
+    "docType": "BRD",
+    "title": "string",
+    "version": 0,
+    "status": "DRAFT",
+    "content": "string",
+    "authoredByUuid": "string",
+    "authoredByFullName": "string",
+    "approvedByUuid": "string",
+    "approvedByFullName": "string",
+    "devReviewedByUuid": "string",
+    "devReviewedByFullName": "string",
+    "devReviewedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `404`
+
+---
+
 ## HR
+
+### `GET` `/api/v1/hr/disciplinary`
+
+List disciplinary actions — optional status / severity / employeeId filters
+
+**Auth:** Role: HR_MANAGER or ADMIN
+
+**Query parameters:**
+
+| name | type | required | description |
+|---|---|---|---|
+| `status` | string | no |  |
+| `severity` | string | no |  |
+| `employeeId` | integer | no |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 0,
+        "employeeId": 0,
+        "employeeCode": "string",
+        "employeeName": "string",
+        "actionType": "VERBAL_WARNING",
+        "severity": "LOW",
+        "incidentDate": "2026-01-15",
+        "description": "string",
+        "actionTaken": "string",
+        "status": "OPEN",
+        "acknowledgedAt": "2026-01-15T10:30:00Z",
+        "resolvedAt": "2026-01-15T10:30:00Z",
+        "resolutionNotes": "string",
+        "createdAt": "2026-01-15T10:30:00Z",
+        "updatedAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `POST` `/api/v1/hr/disciplinary`
+
+Raise a disciplinary action against an employee (starts OPEN)
+
+**Auth:** Role: HR_MANAGER or ADMIN
+
+**Request body:**
+
+```json
+{
+  "employeeId": 0,
+  "actionType": "VERBAL_WARNING",
+  "severity": "LOW",
+  "incidentDate": "2026-01-15",
+  "description": "string"
+}
+```
+
+**Response `201`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "employeeId": 0,
+    "employeeCode": "string",
+    "employeeName": "string",
+    "actionType": "VERBAL_WARNING",
+    "severity": "LOW",
+    "incidentDate": "2026-01-15",
+    "description": "string",
+    "actionTaken": "string",
+    "status": "OPEN",
+    "acknowledgedAt": "2026-01-15T10:30:00Z",
+    "resolvedAt": "2026-01-15T10:30:00Z",
+    "resolutionNotes": "string",
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `201`, `404`
+
+---
+
+### `GET` `/api/v1/hr/disciplinary/{id}`
+
+One disciplinary action by id
+
+**Auth:** Role: HR_MANAGER or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "employeeId": 0,
+    "employeeCode": "string",
+    "employeeName": "string",
+    "actionType": "VERBAL_WARNING",
+    "severity": "LOW",
+    "incidentDate": "2026-01-15",
+    "description": "string",
+    "actionTaken": "string",
+    "status": "OPEN",
+    "acknowledgedAt": "2026-01-15T10:30:00Z",
+    "resolvedAt": "2026-01-15T10:30:00Z",
+    "resolutionNotes": "string",
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `PUT` `/api/v1/hr/disciplinary/{id}`
+
+Update an action — status (ACKNOWLEDGED/RESOLVED stamp their timestamps), action taken, resolution notes
+
+**Auth:** Role: HR_MANAGER or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Request body:**
+
+```json
+{
+  "actionType": "VERBAL_WARNING",
+  "severity": "LOW",
+  "incidentDate": "2026-01-15",
+  "description": "string",
+  "actionTaken": "string",
+  "status": "OPEN",
+  "resolutionNotes": "string"
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "employeeId": 0,
+    "employeeCode": "string",
+    "employeeName": "string",
+    "actionType": "VERBAL_WARNING",
+    "severity": "LOW",
+    "incidentDate": "2026-01-15",
+    "description": "string",
+    "actionTaken": "string",
+    "status": "OPEN",
+    "acknowledgedAt": "2026-01-15T10:30:00Z",
+    "resolvedAt": "2026-01-15T10:30:00Z",
+    "resolutionNotes": "string",
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `404`
+
+---
 
 ### `GET` `/api/v1/hr/documents`
 
-List HR documents - an employee sees only their own; HR_MANAGER / ADMIN see all, optionally filtered by status / userUuid / documentType. Each row carries a short-lived presigned downloadUrl.
+List HR documents — an employee sees only their own; HR_MANAGER / ADMIN see all, optionally filtered by status / userUuid / documentType. Each row carries a short-lived presigned downloadUrl.
 
 **Auth:** Authenticated (any logged-in user)
 
@@ -2651,12 +4598,12 @@ List HR documents - an employee sees only their own; HR_MANAGER / ADMIN see all,
       {
         "id": 0,
         "userUuid": "string",
+        "userFullName": "string",
         "documentType": "string",
         "verificationStatus": "PENDING",
         "verifiedByUuid": "string",
         "verifiedAt": "2026-01-15T10:30:00Z",
         "rejectionReason": "string",
-        "userFullName": "string",
         "downloadUrl": "string",
         "createdAt": "2026-01-15T10:30:00Z"
       }
@@ -2701,12 +4648,12 @@ List HR documents - an employee sees only their own; HR_MANAGER / ADMIN see all,
   "data": {
     "id": 0,
     "userUuid": "string",
+    "userFullName": "string",
     "documentType": "string",
     "verificationStatus": "PENDING",
     "verifiedByUuid": "string",
     "verifiedAt": "2026-01-15T10:30:00Z",
     "rejectionReason": "string",
-    "userFullName": "string",
     "downloadUrl": "string",
     "createdAt": "2026-01-15T10:30:00Z"
   },
@@ -2745,12 +4692,12 @@ List HR documents - an employee sees only their own; HR_MANAGER / ADMIN see all,
   "data": {
     "id": 0,
     "userUuid": "string",
+    "userFullName": "string",
     "documentType": "string",
     "verificationStatus": "PENDING",
     "verifiedByUuid": "string",
     "verifiedAt": "2026-01-15T10:30:00Z",
     "rejectionReason": "string",
-    "userFullName": "string",
     "downloadUrl": "string",
     "createdAt": "2026-01-15T10:30:00Z"
   },
@@ -2762,7 +4709,62 @@ List HR documents - an employee sees only their own; HR_MANAGER / ADMIN see all,
 
 ---
 
+### `GET` `/api/v1/hr/employees`
+
+List employees — optional status / department / search (name or code) filters
+
+**Auth:** Role: HR_MANAGER or ADMIN
+
+**Query parameters:**
+
+| name | type | required | description |
+|---|---|---|---|
+| `status` | string | no |  |
+| `department` | string | no |  |
+| `search` | string | no |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 0,
+        "userUuid": "string",
+        "fullName": "string",
+        "employeeCode": "string",
+        "department": "string",
+        "designation": "string",
+        "employmentType": "FULL_TIME",
+        "dateOfJoining": "2026-01-15",
+        "dateOfExit": "2026-01-15",
+        "baseSalary": 0.0,
+        "hourlyRate": 0.0,
+        "reportingManagerId": 0,
+        "status": "ACTIVE"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
 ### `POST` `/api/v1/hr/employees`
+
+Create an employee record
 
 **Auth:** Role: HR_MANAGER or ADMIN
 
@@ -2810,9 +4812,270 @@ List HR documents - an employee sees only their own; HR_MANAGER / ADMIN see all,
 
 ---
 
+### `GET` `/api/v1/hr/employees/{id}`
+
+One employee record by id
+
+**Auth:** Role: HR_MANAGER or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "userUuid": "string",
+    "fullName": "string",
+    "employeeCode": "string",
+    "department": "string",
+    "designation": "string",
+    "employmentType": "FULL_TIME",
+    "dateOfJoining": "2026-01-15",
+    "dateOfExit": "2026-01-15",
+    "baseSalary": 0.0,
+    "hourlyRate": 0.0,
+    "reportingManagerId": 0,
+    "status": "ACTIVE"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `GET` `/api/v1/hr/exits`
+
+List exit records — optional status / employeeId filters
+
+**Auth:** Role: HR_MANAGER or ADMIN
+
+**Query parameters:**
+
+| name | type | required | description |
+|---|---|---|---|
+| `status` | string | no |  |
+| `employeeId` | integer | no |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 0,
+        "employeeId": 0,
+        "employeeCode": "string",
+        "employeeName": "string",
+        "exitType": "RESIGNATION",
+        "lastWorkingDay": "2026-01-15",
+        "reason": "string",
+        "noticePeriodDays": 0,
+        "status": "INITIATED",
+        "clearanceChecklist": [
+          {
+            "label": "string",
+            "done": true
+          }
+        ],
+        "exitInterviewNotes": "string",
+        "completedAt": "2026-01-15T10:30:00Z",
+        "createdAt": "2026-01-15T10:30:00Z",
+        "updatedAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `POST` `/api/v1/hr/exits`
+
+Initiate an employee's offboarding (starts INITIATED)
+
+**Auth:** Role: HR_MANAGER or ADMIN
+
+**Request body:**
+
+```json
+{
+  "employeeId": 0,
+  "exitType": "RESIGNATION",
+  "lastWorkingDay": "2026-01-15",
+  "reason": "string",
+  "noticePeriodDays": 0
+}
+```
+
+**Response `201`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "employeeId": 0,
+    "employeeCode": "string",
+    "employeeName": "string",
+    "exitType": "RESIGNATION",
+    "lastWorkingDay": "2026-01-15",
+    "reason": "string",
+    "noticePeriodDays": 0,
+    "status": "INITIATED",
+    "clearanceChecklist": [
+      {
+        "label": "string",
+        "done": true
+      }
+    ],
+    "exitInterviewNotes": "string",
+    "completedAt": "2026-01-15T10:30:00Z",
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `201`, `404`, `409`
+
+---
+
+### `PUT` `/api/v1/hr/exits/{id}`
+
+Update an in-progress exit — checklist, notes, working status. Not for COMPLETED.
+
+**Auth:** Role: HR_MANAGER or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Request body:**
+
+```json
+{
+  "exitType": "RESIGNATION",
+  "lastWorkingDay": "2026-01-15",
+  "reason": "string",
+  "noticePeriodDays": 0,
+  "status": "INITIATED",
+  "clearanceChecklist": [
+    {
+      "label": "string",
+      "done": true
+    }
+  ],
+  "exitInterviewNotes": "string"
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "employeeId": 0,
+    "employeeCode": "string",
+    "employeeName": "string",
+    "exitType": "RESIGNATION",
+    "lastWorkingDay": "2026-01-15",
+    "reason": "string",
+    "noticePeriodDays": 0,
+    "status": "INITIATED",
+    "clearanceChecklist": [
+      {
+        "label": "string",
+        "done": true
+      }
+    ],
+    "exitInterviewNotes": "string",
+    "completedAt": "2026-01-15T10:30:00Z",
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `400`, `404`, `409`
+
+---
+
+### `POST` `/api/v1/hr/exits/{id}/complete`
+
+Finalise an exit — sets the employee to EXITED (or TERMINATED) and stamps date_of_exit
+
+**Auth:** Role: HR_MANAGER or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "employeeId": 0,
+    "employeeCode": "string",
+    "employeeName": "string",
+    "exitType": "RESIGNATION",
+    "lastWorkingDay": "2026-01-15",
+    "reason": "string",
+    "noticePeriodDays": 0,
+    "status": "INITIATED",
+    "clearanceChecklist": [
+      {
+        "label": "string",
+        "done": true
+      }
+    ],
+    "exitInterviewNotes": "string",
+    "completedAt": "2026-01-15T10:30:00Z",
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `404`, `409`
+
+---
+
 ### `GET` `/api/v1/hr/leaves`
 
-List leave requests - an employee sees only their own; HR_MANAGER / ADMIN see all, optionally filtered by status and userUuid
+List leave requests — an employee sees only their own; HR_MANAGER / ADMIN see all, optionally filtered by status and userUuid
 
 **Auth:** Authenticated (any logged-in user)
 
@@ -2835,6 +5098,7 @@ List leave requests - an employee sees only their own; HR_MANAGER / ADMIN see al
       {
         "id": 0,
         "userUuid": "string",
+        "userFullName": "string",
         "leaveType": "SICK",
         "fromDate": "2026-01-15",
         "toDate": "2026-01-15",
@@ -2843,7 +5107,6 @@ List leave requests - an employee sees only their own; HR_MANAGER / ADMIN see al
         "status": "PENDING",
         "approvedByUuid": "string",
         "decidedAt": "2026-01-15T10:30:00Z",
-        "userFullName": "string",
         "createdAt": "2026-01-15T10:30:00Z"
       }
     ],
@@ -2884,6 +5147,7 @@ List leave requests - an employee sees only their own; HR_MANAGER / ADMIN see al
   "data": {
     "id": 0,
     "userUuid": "string",
+    "userFullName": "string",
     "leaveType": "SICK",
     "fromDate": "2026-01-15",
     "toDate": "2026-01-15",
@@ -2892,7 +5156,6 @@ List leave requests - an employee sees only their own; HR_MANAGER / ADMIN see al
     "status": "PENDING",
     "approvedByUuid": "string",
     "decidedAt": "2026-01-15T10:30:00Z",
-    "userFullName": "string",
     "createdAt": "2026-01-15T10:30:00Z"
   },
   "error": null
@@ -2929,6 +5192,7 @@ List leave requests - an employee sees only their own; HR_MANAGER / ADMIN see al
   "data": {
     "id": 0,
     "userUuid": "string",
+    "userFullName": "string",
     "leaveType": "SICK",
     "fromDate": "2026-01-15",
     "toDate": "2026-01-15",
@@ -2937,7 +5201,6 @@ List leave requests - an employee sees only their own; HR_MANAGER / ADMIN see al
     "status": "PENDING",
     "approvedByUuid": "string",
     "decidedAt": "2026-01-15T10:30:00Z",
-    "userFullName": "string",
     "createdAt": "2026-01-15T10:30:00Z"
   },
   "error": null
@@ -2980,6 +5243,215 @@ List leave requests - an employee sees only their own; HR_MANAGER / ADMIN see al
 ```
 
 **Status codes:** `200`
+
+---
+
+### `GET` `/api/v1/hr/onboardings`
+
+List onboarding records — optional status / employeeId filters
+
+**Auth:** Role: HR_MANAGER or ADMIN
+
+**Query parameters:**
+
+| name | type | required | description |
+|---|---|---|---|
+| `status` | string | no |  |
+| `employeeId` | integer | no |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 0,
+        "employeeId": 0,
+        "employeeCode": "string",
+        "employeeName": "string",
+        "buddyId": 0,
+        "startDate": "2026-01-15",
+        "status": "NOT_STARTED",
+        "checklist": [
+          {
+            "label": "string",
+            "done": true
+          }
+        ],
+        "notes": "string",
+        "completedAt": "2026-01-15T10:30:00Z",
+        "createdAt": "2026-01-15T10:30:00Z",
+        "updatedAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `POST` `/api/v1/hr/onboardings`
+
+Start an employee's onboarding (starts NOT_STARTED)
+
+**Auth:** Role: HR_MANAGER or ADMIN
+
+**Request body:**
+
+```json
+{
+  "employeeId": 0,
+  "startDate": "2026-01-15",
+  "buddyUuid": "string"
+}
+```
+
+**Response `201`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "employeeId": 0,
+    "employeeCode": "string",
+    "employeeName": "string",
+    "buddyId": 0,
+    "startDate": "2026-01-15",
+    "status": "NOT_STARTED",
+    "checklist": [
+      {
+        "label": "string",
+        "done": true
+      }
+    ],
+    "notes": "string",
+    "completedAt": "2026-01-15T10:30:00Z",
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `201`, `404`, `409`
+
+---
+
+### `GET` `/api/v1/hr/onboardings/{id}`
+
+One onboarding record by id
+
+**Auth:** Role: HR_MANAGER or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "employeeId": 0,
+    "employeeCode": "string",
+    "employeeName": "string",
+    "buddyId": 0,
+    "startDate": "2026-01-15",
+    "status": "NOT_STARTED",
+    "checklist": [
+      {
+        "label": "string",
+        "done": true
+      }
+    ],
+    "notes": "string",
+    "completedAt": "2026-01-15T10:30:00Z",
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `PUT` `/api/v1/hr/onboardings/{id}`
+
+Update an onboarding — checklist, buddy, notes, status (COMPLETED stamps completedAt)
+
+**Auth:** Role: HR_MANAGER or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Request body:**
+
+```json
+{
+  "startDate": "2026-01-15",
+  "buddyUuid": "string",
+  "status": "NOT_STARTED",
+  "checklist": [
+    {
+      "label": "string",
+      "done": true
+    }
+  ],
+  "notes": "string"
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "employeeId": 0,
+    "employeeCode": "string",
+    "employeeName": "string",
+    "buddyId": 0,
+    "startDate": "2026-01-15",
+    "status": "NOT_STARTED",
+    "checklist": [
+      {
+        "label": "string",
+        "done": true
+      }
+    ],
+    "notes": "string",
+    "completedAt": "2026-01-15T10:30:00Z",
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `404`
 
 ---
 
@@ -3080,6 +5552,874 @@ List leave requests - an employee sees only their own; HR_MANAGER / ADMIN see al
 ```
 
 **Status codes:** `200`
+
+---
+
+## Interviews
+
+### `GET` `/api/v1/interviews`
+
+List interviews — optional status / type / studentUuid filters
+
+**Auth:** Role: TRAINER_PM or ADMIN
+
+**Query parameters:**
+
+| name | type | required | description |
+|---|---|---|---|
+| `status` | string | no |  |
+| `type` | string | no |  |
+| `studentUuid` | string | no |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 0,
+        "studentUuid": "string",
+        "studentName": "string",
+        "scheduledByUuid": "string",
+        "interviewType": "MOCK",
+        "scheduledAt": "2026-01-15T10:30:00Z",
+        "durationMinutes": 0,
+        "mode": "ONLINE",
+        "location": "string",
+        "interviewerName": "string",
+        "meetingLink": "string",
+        "status": "SCHEDULED",
+        "feedback": "string",
+        "rating": 0,
+        "createdAt": "2026-01-15T10:30:00Z",
+        "updatedAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `POST` `/api/v1/interviews`
+
+Schedule an interview for a student (starts SCHEDULED)
+
+**Auth:** Role: TRAINER_PM or ADMIN
+
+**Request body:**
+
+```json
+{
+  "studentUuid": "string",
+  "interviewType": "MOCK",
+  "scheduledAt": "2026-01-15T10:30:00Z",
+  "durationMinutes": 0,
+  "mode": "ONLINE",
+  "location": "string",
+  "interviewerName": "string",
+  "meetingLink": "string"
+}
+```
+
+**Response `201`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "studentUuid": "string",
+    "studentName": "string",
+    "scheduledByUuid": "string",
+    "interviewType": "MOCK",
+    "scheduledAt": "2026-01-15T10:30:00Z",
+    "durationMinutes": 0,
+    "mode": "ONLINE",
+    "location": "string",
+    "interviewerName": "string",
+    "meetingLink": "string",
+    "status": "SCHEDULED",
+    "feedback": "string",
+    "rating": 0,
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `201`, `403`, `404`
+
+---
+
+### `GET` `/api/v1/interviews/me`
+
+The caller student's own interviews
+
+**Auth:** Role: STUDENT
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 0,
+        "studentUuid": "string",
+        "studentName": "string",
+        "scheduledByUuid": "string",
+        "interviewType": "MOCK",
+        "scheduledAt": "2026-01-15T10:30:00Z",
+        "durationMinutes": 0,
+        "mode": "ONLINE",
+        "location": "string",
+        "interviewerName": "string",
+        "meetingLink": "string",
+        "status": "SCHEDULED",
+        "feedback": "string",
+        "rating": 0,
+        "createdAt": "2026-01-15T10:30:00Z",
+        "updatedAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `PUT` `/api/v1/interviews/{id}`
+
+Reschedule / update an interview, including status, feedback and rating
+
+**Auth:** Role: TRAINER_PM or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Request body:**
+
+```json
+{
+  "interviewType": "MOCK",
+  "scheduledAt": "2026-01-15T10:30:00Z",
+  "durationMinutes": 0,
+  "mode": "ONLINE",
+  "location": "string",
+  "interviewerName": "string",
+  "meetingLink": "string",
+  "status": "SCHEDULED",
+  "feedback": "string",
+  "rating": 0
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "studentUuid": "string",
+    "studentName": "string",
+    "scheduledByUuid": "string",
+    "interviewType": "MOCK",
+    "scheduledAt": "2026-01-15T10:30:00Z",
+    "durationMinutes": 0,
+    "mode": "ONLINE",
+    "location": "string",
+    "interviewerName": "string",
+    "meetingLink": "string",
+    "status": "SCHEDULED",
+    "feedback": "string",
+    "rating": 0,
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `403`, `404`
+
+---
+
+### `DELETE` `/api/v1/interviews/{id}`
+
+Cancel an interview (status = CANCELLED) — never row-deletes
+
+**Auth:** Role: TRAINER_PM or ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": null,
+  "error": null
+}
+```
+
+**Status codes:** `200`, `403`, `404`
+
+---
+
+## Lessons
+
+### `GET` `/api/v1/lessons`
+
+Browse lessons — optional module filter. Each row carries the caller's progress. includeUnpublished is honoured only for curator roles.
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Query parameters:**
+
+| name | type | required | description |
+|---|---|---|---|
+| `module` | string | no |  |
+| `includeUnpublished` | boolean | no |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 0,
+        "title": "string",
+        "description": "string",
+        "moduleName": "string",
+        "videoUrl": "string",
+        "durationSeconds": 0,
+        "sortOrder": 0,
+        "published": true,
+        "createdByUuid": "string",
+        "progress": {
+          "status": "string",
+          "watchedSeconds": 0,
+          "completedAt": "2026-01-15T10:30:00Z"
+        },
+        "createdAt": "2026-01-15T10:30:00Z",
+        "updatedAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `POST` `/api/v1/lessons`
+
+Create a lesson (published defaults to false)
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Request body:**
+
+```json
+{
+  "title": "string",
+  "description": "string",
+  "moduleName": "string",
+  "videoUrl": "string",
+  "durationSeconds": 0,
+  "sortOrder": 0,
+  "published": true
+}
+```
+
+**Response `201`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "title": "string",
+    "description": "string",
+    "moduleName": "string",
+    "videoUrl": "string",
+    "durationSeconds": 0,
+    "sortOrder": 0,
+    "published": true,
+    "createdByUuid": "string",
+    "progress": {
+      "status": "string",
+      "watchedSeconds": 0,
+      "completedAt": "2026-01-15T10:30:00Z"
+    },
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `201`, `403`
+
+---
+
+### `GET` `/api/v1/lessons/me/progress`
+
+The caller's progress across every lesson they have started
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "lessonId": 0,
+        "title": "string",
+        "moduleName": "string",
+        "status": "string",
+        "watchedSeconds": 0,
+        "durationSeconds": 0,
+        "completedAt": "2026-01-15T10:30:00Z",
+        "updatedAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `GET` `/api/v1/lessons/modules`
+
+Distinct published module names with their lesson counts
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "moduleName": "string",
+      "lessonCount": 0
+    }
+  ],
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `GET` `/api/v1/lessons/{id}`
+
+One lesson with the caller's progress
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "title": "string",
+    "description": "string",
+    "moduleName": "string",
+    "videoUrl": "string",
+    "durationSeconds": 0,
+    "sortOrder": 0,
+    "published": true,
+    "createdByUuid": "string",
+    "progress": {
+      "status": "string",
+      "watchedSeconds": 0,
+      "completedAt": "2026-01-15T10:30:00Z"
+    },
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `404`
+
+---
+
+### `PUT` `/api/v1/lessons/{id}`
+
+Edit a lesson — creator or ADMIN only
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Request body:**
+
+```json
+{
+  "title": "string",
+  "description": "string",
+  "moduleName": "string",
+  "videoUrl": "string",
+  "durationSeconds": 0,
+  "sortOrder": 0,
+  "published": true
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "title": "string",
+    "description": "string",
+    "moduleName": "string",
+    "videoUrl": "string",
+    "durationSeconds": 0,
+    "sortOrder": 0,
+    "published": true,
+    "createdByUuid": "string",
+    "progress": {
+      "status": "string",
+      "watchedSeconds": 0,
+      "completedAt": "2026-01-15T10:30:00Z"
+    },
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `403`, `404`
+
+---
+
+### `DELETE` `/api/v1/lessons/{id}`
+
+Unpublish a lesson (is_published = false) — creator or ADMIN only; never row-deletes
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": null,
+  "error": null
+}
+```
+
+**Status codes:** `200`, `403`, `404`
+
+---
+
+### `POST` `/api/v1/lessons/{id}/progress`
+
+Report watch progress for the caller — upsert; watchedSeconds never moves backwards
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Request body:**
+
+```json
+{
+  "watchedSeconds": 0,
+  "completed": true
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "title": "string",
+    "description": "string",
+    "moduleName": "string",
+    "videoUrl": "string",
+    "durationSeconds": 0,
+    "sortOrder": 0,
+    "published": true,
+    "createdByUuid": "string",
+    "progress": {
+      "status": "string",
+      "watchedSeconds": 0,
+      "completedAt": "2026-01-15T10:30:00Z"
+    },
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `404`
+
+---
+
+### `GET` `/api/v1/lessons/{id}/quiz`
+
+The lesson's quiz questions (correct-answer keys are never returned)
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 0,
+      "questionText": "string",
+      "options": [
+        "string"
+      ],
+      "sortOrder": 0
+    }
+  ],
+  "error": null
+}
+```
+
+**Status codes:** `200`, `404`
+
+---
+
+### `POST` `/api/v1/lessons/{id}/quiz/questions`
+
+Add an MCQ to the lesson quiz — creator or ADMIN only
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Request body:**
+
+```json
+{
+  "questionText": "string",
+  "options": [
+    "string"
+  ],
+  "correctIndex": 0,
+  "explanation": "string"
+}
+```
+
+**Response `201`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "questionText": "string",
+    "options": [
+      "string"
+    ],
+    "sortOrder": 0
+  },
+  "error": null
+}
+```
+
+**Status codes:** `201`, `400`, `403`, `404`
+
+---
+
+### `DELETE` `/api/v1/lessons/{id}/quiz/questions/{questionId}`
+
+Remove a quiz question — creator or ADMIN only
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+| `questionId` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": null,
+  "error": null
+}
+```
+
+**Status codes:** `200`, `403`, `404`
+
+---
+
+### `POST` `/api/v1/lessons/{id}/quiz/submit`
+
+Submit quiz answers — grades against the key; >= 60% marks the lesson COMPLETED
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Request body:**
+
+```json
+{
+  "answers": [
+    0
+  ]
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "score": 0,
+    "total": 0,
+    "passed": true,
+    "passMarkPercent": 0,
+    "submittedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `404`
+
+---
+
+## Notifications
+
+### `GET` `/api/v1/notifications`
+
+The caller's in-app notifications, newest first. ?unreadOnly=true limits to unread rows.
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Query parameters:**
+
+| name | type | required | description |
+|---|---|---|---|
+| `unreadOnly` | boolean | no |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 0,
+        "templateCode": "string",
+        "payload": {},
+        "read": true,
+        "readAt": "2026-01-15T10:30:00Z",
+        "createdAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `PUT` `/api/v1/notifications/read-all`
+
+Mark every unread in-app notification read; returns how many were flipped
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "markedRead": 0
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `GET` `/api/v1/notifications/unread-count`
+
+How many unread in-app notifications the caller has — for a bell badge
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "unreadCount": 0
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `PUT` `/api/v1/notifications/{id}/read`
+
+Mark one notification read — idempotent; 404 if the id is not the caller's own
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "templateCode": "string",
+    "payload": {},
+    "read": true,
+    "readAt": "2026-01-15T10:30:00Z",
+    "createdAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `404`
 
 ---
 
@@ -3373,7 +6713,7 @@ Day-15 review — CLEARED requires task completion >= 85% and no unsatisfactory 
 
 ### `GET` `/api/v1/placements`
 
-List placements visible to the caller - a CLIENT sees the ones they requested, a STUDENT the ones where they are the candidate, HR_MANAGER / ADMIN see all. Optional stage filter.
+List placements visible to the caller — optional stage filter
 
 **Auth:** Role: CLIENT or STUDENT or HR_MANAGER or ADMIN
 
@@ -3865,6 +7205,255 @@ DRAFT -> PUBLISHED — only a PUBLISHED project can attach to a task
 ```
 
 **Status codes:** `200`
+
+---
+
+## Public
+
+### `GET` `/api/v1/public/stats`
+
+Aggregate counts for the landing page (graduates, placements, …)
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "graduates": 0,
+    "activeLearners": 0,
+    "activeBatches": 0,
+    "placements": 0,
+    "certificatesIssued": 0,
+    "hiringPartners": 0
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+## Resources
+
+### `GET` `/api/v1/resources`
+
+Browse the resource library — optional category / search filters. includeInactive is honoured only for curator roles.
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Query parameters:**
+
+| name | type | required | description |
+|---|---|---|---|
+| `category` | string | no |  |
+| `search` | string | no |  |
+| `includeInactive` | boolean | no |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 0,
+        "title": "string",
+        "description": "string",
+        "category": "ARTICLE",
+        "url": "string",
+        "tags": [
+          "string"
+        ],
+        "createdByUuid": "string",
+        "active": true,
+        "createdAt": "2026-01-15T10:30:00Z",
+        "updatedAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `POST` `/api/v1/resources`
+
+Add a resource to the library
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Request body:**
+
+```json
+{
+  "title": "string",
+  "description": "string",
+  "category": "ARTICLE",
+  "url": "string",
+  "tags": [
+    "string"
+  ]
+}
+```
+
+**Response `201`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "title": "string",
+    "description": "string",
+    "category": "ARTICLE",
+    "url": "string",
+    "tags": [
+      "string"
+    ],
+    "createdByUuid": "string",
+    "active": true,
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `201`, `403`
+
+---
+
+### `GET` `/api/v1/resources/{id}`
+
+One resource by id
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "title": "string",
+    "description": "string",
+    "category": "ARTICLE",
+    "url": "string",
+    "tags": [
+      "string"
+    ],
+    "createdByUuid": "string",
+    "active": true,
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `404`
+
+---
+
+### `PUT` `/api/v1/resources/{id}`
+
+Edit a resource — creator or ADMIN only
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Request body:**
+
+```json
+{
+  "title": "string",
+  "description": "string",
+  "category": "ARTICLE",
+  "url": "string",
+  "tags": [
+    "string"
+  ],
+  "active": true
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "title": "string",
+    "description": "string",
+    "category": "ARTICLE",
+    "url": "string",
+    "tags": [
+      "string"
+    ],
+    "createdByUuid": "string",
+    "active": true,
+    "createdAt": "2026-01-15T10:30:00Z",
+    "updatedAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `403`, `404`
+
+---
+
+### `DELETE` `/api/v1/resources/{id}`
+
+Deactivate a resource (is_active = false) — creator or ADMIN only; never row-deletes
+
+**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": null,
+  "error": null
+}
+```
+
+**Status codes:** `200`, `403`, `404`
 
 ---
 
@@ -4533,6 +8122,200 @@ The caller's current active subscription
     "endDate": "2026-01-15",
     "status": "PENDING",
     "autoRenew": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+## Talent
+
+### `GET` `/api/v1/recruitment-requests`
+
+List recruitment requests — a CLIENT sees their own, ADMIN/HR_MANAGER see all
+
+**Auth:** Role: CLIENT or ADMIN or HR_MANAGER
+
+**Query parameters:**
+
+| name | type | required | description |
+|---|---|---|---|
+| `status` | string | no |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 0,
+        "candidateUuid": "string",
+        "candidateName": "string",
+        "requestedByUuid": "string",
+        "roleTitle": "string",
+        "engagementType": "FULL_TIME",
+        "message": "string",
+        "status": "PENDING",
+        "decisionNote": "string",
+        "decidedByUuid": "string",
+        "decidedAt": "2026-01-15T10:30:00Z",
+        "createdAt": "2026-01-15T10:30:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
+
+### `POST` `/api/v1/recruitment-requests`
+
+Request to recruit a candidate — lands PENDING for ADMIN/HR review
+
+**Auth:** Role: CLIENT
+
+**Request body:**
+
+```json
+{
+  "candidateUuid": "string",
+  "roleTitle": "string",
+  "engagementType": "FULL_TIME",
+  "message": "string"
+}
+```
+
+**Response `201`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "candidateUuid": "string",
+    "candidateName": "string",
+    "requestedByUuid": "string",
+    "roleTitle": "string",
+    "engagementType": "FULL_TIME",
+    "message": "string",
+    "status": "PENDING",
+    "decisionNote": "string",
+    "decidedByUuid": "string",
+    "decidedAt": "2026-01-15T10:30:00Z",
+    "createdAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `201`, `403`, `404`
+
+---
+
+### `PUT` `/api/v1/recruitment-requests/{id}/status`
+
+Approve or reject a PENDING recruitment request
+
+**Auth:** Role: ADMIN or HR_MANAGER
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `id` | integer |  |
+
+**Request body:**
+
+```json
+{
+  "status": "PENDING",
+  "decisionNote": "string"
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 0,
+    "candidateUuid": "string",
+    "candidateName": "string",
+    "requestedByUuid": "string",
+    "roleTitle": "string",
+    "engagementType": "FULL_TIME",
+    "message": "string",
+    "status": "PENDING",
+    "decisionNote": "string",
+    "decidedByUuid": "string",
+    "decidedAt": "2026-01-15T10:30:00Z",
+    "createdAt": "2026-01-15T10:30:00Z"
+  },
+  "error": null
+}
+```
+
+**Status codes:** `200`, `400`, `403`, `404`, `409`
+
+---
+
+### `GET` `/api/v1/talent-pool`
+
+Browse candidate profiles — optional search (name/title) and skill filters
+
+**Auth:** Role: CLIENT or ADMIN or HR_MANAGER or LEAD_GEN
+
+**Query parameters:**
+
+| name | type | required | description |
+|---|---|---|---|
+| `search` | string | no |  |
+| `skill` | string | no |  |
+
+**Paginated** — also accepts `page` (0-based), `size` (max 100), `sort=field,asc|desc`.
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "uuid": "string",
+        "fullName": "string",
+        "currentTitle": "string",
+        "location": "string",
+        "experienceLevel": "string",
+        "yearsExperience": 0,
+        "skills": [
+          "string"
+        ],
+        "portfolioSlug": "string",
+        "bio": "string"
+      }
+    ],
+    "page": 0,
+    "size": 0,
+    "totalElements": 0,
+    "totalPages": 0,
+    "last": true
   },
   "error": null
 }

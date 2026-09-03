@@ -1851,6 +1851,191 @@
           "response": []
         },
         {
+          "name": "GET /api/v1/admin/coupons",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/coupons",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "coupons"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "List all coupons, newest first\n\nRoles: ADMIN ({{adminAccessToken}}).  Using {{adminAccessToken}} \u2014 run 'Auth / Login \u2014 Admin' first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/admin/coupons",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/coupons",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "coupons"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Create a coupon\n\nRoles: ADMIN ({{adminAccessToken}}).  Using {{adminAccessToken}} \u2014 run 'Auth / Login \u2014 Admin' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"string\",\n  \"discountType\": \"PERCENTAGE\",\n  \"discountValue\": 0.0,\n  \"validFrom\": \"2026-01-15\",\n  \"validUntil\": \"2026-01-15\",\n  \"maxRedemptions\": 0,\n  \"active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/v1/admin/coupons/{code}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/coupons/:code",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "coupons",
+                ":code"
+              ],
+              "variable": [
+                {
+                  "key": "code",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Replace a coupon's discount, validity window, cap and active flag\n\nRoles: ADMIN ({{adminAccessToken}}).  Using {{adminAccessToken}} \u2014 run 'Auth / Login \u2014 Admin' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"discountType\": \"PERCENTAGE\",\n  \"discountValue\": 0.0,\n  \"validFrom\": \"2026-01-15\",\n  \"validUntil\": \"2026-01-15\",\n  \"maxRedemptions\": 0,\n  \"active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/v1/admin/coupons/{code}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/coupons/:code",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "coupons",
+                ":code"
+              ],
+              "variable": [
+                {
+                  "key": "code",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Deactivate a coupon (active = false) \u2014 never row-deletes, so redemption history is kept\n\nRoles: ADMIN ({{adminAccessToken}}).  Using {{adminAccessToken}} \u2014 run 'Auth / Login \u2014 Admin' first."
+          },
+          "response": []
+        },
+        {
           "name": "POST /api/v1/admin/exports/{report}",
           "request": {
             "method": "POST",
@@ -1968,6 +2153,242 @@
           "response": []
         },
         {
+          "name": "GET /api/v1/admin/payments",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "payments"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "gateway",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "userUuid",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "List payments, newest first \u2014 optional status / gateway / userUuid filters\n\nRoles: ADMIN ({{adminAccessToken}}).  Using {{adminAccessToken}} \u2014 run 'Auth / Login \u2014 Admin' first."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/admin/payments/summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/payments/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "payments",
+                "summary"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Payment counts and amount totals per status, plus total captured / refunded\n\nRoles: ADMIN ({{adminAccessToken}}).  Using {{adminAccessToken}} \u2014 run 'Auth / Login \u2014 Admin' first."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/admin/payments/{gatewayOrderId}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/payments/:gatewayOrderId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "payments",
+                ":gatewayOrderId"
+              ],
+              "variable": [
+                {
+                  "key": "gatewayOrderId",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "One payment's detail\n\nRoles: ADMIN ({{adminAccessToken}}).  Using {{adminAccessToken}} \u2014 run 'Auth / Login \u2014 Admin' first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/admin/payments/{gatewayOrderId}/refund",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/payments/:gatewayOrderId/refund",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "payments",
+                ":gatewayOrderId",
+                "refund"
+              ],
+              "variable": [
+                {
+                  "key": "gatewayOrderId",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Issue a full refund through the original gateway \u2014 only for a CAPTURED payment, once. The gateway's refund webhook reconciles the final state.\n\nRoles: ADMIN ({{adminAccessToken}}).  Using {{adminAccessToken}} \u2014 run 'Auth / Login \u2014 Admin' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/admin/plans",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "plans"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Create a subscription plan \u2014 cache evicted immediately\n\nRoles: ADMIN ({{adminAccessToken}}).  Using {{adminAccessToken}} \u2014 run 'Auth / Login \u2014 Admin' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"string\",\n  \"name\": \"string\",\n  \"priceInr\": 0.0,\n  \"tierRank\": 0,\n  \"durationDays\": 0,\n  \"maxProjects\": 0,\n  \"mentorSupport\": true,\n  \"allowsBatch\": true,\n  \"allowsSprints\": true,\n  \"allowsPip\": true,\n  \"allowsInternshipLetter\": true,\n  \"allowsClientProject\": true,\n  \"active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
           "name": "PUT /api/v1/admin/plans/{id}",
           "request": {
             "method": "PUT",
@@ -2017,6 +2438,45 @@
                 }
               }
             }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/v1/admin/plans/{id}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/plans/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "plans",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Deactivate a subscription plan (is_active = false) \u2014 never row-deletes, so subscription history is kept\n\nRoles: ADMIN ({{adminAccessToken}}).  Using {{adminAccessToken}} \u2014 run 'Auth / Login \u2014 Admin' first."
           },
           "response": []
         },
@@ -2116,6 +2576,98 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"fullName\": \"string\",\n  \"email\": \"user@example.com\",\n  \"phone\": \"string\",\n  \"roles\": [\n    \"STUDENT\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/admin/users/{userUuid}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users/:userUuid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "users",
+                ":userUuid"
+              ],
+              "variable": [
+                {
+                  "key": "userUuid",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Single-user detail \u2014 profile fields, roles, 2FA and login timestamps\n\nRoles: ADMIN ({{adminAccessToken}}).  Using {{adminAccessToken}} \u2014 run 'Auth / Login \u2014 Admin' first."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/v1/admin/users/{userUuid}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users/:userUuid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "users",
+                ":userUuid"
+              ],
+              "variable": [
+                {
+                  "key": "userUuid",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Edit a user's profile fields (name, phone, GitHub, LinkedIn). Status and roles have their own endpoints.\n\nRoles: ADMIN ({{adminAccessToken}}).  Using {{adminAccessToken}} \u2014 run 'Auth / Login \u2014 Admin' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"string\",\n  \"phone\": \"string\",\n  \"githubUsername\": \"string\",\n  \"linkedinUrl\": \"string\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2469,6 +3021,360 @@
           "response": []
         },
         {
+          "name": "GET /api/v1/assessments/banks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/assessments/banks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "assessments",
+                "banks"
+              ],
+              "query": [
+                {
+                  "key": "topic",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "active",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{pmAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "List question banks \u2014 optional topic / active filters\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/assessments/banks",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/assessments/banks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "assessments",
+                "banks"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{pmAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Create a question bank\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"string\",\n  \"topic\": \"string\",\n  \"description\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/v1/assessments/banks/{id}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/assessments/banks/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "assessments",
+                "banks",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{pmAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Rename / re-topic a bank or toggle its active flag\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"string\",\n  \"topic\": \"string\",\n  \"description\": \"string\",\n  \"active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/v1/assessments/banks/{id}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/assessments/banks/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "assessments",
+                "banks",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{pmAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Deactivate a bank (is_active = false) \u2014 never row-deletes\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/assessments/banks/{id}/questions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/assessments/banks/:id/questions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "assessments",
+                "banks",
+                ":id",
+                "questions"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{pmAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "List the questions in a bank (correct-answer keys are never returned)\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/assessments/banks/{id}/questions",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/assessments/banks/:id/questions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "assessments",
+                "banks",
+                ":id",
+                "questions"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{pmAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Add a question to a bank\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"questionText\": \"string\",\n  \"questionType\": \"MCQ\",\n  \"options\": [\n    \"string\"\n  ],\n  \"correctAnswerIndices\": [\n    0\n  ],\n  \"marks\": 0,\n  \"explanation\": \"string\",\n  \"difficulty\": \"EASY\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/v1/assessments/banks/{id}/questions/{questionId}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/assessments/banks/:id/questions/:questionId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "assessments",
+                "banks",
+                ":id",
+                "questions",
+                ":questionId"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                },
+                {
+                  "key": "questionId",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{pmAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Remove a question from a bank\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first."
+          },
+          "response": []
+        },
+        {
           "name": "POST /api/v1/assessments/{id}/attempts",
           "request": {
             "method": "POST",
@@ -2773,6 +3679,66 @@
           "response": []
         },
         {
+          "name": "GET /api/v1/ba/documents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ba/documents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ba",
+                "documents"
+              ],
+              "query": [
+                {
+                  "key": "clientProjectId",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{baAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "List requirement documents \u2014 optional clientProjectId / status filters\n\nRoles: BUSINESS_ANALYST ({{baAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{baAccessToken}} \u2014 run 'Auth / Login \u2014 Business Analyst' first."
+          },
+          "response": []
+        },
+        {
           "name": "POST /api/v1/ba/documents",
           "request": {
             "method": "POST",
@@ -2856,6 +3822,203 @@
             "description": "Approve a requirement document \u2014 IN_REVIEW to APPROVED\n\nRoles: BUSINESS_ANALYST ({{baAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{baAccessToken}} \u2014 run 'Auth / Login \u2014 Business Analyst' first."
           },
           "response": []
+        },
+        {
+          "name": "GET /api/v1/ba/meetings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ba/meetings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ba",
+                "meetings"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "clientProjectId",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{baAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "List meetings \u2014 optional status / clientProjectId filters\n\nRoles: BUSINESS_ANALYST ({{baAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{baAccessToken}} \u2014 run 'Auth / Login \u2014 Business Analyst' first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/ba/meetings",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ba/meetings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ba",
+                "meetings"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{baAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Schedule a meeting (starts SCHEDULED)\n\nRoles: BUSINESS_ANALYST ({{baAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{baAccessToken}} \u2014 run 'Auth / Login \u2014 Business Analyst' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"string\",\n  \"agenda\": \"string\",\n  \"clientProjectId\": 0,\n  \"scheduledAt\": \"2026-01-15T10:30:00Z\",\n  \"durationMinutes\": 0,\n  \"location\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/v1/ba/meetings/{id}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ba/meetings/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ba",
+                "meetings",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{baAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Replace a meeting's fields \u2014 including status and minutes\n\nRoles: BUSINESS_ANALYST ({{baAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{baAccessToken}} \u2014 run 'Auth / Login \u2014 Business Analyst' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"string\",\n  \"agenda\": \"string\",\n  \"clientProjectId\": 0,\n  \"scheduledAt\": \"2026-01-15T10:30:00Z\",\n  \"durationMinutes\": 0,\n  \"location\": \"string\",\n  \"status\": \"SCHEDULED\",\n  \"minutes\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/v1/ba/meetings/{id}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ba/meetings/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ba",
+                "meetings",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{baAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Cancel a meeting (status = CANCELLED) \u2014 never row-deletes\n\nRoles: BUSINESS_ANALYST ({{baAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{baAccessToken}} \u2014 run 'Auth / Login \u2014 Business Analyst' first."
+          },
+          "response": []
         }
       ]
     },
@@ -2905,7 +4068,7 @@
                 }
               ]
             },
-            "description": "List batches\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}) / STUDENT ({{studentAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first."
+            "description": "List batches \u2014 a STUDENT sees only the batches they are enrolled in\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}) / STUDENT ({{studentAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first."
           },
           "response": []
         },
@@ -2987,7 +4150,7 @@
                 }
               ]
             },
-            "description": "Get one batch\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}) / STUDENT ({{studentAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first."
+            "description": "Get one batch \u2014 a STUDENT may only read a batch they are enrolled in\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}) / STUDENT ({{studentAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first."
           },
           "response": []
         },
@@ -3078,7 +4241,7 @@
                 }
               ]
             },
-            "description": "The batch roster - enrolled students with their uuid + status (a TRAINER_PM must own the batch). Feeds task assignment, graduation and letters.\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first."
+            "description": "The batch roster \u2014 enrolled students with their uuid + status (a TRAINER_PM must own the batch). Feeds task assignment, graduation and letters.\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first."
           },
           "response": []
         },
@@ -3231,6 +4394,173 @@
     {
       "name": "Bug Challenges",
       "item": [
+        {
+          "name": "GET /api/v1/challenges/{challengeId}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/challenges/:challengeId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "challenges",
+                ":challengeId"
+              ],
+              "variable": [
+                {
+                  "key": "challengeId",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{devAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "One bug-fix challenge by id\n\nRoles: DEVELOPER ({{devAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{devAccessToken}} \u2014 run 'Auth / Login \u2014 Developer' first."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/v1/challenges/{challengeId}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/challenges/:challengeId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "challenges",
+                ":challengeId"
+              ],
+              "variable": [
+                {
+                  "key": "challengeId",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{devAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Edit a challenge's title / expected behaviour / difficulty \u2014 creator or ADMIN only\n\nRoles: DEVELOPER ({{devAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{devAccessToken}} \u2014 run 'Auth / Login \u2014 Developer' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"string\",\n  \"expectedBehaviour\": \"string\",\n  \"difficulty\": \"BEGINNER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/v1/challenges/{challengeId}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/challenges/:challengeId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "challenges",
+                ":challengeId"
+              ],
+              "variable": [
+                {
+                  "key": "challengeId",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{devAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Delete a bug-fix challenge \u2014 creator or ADMIN only\n\nRoles: DEVELOPER ({{devAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{devAccessToken}} \u2014 run 'Auth / Login \u2014 Developer' first."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/projects/{id}/challenges",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/:id/challenges",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                ":id",
+                "challenges"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{devAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "List every bug-fix challenge on a project\n\nRoles: DEVELOPER ({{devAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{devAccessToken}} \u2014 run 'Auth / Login \u2014 Developer' first."
+          },
+          "response": []
+        },
         {
           "name": "POST /api/v1/projects/{id}/challenges",
           "request": {
@@ -3408,13 +4738,281 @@
             "description": "Roles: LEAD_GEN ({{salesAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{salesAccessToken}} \u2014 run 'Auth / Login \u2014 Lead Gen' first.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"string\",\n  \"email\": \"user@example.com\",\n  \"phone\": \"string\",\n  \"source\": \"LANDING_PAGE\",\n  \"leadType\": \"string\",\n  \"institution\": \"string\",\n  \"interestedPlanId\": 0\n}",
+              "raw": "{\n  \"name\": \"string\",\n  \"email\": \"user@example.com\",\n  \"phone\": \"string\",\n  \"source\": \"LANDING_PAGE\",\n  \"leadType\": \"string\",\n  \"institution\": \"string\",\n  \"interestedPlanId\": 0,\n  \"dealValue\": 0.0\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/leads/campaigns",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/leads/campaigns",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "leads",
+                "campaigns"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{salesAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "List campaigns \u2014 optional status filter\n\nRoles: LEAD_GEN ({{salesAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{salesAccessToken}} \u2014 run 'Auth / Login \u2014 Lead Gen' first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/leads/campaigns",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/leads/campaigns",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "leads",
+                "campaigns"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{salesAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Create a campaign (starts PLANNED)\n\nRoles: LEAD_GEN ({{salesAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{salesAccessToken}} \u2014 run 'Auth / Login \u2014 Lead Gen' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"string\",\n  \"channel\": \"EMAIL\",\n  \"description\": \"string\",\n  \"startDate\": \"2026-01-15\",\n  \"endDate\": \"2026-01-15\",\n  \"budget\": 0.0,\n  \"targetLeads\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/v1/leads/campaigns/{id}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/leads/campaigns/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "leads",
+                "campaigns",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{salesAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Replace a campaign's fields, including its status\n\nRoles: LEAD_GEN ({{salesAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{salesAccessToken}} \u2014 run 'Auth / Login \u2014 Lead Gen' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"string\",\n  \"channel\": \"EMAIL\",\n  \"description\": \"string\",\n  \"startDate\": \"2026-01-15\",\n  \"endDate\": \"2026-01-15\",\n  \"budget\": 0.0,\n  \"targetLeads\": 0,\n  \"status\": \"PLANNED\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/v1/leads/campaigns/{id}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/leads/campaigns/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "leads",
+                "campaigns",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{salesAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Cancel a campaign (status = CANCELLED) \u2014 never row-deletes\n\nRoles: LEAD_GEN ({{salesAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{salesAccessToken}} \u2014 run 'Auth / Login \u2014 Lead Gen' first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/leads/inbound",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/leads/inbound",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "leads",
+                "inbound"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Any logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"string\",\n  \"email\": \"user@example.com\",\n  \"phone\": \"string\",\n  \"message\": \"string\",\n  \"leadType\": \"string\",\n  \"source\": \"LANDING_PAGE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/leads/targets/leaderboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/leads/targets/leaderboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "leads",
+                "targets",
+                "leaderboard"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{salesAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Roles: LEAD_GEN ({{salesAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{salesAccessToken}} \u2014 run 'Auth / Login \u2014 Lead Gen' first."
           },
           "response": []
         },
@@ -3434,6 +5032,190 @@
                 "leads",
                 "targets",
                 "me"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{salesAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Roles: LEAD_GEN ({{salesAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{salesAccessToken}} \u2014 run 'Auth / Login \u2014 Lead Gen' first."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/leads/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/leads/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "leads",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{salesAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Roles: LEAD_GEN ({{salesAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{salesAccessToken}} \u2014 run 'Auth / Login \u2014 Lead Gen' first."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/v1/leads/{id}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/leads/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "leads",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{salesAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Roles: LEAD_GEN ({{salesAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{salesAccessToken}} \u2014 run 'Auth / Login \u2014 Lead Gen' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"string\",\n  \"leadType\": \"string\",\n  \"institution\": \"string\",\n  \"interestedPlanId\": 0,\n  \"dealValue\": 0.0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/v1/leads/{id}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/leads/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "leads",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{salesAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Roles: LEAD_GEN ({{salesAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{salesAccessToken}} \u2014 run 'Auth / Login \u2014 Lead Gen' first."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/leads/{id}/activities",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/leads/:id/activities",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "leads",
+                ":id",
+                "activities"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
               ]
             },
             "auth": {
@@ -3546,7 +5328,7 @@
             "description": "Roles: LEAD_GEN ({{salesAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{salesAccessToken}} \u2014 run 'Auth / Login \u2014 Lead Gen' first.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"newStatus\": \"NEW\",\n  \"reason\": \"string\",\n  \"lostReason\": \"string\",\n  \"convertedUserUuid\": \"string\"\n}",
+              "raw": "{\n  \"newStatus\": \"NEW\",\n  \"reason\": \"string\",\n  \"lostReason\": \"string\",\n  \"convertedUserUuid\": \"string\",\n  \"convertedUserEmail\": \"string\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3926,8 +5708,355 @@
       ]
     },
     {
+      "name": "Dev",
+      "item": [
+        {
+          "name": "GET /api/v1/dev/requirement-documents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dev/requirement-documents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dev",
+                "requirement-documents"
+              ],
+              "query": [
+                {
+                  "key": "clientProjectId",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{devAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "List requirement documents to review \u2014 optional clientProjectId / status filters\n\nRoles: DEVELOPER ({{devAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{devAccessToken}} \u2014 run 'Auth / Login \u2014 Developer' first."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/dev/requirement-documents/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dev/requirement-documents/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dev",
+                "requirement-documents",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{devAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "One requirement document with its full content\n\nRoles: DEVELOPER ({{devAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{devAccessToken}} \u2014 run 'Auth / Login \u2014 Developer' first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/dev/requirement-documents/{id}/acknowledge",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dev/requirement-documents/:id/acknowledge",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dev",
+                "requirement-documents",
+                ":id",
+                "acknowledge"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{devAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Mark a requirement document as reviewed by the caller \u2014 idempotent; does not change status\n\nRoles: DEVELOPER ({{devAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{devAccessToken}} \u2014 run 'Auth / Login \u2014 Developer' first."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "HR",
       "item": [
+        {
+          "name": "GET /api/v1/hr/disciplinary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hr/disciplinary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hr",
+                "disciplinary"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "severity",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "employeeId",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{hrAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "List disciplinary actions \u2014 optional status / severity / employeeId filters\n\nRoles: HR_MANAGER ({{hrAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{hrAccessToken}} \u2014 run 'Auth / Login \u2014 Hr Manager' first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/hr/disciplinary",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hr/disciplinary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hr",
+                "disciplinary"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{hrAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Raise a disciplinary action against an employee (starts OPEN)\n\nRoles: HR_MANAGER ({{hrAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{hrAccessToken}} \u2014 run 'Auth / Login \u2014 Hr Manager' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeId\": 0,\n  \"actionType\": \"VERBAL_WARNING\",\n  \"severity\": \"LOW\",\n  \"incidentDate\": \"2026-01-15\",\n  \"description\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/hr/disciplinary/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hr/disciplinary/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hr",
+                "disciplinary",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{hrAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "One disciplinary action by id\n\nRoles: HR_MANAGER ({{hrAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{hrAccessToken}} \u2014 run 'Auth / Login \u2014 Hr Manager' first."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/v1/hr/disciplinary/{id}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hr/disciplinary/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hr",
+                "disciplinary",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{hrAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Update an action \u2014 status (ACKNOWLEDGED/RESOLVED stamp their timestamps), action taken, resolution notes\n\nRoles: HR_MANAGER ({{hrAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{hrAccessToken}} \u2014 run 'Auth / Login \u2014 Hr Manager' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"actionType\": \"VERBAL_WARNING\",\n  \"severity\": \"LOW\",\n  \"incidentDate\": \"2026-01-15\",\n  \"description\": \"string\",\n  \"actionTaken\": \"string\",\n  \"status\": \"OPEN\",\n  \"resolutionNotes\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
         {
           "name": "GET /api/v1/hr/documents",
           "request": {
@@ -3990,7 +6119,7 @@
                 }
               ]
             },
-            "description": "List HR documents - an employee sees only their own; HR_MANAGER / ADMIN see all, optionally filtered by status / userUuid / documentType. Each row carries a short-lived presigned downloadUrl.\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
+            "description": "List HR documents \u2014 an employee sees only their own; HR_MANAGER / ADMIN see all, optionally filtered by status / userUuid / documentType. Each row carries a short-lived presigned downloadUrl.\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
           },
           "response": []
         },
@@ -4102,6 +6231,72 @@
           "response": []
         },
         {
+          "name": "GET /api/v1/hr/employees",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hr/employees",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hr",
+                "employees"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "department",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{hrAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "List employees \u2014 optional status / department / search (name or code) filters\n\nRoles: HR_MANAGER ({{hrAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{hrAccessToken}} \u2014 run 'Auth / Login \u2014 Hr Manager' first."
+          },
+          "response": []
+        },
+        {
           "name": "POST /api/v1/hr/employees",
           "request": {
             "method": "POST",
@@ -4133,7 +6328,7 @@
                 }
               ]
             },
-            "description": "Roles: HR_MANAGER ({{hrAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{hrAccessToken}} \u2014 run 'Auth / Login \u2014 Hr Manager' first.",
+            "description": "Create an employee record\n\nRoles: HR_MANAGER ({{hrAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{hrAccessToken}} \u2014 run 'Auth / Login \u2014 Hr Manager' first.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"userUuid\": \"string\",\n  \"employeeCode\": \"string\",\n  \"department\": \"string\",\n  \"designation\": \"string\",\n  \"employmentType\": \"FULL_TIME\",\n  \"dateOfJoining\": \"2026-01-15\",\n  \"baseSalary\": 0.0,\n  \"hourlyRate\": 0.0,\n  \"reportingManagerId\": 0\n}",
@@ -4143,6 +6338,243 @@
                 }
               }
             }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/hr/employees/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hr/employees/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hr",
+                "employees",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{hrAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "One employee record by id\n\nRoles: HR_MANAGER ({{hrAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{hrAccessToken}} \u2014 run 'Auth / Login \u2014 Hr Manager' first."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/hr/exits",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hr/exits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hr",
+                "exits"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "employeeId",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{hrAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "List exit records \u2014 optional status / employeeId filters\n\nRoles: HR_MANAGER ({{hrAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{hrAccessToken}} \u2014 run 'Auth / Login \u2014 Hr Manager' first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/hr/exits",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hr/exits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hr",
+                "exits"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{hrAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Initiate an employee's offboarding (starts INITIATED)\n\nRoles: HR_MANAGER ({{hrAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{hrAccessToken}} \u2014 run 'Auth / Login \u2014 Hr Manager' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeId\": 0,\n  \"exitType\": \"RESIGNATION\",\n  \"lastWorkingDay\": \"2026-01-15\",\n  \"reason\": \"string\",\n  \"noticePeriodDays\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/v1/hr/exits/{id}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hr/exits/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hr",
+                "exits",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{hrAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Update an in-progress exit \u2014 checklist, notes, working status. Not for COMPLETED.\n\nRoles: HR_MANAGER ({{hrAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{hrAccessToken}} \u2014 run 'Auth / Login \u2014 Hr Manager' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"exitType\": \"RESIGNATION\",\n  \"lastWorkingDay\": \"2026-01-15\",\n  \"reason\": \"string\",\n  \"noticePeriodDays\": 0,\n  \"status\": \"INITIATED\",\n  \"clearanceChecklist\": [\n    {\n      \"label\": \"string\",\n      \"done\": true\n    }\n  ],\n  \"exitInterviewNotes\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/hr/exits/{id}/complete",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hr/exits/:id/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hr",
+                "exits",
+                ":id",
+                "complete"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{hrAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Finalise an exit \u2014 sets the employee to EXITED (or TERMINATED) and stamps date_of_exit\n\nRoles: HR_MANAGER ({{hrAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{hrAccessToken}} \u2014 run 'Auth / Login \u2014 Hr Manager' first."
           },
           "response": []
         },
@@ -4202,7 +6634,7 @@
                 }
               ]
             },
-            "description": "List leave requests - an employee sees only their own; HR_MANAGER / ADMIN see all, optionally filtered by status and userUuid\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
+            "description": "List leave requests \u2014 an employee sees only their own; HR_MANAGER / ADMIN see all, optionally filtered by status and userUuid\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
           },
           "response": []
         },
@@ -4359,6 +6791,203 @@
           "response": []
         },
         {
+          "name": "GET /api/v1/hr/onboardings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hr/onboardings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hr",
+                "onboardings"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "employeeId",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{hrAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "List onboarding records \u2014 optional status / employeeId filters\n\nRoles: HR_MANAGER ({{hrAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{hrAccessToken}} \u2014 run 'Auth / Login \u2014 Hr Manager' first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/hr/onboardings",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hr/onboardings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hr",
+                "onboardings"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{hrAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Start an employee's onboarding (starts NOT_STARTED)\n\nRoles: HR_MANAGER ({{hrAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{hrAccessToken}} \u2014 run 'Auth / Login \u2014 Hr Manager' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeId\": 0,\n  \"startDate\": \"2026-01-15\",\n  \"buddyUuid\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/hr/onboardings/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hr/onboardings/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hr",
+                "onboardings",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{hrAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "One onboarding record by id\n\nRoles: HR_MANAGER ({{hrAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{hrAccessToken}} \u2014 run 'Auth / Login \u2014 Hr Manager' first."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/v1/hr/onboardings/{id}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hr/onboardings/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hr",
+                "onboardings",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{hrAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Update an onboarding \u2014 checklist, buddy, notes, status (COMPLETED stamps completedAt)\n\nRoles: HR_MANAGER ({{hrAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{hrAccessToken}} \u2014 run 'Auth / Login \u2014 Hr Manager' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"startDate\": \"2026-01-15\",\n  \"buddyUuid\": \"string\",\n  \"status\": \"NOT_STARTED\",\n  \"checklist\": [\n    {\n      \"label\": \"string\",\n      \"done\": true\n    }\n  ],\n  \"notes\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
           "name": "GET /api/v1/hr/payroll",
           "request": {
             "method": "GET",
@@ -4455,6 +7084,979 @@
                 }
               }
             }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Interviews",
+      "item": [
+        {
+          "name": "GET /api/v1/interviews",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/interviews",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "interviews"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "type",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "studentUuid",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{pmAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "List interviews \u2014 optional status / type / studentUuid filters\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/interviews",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/interviews",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "interviews"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{pmAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Schedule an interview for a student (starts SCHEDULED)\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"studentUuid\": \"string\",\n  \"interviewType\": \"MOCK\",\n  \"scheduledAt\": \"2026-01-15T10:30:00Z\",\n  \"durationMinutes\": 0,\n  \"mode\": \"ONLINE\",\n  \"location\": \"string\",\n  \"interviewerName\": \"string\",\n  \"meetingLink\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/interviews/me",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/interviews/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "interviews",
+                "me"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "The caller student's own interviews\n\nRoles: STUDENT ({{studentAccessToken}}).  Using {{studentAccessToken}} \u2014 run 'Auth / Login \u2014 Student' first."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/v1/interviews/{id}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/interviews/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "interviews",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{pmAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Reschedule / update an interview, including status, feedback and rating\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"interviewType\": \"MOCK\",\n  \"scheduledAt\": \"2026-01-15T10:30:00Z\",\n  \"durationMinutes\": 0,\n  \"mode\": \"ONLINE\",\n  \"location\": \"string\",\n  \"interviewerName\": \"string\",\n  \"meetingLink\": \"string\",\n  \"status\": \"SCHEDULED\",\n  \"feedback\": \"string\",\n  \"rating\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/v1/interviews/{id}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/interviews/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "interviews",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{pmAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Cancel an interview (status = CANCELLED) \u2014 never row-deletes\n\nRoles: TRAINER_PM ({{pmAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{pmAccessToken}} \u2014 run 'Auth / Login \u2014 Trainer Pm' first."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Lessons",
+      "item": [
+        {
+          "name": "GET /api/v1/lessons",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lessons",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lessons"
+              ],
+              "query": [
+                {
+                  "key": "module",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "includeUnpublished",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Browse lessons \u2014 optional module filter. Each row carries the caller's progress. includeUnpublished is honoured only for curator roles.\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/lessons",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lessons",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lessons"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Create a lesson (published defaults to false)\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"string\",\n  \"description\": \"string\",\n  \"moduleName\": \"string\",\n  \"videoUrl\": \"string\",\n  \"durationSeconds\": 0,\n  \"sortOrder\": 0,\n  \"published\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/lessons/me/progress",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lessons/me/progress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lessons",
+                "me",
+                "progress"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "The caller's progress across every lesson they have started\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/lessons/modules",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lessons/modules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lessons",
+                "modules"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Distinct published module names with their lesson counts\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/lessons/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lessons/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lessons",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "One lesson with the caller's progress\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/v1/lessons/{id}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lessons/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lessons",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Edit a lesson \u2014 creator or ADMIN only\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"string\",\n  \"description\": \"string\",\n  \"moduleName\": \"string\",\n  \"videoUrl\": \"string\",\n  \"durationSeconds\": 0,\n  \"sortOrder\": 0,\n  \"published\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/v1/lessons/{id}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lessons/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lessons",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Unpublish a lesson (is_published = false) \u2014 creator or ADMIN only; never row-deletes\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/lessons/{id}/progress",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lessons/:id/progress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lessons",
+                ":id",
+                "progress"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Report watch progress for the caller \u2014 upsert; watchedSeconds never moves backwards\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"watchedSeconds\": 0,\n  \"completed\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/lessons/{id}/quiz",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lessons/:id/quiz",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lessons",
+                ":id",
+                "quiz"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "The lesson's quiz questions (correct-answer keys are never returned)\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/lessons/{id}/quiz/questions",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lessons/:id/quiz/questions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lessons",
+                ":id",
+                "quiz",
+                "questions"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Add an MCQ to the lesson quiz \u2014 creator or ADMIN only\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"questionText\": \"string\",\n  \"options\": [\n    \"string\"\n  ],\n  \"correctIndex\": 0,\n  \"explanation\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/v1/lessons/{id}/quiz/questions/{questionId}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lessons/:id/quiz/questions/:questionId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lessons",
+                ":id",
+                "quiz",
+                "questions",
+                ":questionId"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                },
+                {
+                  "key": "questionId",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Remove a quiz question \u2014 creator or ADMIN only\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/lessons/{id}/quiz/submit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lessons/:id/quiz/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lessons",
+                ":id",
+                "quiz",
+                "submit"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Submit quiz answers \u2014 grades against the key; >= 60% marks the lesson COMPLETED\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answers\": [\n    0\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "GET /api/v1/notifications",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "unreadOnly",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "The caller's in-app notifications, newest first. ?unreadOnly=true limits to unread rows.\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/v1/notifications/read-all",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications/read-all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "notifications",
+                "read-all"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Mark every unread in-app notification read; returns how many were flipped\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/notifications/unread-count",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications/unread-count",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "notifications",
+                "unread-count"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "How many unread in-app notifications the caller has \u2014 for a bell badge\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/v1/notifications/{id}/read",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications/:id/read",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "notifications",
+                ":id",
+                "read"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Mark one notification read \u2014 idempotent; 404 if the id is not the caller's own\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
           },
           "response": []
         }
@@ -4790,7 +8392,7 @@
                 }
               ]
             },
-            "description": "List placements visible to the caller - a CLIENT sees the ones they requested, a STUDENT the ones where they are the candidate, HR_MANAGER / ADMIN see all. Optional stage filter.\n\nRoles: CLIENT ({{clientAccessToken}}) / STUDENT ({{studentAccessToken}}) / HR_MANAGER ({{hrAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{clientAccessToken}} \u2014 run 'Auth / Login \u2014 Client' first."
+            "description": "List placements visible to the caller \u2014 optional stage filter\n\nRoles: CLIENT ({{clientAccessToken}}) / STUDENT ({{studentAccessToken}}) / HR_MANAGER ({{hrAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{clientAccessToken}} \u2014 run 'Auth / Login \u2014 Client' first."
           },
           "response": []
         },
@@ -5193,6 +8795,284 @@
               ]
             },
             "description": "DRAFT -> PUBLISHED \u2014 only a PUBLISHED project can attach to a task\n\nRoles: DEVELOPER ({{devAccessToken}}) / ADMIN ({{adminAccessToken}}).  Using {{devAccessToken}} \u2014 run 'Auth / Login \u2014 Developer' first."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Public",
+      "item": [
+        {
+          "name": "GET /api/v1/public/stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/public/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "public",
+                "stats"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Aggregate counts for the landing page (graduates, placements, \u2026)\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Resources",
+      "item": [
+        {
+          "name": "GET /api/v1/resources",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/resources",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "resources"
+              ],
+              "query": [
+                {
+                  "key": "category",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "includeInactive",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Browse the resource library \u2014 optional category / search filters. includeInactive is honoured only for curator roles.\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/resources",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/resources",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "resources"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Add a resource to the library\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"string\",\n  \"description\": \"string\",\n  \"category\": \"ARTICLE\",\n  \"url\": \"string\",\n  \"tags\": [\n    \"string\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/resources/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/resources/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "resources",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "One resource by id\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/v1/resources/{id}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/resources/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "resources",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Edit a resource \u2014 creator or ADMIN only\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"string\",\n  \"description\": \"string\",\n  \"category\": \"ARTICLE\",\n  \"url\": \"string\",\n  \"tags\": [\n    \"string\"\n  ],\n  \"active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/v1/resources/{id}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/resources/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "resources",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{studentAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Deactivate a resource (is_active = false) \u2014 creator or ADMIN only; never row-deletes\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
           },
           "response": []
         }
@@ -5929,6 +9809,220 @@
               ]
             },
             "description": "The caller's current active subscription\n\nAny logged-in user. Using {{studentAccessToken}} \u2014 swap for another role's token var if needed."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Talent",
+      "item": [
+        {
+          "name": "GET /api/v1/recruitment-requests",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/recruitment-requests",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "recruitment-requests"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clientAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "List recruitment requests \u2014 a CLIENT sees their own, ADMIN/HR_MANAGER see all\n\nRoles: CLIENT ({{clientAccessToken}}) / ADMIN ({{adminAccessToken}}) / HR_MANAGER ({{hrAccessToken}}).  Using {{clientAccessToken}} \u2014 run 'Auth / Login \u2014 Client' first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/recruitment-requests",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/recruitment-requests",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "recruitment-requests"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clientAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Request to recruit a candidate \u2014 lands PENDING for ADMIN/HR review\n\nRoles: CLIENT ({{clientAccessToken}}).  Using {{clientAccessToken}} \u2014 run 'Auth / Login \u2014 Client' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"candidateUuid\": \"string\",\n  \"roleTitle\": \"string\",\n  \"engagementType\": \"FULL_TIME\",\n  \"message\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/v1/recruitment-requests/{id}/status",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/recruitment-requests/:id/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "recruitment-requests",
+                ":id",
+                "status"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Approve or reject a PENDING recruitment request\n\nRoles: ADMIN ({{adminAccessToken}}) / HR_MANAGER ({{hrAccessToken}}).  Using {{adminAccessToken}} \u2014 run 'Auth / Login \u2014 Admin' first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"PENDING\",\n  \"decisionNote\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/talent-pool",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/talent-pool",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "talent-pool"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "skill",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "page",
+                  "value": "0",
+                  "disabled": true
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "id,desc",
+                  "disabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clientAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Browse candidate profiles \u2014 optional search (name/title) and skill filters\n\nRoles: CLIENT ({{clientAccessToken}}) / ADMIN ({{adminAccessToken}}) / HR_MANAGER ({{hrAccessToken}}) / LEAD_GEN ({{salesAccessToken}}).  Using {{clientAccessToken}} \u2014 run 'Auth / Login \u2014 Client' first."
           },
           "response": []
         }

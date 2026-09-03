@@ -26,8 +26,12 @@ docker compose up -d          # MySQL + Redis
 # -> http://localhost:8080 , /v3/api-docs for the live OpenAPI
 ```
 
-`R__dev_seed_data.sql` seeds the accounts below (all password **`Password123!`**), plus batch
-`FS-2026-01`, one active sprint + 3 tasks, a published project, one lead, two employees.
+`R__dev_seed_data.sql` seeds the accounts below (all password **`Password123!`**), plus
+**four batches** (`FS-2026-01`, `FS-2026-02`, `DA-2026-01` active; `BE-2026-01` planned),
+**`student4@`–`student9@`** distributed across them (`student6@` is `GRADUATED`, with a
+certificate), an active sprint + tasks per running batch, **3 question banks** (9 items),
+5 learning resources, 3 notifications for `student1@`, a full CRM pipeline for `sales@`,
+a published project, and two employees.
 
 | email | role | 2FA on login? |
 |---|---|---|
@@ -85,6 +89,7 @@ backend with no CORS setup. To point at a deployed backend instead, set
 
 | Area | Screen (route) | Backend? | Endpoint(s) |
 |---|---|---|---|
+| Public | `/` landing page — hero stats, pricing, contact form | ✅ wired | `GET /api/v1/public/stats`, `GET /api/v1/plans`, `POST /api/v1/leads/inbound` (curated copy — testimonials, FAQ, features — stays static) |
 | Auth | `/login`, `/register`, `/reset-password`, `/verify-email`, `/auth/oauth/callback` | ✅ wired | `/api/v1/auth/**`, `/users/me` |
 | Shared | `/{role}/profile` | ✅ wired | `PUT /api/v1/users/me/profile` (photo stays local) |
 | Shared | `/{role}/settings` (2FA enable / verify / disable, password-reset email) | ✅ wired | `/api/v1/auth/2fa/**`, `/auth/password/forgot` (notif prefs stay local) |
@@ -125,7 +130,7 @@ backend with no CORS setup. To point at a deployed backend instead, set
 | Student | `/student/subscription` — plan list **and checkout** | ✅ wired | `GET /plans`, `GET /subscriptions/me`, `POST /subscriptions/checkout` (real gateway) |
 | Student | `/student/dashboard` (no-subscription guard) | ✅ wired | `GET /api/v1/subscriptions/me` → redirect to `/student/subscription` if null |
 | — | **everything below is still localStorage mock** | ❌ | — |
-| Lead-gen | campaign "Send" helper (bulk WhatsApp/email), public landing-page capture form (`Home.jsx`) | ❌ mock | opens `wa.me`/`mailto` tabs; no unauthenticated inbound-lead endpoint |
+| Lead-gen | campaign "Send" helper (bulk WhatsApp/email) | ❌ mock | opens `wa.me` / `mailto` tabs; the per-recipient activity log IS a real `POST /leads/{id}/activities` |
 | BA | `/ba/documents`, `/ba/resource-planning`, `/ba/client-review` | ❌ mock | doc API is text-only (no file upload); no resource-plan endpoint |
 | Client | `/client/projects`, `/client/demos` | ❌ mock | no project-brief / demo endpoint |
 | HR | `/hr/attendance` **Attendance + Check-in tabs**, `/hr/documents` **letter tabs**, Exit page's **PIP tab** | ❌ mock | no biometric-attendance endpoint; letters are a separate `/hr/letters` flow |
