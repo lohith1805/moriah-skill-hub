@@ -129,13 +129,20 @@ export default function StudentSubmissions() {
       setVerifying(false);
     }
 
+    if (!values.prUrl) {
+      notify("A GitHub PR URL is required to submit a task for review.", { type: "warning", title: "PR URL required" });
+      return;
+    }
+
     setSubmitting(true);
     try {
-      await submitGithubPR(values.taskId, values.prUrl || "", values.videoUrl || "");
-      notify("Your task submission has been registered and sent for review.", { type: "success", title: "Submission Recorded" });
+      await submitGithubPR(values.taskId, values.prUrl, values.videoUrl || "");
+      notify("Your submission has been registered and the task moved to review.", { type: "success", title: "Submission Recorded" });
       setModalOpen(false);
       setValues({ taskId: "", prUrl: "", videoType: "paste", videoUrl: "", videoFile: null });
       load();
+    } catch (err) {
+      notify(err.message || "Could not record the submission.", { type: "error" });
     } finally {
       setSubmitting(false);
     }

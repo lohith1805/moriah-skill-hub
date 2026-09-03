@@ -118,20 +118,60 @@ function runAutoPipCheckForCurrentUser(user) {
   });
 }
 
+const TASK_STATUS_TO_FE = {
+  BACKLOG: "Backlog",
+  ASSIGNED: "Assigned",
+  IN_PROGRESS: "In Progress",
+  IN_REVIEW: "Review",
+  COMPLETED: "Completed",
+  REJECTED: "Rejected",
+};
+const TASK_TYPE_TO_FE = { STORY: "User Story", BUGFIX: "Bug", ASSIGNMENT: "Task", DAILY: "Daily" };
+
+function toFeStudentTask(t) {
+  return {
+    id: t.id,
+    sprintId: t.sprintId,
+    title: t.title,
+    description: t.description || "",
+    type: TASK_TYPE_TO_FE[t.taskType] || "Task",
+    epic: "General",
+    userStory: "",
+    acceptanceCriteria: "",
+    points: t.storyPoints ?? 0,
+    due: t.dueAt ? t.dueAt.slice(0, 10) : "",
+    dueAt: t.dueAt || null,
+    status: TASK_STATUS_TO_FE[t.status] || t.status,
+    backendStatus: t.status,
+    assignee: t.assignedToName || "",
+    assigneeUuid: t.assignedToUuid || null,
+    githubPr: null,
+    videoUrl: null,
+    completedCriteria: [],
+    inlineComments: [],
+  };
+}
+
+// The caller's enrolled batches (a STUDENT token is scoped to these).
+async function myBatchIds() {
+  const res = await apiClient.get("/batches", { size: 100 });
+  return asRows(res).map((b) => b.id);
+}
+
+// GET /api/v1/tasks?sprintId= for every sprint in the caller's batches, kept
+// to tasks assigned to the caller OR still in the BACKLOG (pullable).
 export async function getMyTasks() {
-  const user = getPersistedUser();
-  if (!user) return mockRequest([]);
-  let allTasks = TASKS;
-  try {
-    const raw = localStorage.getItem("msh_sprint_tasks");
-    if (raw) allTasks = JSON.parse(raw);
-  } catch (e) {
-    allTasks = TASKS;
-  }
-  
-  const name = user.name || "Student";
-  const myTasks = allTasks.filter((t) => t.assignee === name);
-  return mockRequest(myTasks);
+  const myUuid = getPersistedUser()?.uuid;
+  const sprints = await getMySprints();
+  const perSprint = await Promise.all(
+    sprints.map((s) =>
+      apiClient.get("/tasks", { sprintId: s.id, size: 100 }).then(asRows).catch(() => [])
+    )
+  );
+  return perSprint
+    .flat()
+    .filter((t) => t.status === "BACKLOG" || (myUuid && t.assignedToUuid === myUuid))
+    .map(toFeStudentTask);
 }
 
 // A student's account only stores their batch's NAME (see authService's
@@ -139,17 +179,28 @@ export async function getMyTasks() {
 // batch by ID — so look the batch up by name first to resolve its ID, then
 // pull every sprint scheduled for it. This is how "trainer creates a sprint
 // for a batch" becomes visible on the Student Sprint Board.
+const SPRINT_STATUS_TO_FE = { PLANNED: "Planned", ACTIVE: "Active", COMPLETED: "Completed" };
+
+// GET /api/v1/sprints?batchId= for each enrolled batch, newest first.
 export async function getMySprints() {
-  const user = getPersistedUser();
-  if (!user) return mockRequest([]);
-
-  const batch = BATCHES.find((b) => b.name === user.batch);
-  if (!batch) return mockRequest([]);
-
-  const mySprints = SPRINTS.filter((s) => s.batchId === batch.id).sort(
-    (a, b) => new Date(b.startDate || 0) - new Date(a.startDate || 0)
+  const batchIds = await myBatchIds();
+  const perBatch = await Promise.all(
+    batchIds.map((id) =>
+      apiClient.get("/sprints", { batchId: id, size: 100 }).then(asRows).catch(() => [])
+    )
   );
-  return mockRequest(mySprints);
+  return perBatch
+    .flat()
+    .map((s) => ({
+      id: s.id,
+      batchId: s.batchId,
+      number: s.sprintNumber,
+      goal: s.goal,
+      startDate: s.startDate || null,
+      endDate: s.endDate || null,
+      status: SPRINT_STATUS_TO_FE[s.status] || s.status,
+    }))
+    .sort((a, b) => new Date(b.startDate || 0) - new Date(a.startDate || 0));
 }
 
 function readLocalJSON(key) {
@@ -237,21 +288,20 @@ export async function attemptBugChallenge(challengeId, solved) {
   return mockRequest(idx > -1 ? challenges[idx] : null);
 }
 
+// A STUDENT can only self-assign a BACKLOG task (POST /tasks/{id}/pull ->
+// IN_PROGRESS). Every other board transition is driven by the PM or the
+// review flow, so those moves are no-ops here (the board re-syncs on reload).
 export async function updateTaskStatus(taskId, status) {
-  let allTasks = TASKS;
-  try {
-    const raw = localStorage.getItem("msh_sprint_tasks");
-    if (raw) allTasks = JSON.parse(raw);
-  } catch (e) {
-    allTasks = TASKS;
+  if (status === "In Progress" || status === "Assigned") {
+    try {
+      await apiClient.post(`/tasks/${taskId}/pull`, {});
+      return { ok: true, pulled: true };
+    } catch (e) {
+      // 409 = not BACKLOG / already pulled / blocked by an open PROJECT_DELAY PIP
+      return { ok: false, error: e?.message || "Could not pull this task." };
+    }
   }
-
-  const idx = allTasks.findIndex((t) => t.id === taskId);
-  if (idx > -1) {
-    allTasks[idx] = { ...allTasks[idx], status };
-    localStorage.setItem("msh_sprint_tasks", JSON.stringify(allTasks));
-  }
-  return mockRequest(allTasks[idx]);
+  return { ok: false, unsupported: true };
 }
 
 export async function getPerformanceSummary() {
@@ -432,21 +482,40 @@ export async function getCertificates() {
   }));
 }
 
-export async function submitGithubPR(taskId, prUrl, videoUrl = "") {
-  let allTasks = TASKS;
-  try {
-    const raw = localStorage.getItem("msh_sprint_tasks");
-    if (raw) allTasks = JSON.parse(raw);
-  } catch (e) {
-    allTasks = TASKS;
-  }
+// POST /api/v1/submissions — the task moves to IN_REVIEW server-side. GitHub
+// PR verification is best-effort on the backend (needs a real GITHUB_API_TOKEN).
+export async function submitGithubPR(taskId, prUrl, videoUrl = "", notes = "") {
+  const s = await apiClient.post("/submissions", {
+    taskId: Number(taskId),
+    prUrl: prUrl || "",
+    videoUrl: videoUrl || "",
+    notes: notes || "",
+  });
+  return {
+    id: s.id,
+    taskId: s.taskId,
+    prUrl: s.prUrl,
+    videoUrl: s.videoUrl,
+    status: s.status,
+    submittedAt: s.submittedAt,
+    verifiedAt: s.verifiedAt || null,
+  };
+}
 
-  const idx = allTasks.findIndex((t) => t.id === taskId);
-  if (idx > -1) {
-    allTasks[idx] = { ...allTasks[idx], githubPr: prUrl, videoUrl, status: "Review" };
-    localStorage.setItem("msh_sprint_tasks", JSON.stringify(allTasks));
-  }
-  return mockRequest(allTasks[idx]);
+// GET /api/v1/submissions?taskId= — the caller's submissions for one task.
+export async function getSubmissionsForTask(taskId) {
+  const res = await apiClient.get("/submissions", { taskId });
+  return asRows(res).map((s) => ({
+    id: s.id,
+    taskId: s.taskId,
+    attemptNumber: s.attemptNumber,
+    prUrl: s.prUrl,
+    videoUrl: s.videoUrl,
+    prState: s.prState,
+    status: s.status,
+    submittedAt: s.submittedAt,
+    verifiedAt: s.verifiedAt || null,
+  }));
 }
 
 

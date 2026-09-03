@@ -94,9 +94,17 @@ export default function StudentTasks() {
       }
     }
     
+    // Optimistic move, then reconcile with the server.
     setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status } : t)));
-    await updateTaskStatus(taskId, status);
-    notify(`Task moved to ${columnLabel}.`, { type: "success" });
+    const res = await updateTaskStatus(taskId, status);
+    if (res?.pulled) {
+      notify("Task pulled onto your board.", { type: "success" });
+    } else if (res?.unsupported) {
+      notify("Your PM and the review flow move tasks between the other columns.", { type: "info" });
+    } else if (res && res.ok === false) {
+      notify(res.error || "Couldn't move that task.", { type: "error" });
+    }
+    load();
   };
 
   const toggleCriteria = (task, criteria) => {
