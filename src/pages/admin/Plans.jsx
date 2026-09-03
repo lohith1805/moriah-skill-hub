@@ -14,16 +14,9 @@ import { Input, Select } from "../../components/ui/FormField";
 import { SUBSCRIPTION_PLANS, CURRENCY } from "../../utils/constants";
 import { useToast } from "../../context/ToastContext";
 
-const INITIAL_INSTALLMENTS = [
-  { id: "inst_1", name: "2-Part Split (50-50)", parts: 2, downPaymentPct: 50, feePct: 0, status: "Active" },
-  { id: "inst_2", name: "3-Month EMI Track", parts: 3, downPaymentPct: 34, feePct: 2.5, status: "Active" },
-  { id: "inst_3", name: "Corporate 6-Month Deferred", parts: 6, downPaymentPct: 20, feePct: 5, status: "Active" },
-];
-
 export default function AdminPlans() {
   const [plans, setPlans] = useState([]);
   const [coupons, setCoupons] = useState([]);
-  const [installments, setInstallments] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Edit Plan Price modal
@@ -38,10 +31,6 @@ export default function AdminPlans() {
   // Add Coupon modal
   const [isAddingCoupon, setIsAddingCoupon] = useState(false);
   const [newCoupon, setNewCoupon] = useState({ code: "", discount: "20% off", status: "active", expiryDate: "2026-12-31", usageCount: 0, usageLimit: 100 });
-
-  // Add Installment modal
-  const [isAddingInstallment, setIsAddingInstallment] = useState(false);
-  const [newInstallment, setNewInstallment] = useState({ name: "", parts: "3", downPaymentPct: "35", feePct: "2" });
 
   const { notify } = useToast();
 
@@ -70,15 +59,6 @@ export default function AdminPlans() {
       setCoupons(initialCoupons);
     }
 
-    // Load installments
-    const savedInst = localStorage.getItem("msh_installment_plans");
-    if (savedInst) {
-      setInstallments(JSON.parse(savedInst));
-    } else {
-      localStorage.setItem("msh_installment_plans", JSON.stringify(INITIAL_INSTALLMENTS));
-      setInstallments(INITIAL_INSTALLMENTS);
-    }
-
     setLoading(false);
   }, []);
 
@@ -90,11 +70,6 @@ export default function AdminPlans() {
   const persistCoupons = (data) => {
     setCoupons(data);
     localStorage.setItem("msh_coupons", JSON.stringify(data));
-  };
-
-  const persistInstallments = (data) => {
-    setInstallments(data);
-    localStorage.setItem("msh_installment_plans", JSON.stringify(data));
   };
 
   const openEdit = (plan) => {
@@ -174,29 +149,11 @@ export default function AdminPlans() {
     notify(`Coupon "${code}" deleted.`, { type: "success" });
   };
 
-  const handleAddInstallment = () => {
-    if (!newInstallment.name) return;
-    const created = {
-      id: `inst_${Date.now()}`,
-      name: newInstallment.name,
-      parts: Number(newInstallment.parts) || 3,
-      downPaymentPct: Number(newInstallment.downPaymentPct) || 33,
-      feePct: Number(newInstallment.feePct) || 0,
-      status: "Active"
-    };
-
-    const updated = [...installments, created];
-    persistInstallments(updated);
-    notify(`Installment plan "${newInstallment.name}" added.`, { type: "success" });
-    setIsAddingInstallment(false);
-    setNewInstallment({ name: "", parts: "3", downPaymentPct: "35", feePct: "2" });
-  };
-
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Subscription & Pricing Engine"
-        subtitle="Dynamic pricing configuration, early-bird coupons, and multi-part installment plans (MSH-FR-ADM-02)"
+        subtitle="Dynamic pricing configuration and early-bird coupons (MSH-FR-ADM-02)"
         breadcrumbs={[{ label: "Dashboard", to: "/admin/dashboard" }, { label: "Pricing Engine" }]}
       />
 
@@ -204,8 +161,7 @@ export default function AdminPlans() {
         <Tabs
           tabs={[
             { key: "tiers", label: "Subscription Tiers & Features" },
-            { key: "coupons", label: `Active Coupons (${coupons.filter(c => c.status === "active").length})` },
-            { key: "installments", label: "Installment & EMI Configurations" }
+            { key: "coupons", label: `Active Coupons (${coupons.filter(c => c.status === "active").length})` }
           ]}
         >
           {(active) => {
@@ -316,28 +272,6 @@ export default function AdminPlans() {
                 </div>
               );
             }
-
-            if (active === "installments") {
-              return (
-                <div className="flex flex-col gap-4">
-                  <div className="flex justify-between items-center">
-                    <p className="text-xs text-ink-500 text-left">Installment splits, down-payment percentages, and processing fees.</p>
-                    <Button size="sm" icon={Plus} onClick={() => setIsAddingInstallment(true)}>Add Installment Plan</Button>
-                  </div>
-
-                  <Table
-                    data={installments}
-                    columns={[
-                      { key: "name", header: "Installment Scheme", className: "text-left font-semibold text-ink-900" },
-                      { key: "parts", header: "EMI Split Parts", className: "text-left font-mono", render: (r) => `${r.parts} Equal Installments` },
-                      { key: "downPaymentPct", header: "Initial Down Payment", className: "text-left", render: (r) => `${r.downPaymentPct}% upfront` },
-                      { key: "feePct", header: "Convenience Fee", className: "text-left", render: (r) => r.feePct ? `${r.feePct}%` : "0% (Zero Fee)" },
-                      { key: "status", header: "Status", className: "text-left", render: (r) => <Badge tone="success">{r.status}</Badge> }
-                    ]}
-                  />
-                </div>
-              );
-            }
           }}
         </Tabs>
       </Card>
@@ -398,28 +332,6 @@ export default function AdminPlans() {
             <Input label="Max Usage Limit" type="number" placeholder="e.g. 100" value={newCoupon.usageLimit} onChange={(e) => setNewCoupon((v) => ({ ...v, usageLimit: e.target.value }))} />
           </div>
           <Input label="Valid Until" type="date" value={newCoupon.expiryDate} onChange={(e) => setNewCoupon((v) => ({ ...v, expiryDate: e.target.value }))} />
-        </form>
-      </Modal>
-
-      {/* Add Installment Modal */}
-      <Modal
-        open={isAddingInstallment}
-        onClose={() => setIsAddingInstallment(false)}
-        title="Add Installment Plan Scheme"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setIsAddingInstallment(false)}>Cancel</Button>
-            <Button onClick={handleAddInstallment}>Add Scheme</Button>
-          </>
-        }
-      >
-        <form className="flex flex-col gap-4 text-left font-sans" onSubmit={(e) => { e.preventDefault(); handleAddInstallment(); }}>
-          <Input label="Scheme Name" required placeholder="e.g. 4-Part Quarterly Split" value={newInstallment.name} onChange={(e) => setNewInstallment((v) => ({ ...v, name: e.target.value }))} />
-          <div className="grid sm:grid-cols-3 gap-3">
-            <Input label="Number of Parts" type="number" value={newInstallment.parts} onChange={(e) => setNewInstallment((v) => ({ ...v, parts: e.target.value }))} />
-            <Input label="Down Payment (%)" type="number" value={newInstallment.downPaymentPct} onChange={(e) => setNewInstallment((v) => ({ ...v, downPaymentPct: e.target.value }))} />
-            <Input label="Fee (%)" type="number" value={newInstallment.feePct} onChange={(e) => setNewInstallment((v) => ({ ...v, feePct: e.target.value }))} />
-          </div>
         </form>
       </Modal>
     </div>

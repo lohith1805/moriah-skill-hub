@@ -194,7 +194,7 @@ export default function AdminDashboard() {
             <Link to="/admin/plans" className="p-3.5 rounded-xl border border-border bg-cream-50/50 hover:bg-cream-100 transition-colors flex flex-col justify-between">
               <div>
                 <p className="text-xs font-bold text-ink-900">Subscription & Pricing Engine</p>
-                <p className="text-[11px] text-ink-500 mt-0.5">Tier prices, coupons, and installment plans</p>
+                <p className="text-[11px] text-ink-500 mt-0.5">Tier prices, coupons, and feature entitlements</p>
               </div>
               <span className="text-xs font-semibold text-primary-800 mt-2 flex items-center gap-1">Configure Pricing →</span>
             </Link>
