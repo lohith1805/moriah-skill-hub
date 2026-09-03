@@ -50,6 +50,8 @@ public class LessonService {
 
     private final VideoLessonRepository lessonRepository;
     private final LessonProgressRepository progressRepository;
+    private final com.moriah.skillhub.learning.repository.LessonQuizQuestionRepository quizQuestionRepository;
+    private final com.moriah.skillhub.learning.repository.LessonQuizAttemptRepository quizAttemptRepository;
     private final UserRepository userRepository;
 
     @Transactional(readOnly = true)
@@ -109,12 +111,22 @@ public class LessonService {
         return toResponse(lesson, resolveCreatorUuids(List.of(lesson)), null);
     }
 
-    /** {@code DELETE /api/v1/lessons/{id}} — unpublish, never row-delete: {@code lesson_progress}
-     * rows FK it and a learner's history must survive. Idempotent. */
+    /**
+     * {@code DELETE /api/v1/lessons/{id}} — a lesson that no learner has touched (no progress
+     * rows, no quiz attempts) is genuinely row-deleted along with its quiz questions; one with
+     * learner history is only unpublished, so that history survives. Idempotent.
+     */
     @Transactional
     public void unpublish(Long id, Long callerUserId) {
         VideoLesson lesson = requireLesson(id);
         requireCreatorOrAdmin(lesson, callerUserId);
+
+        if (progressRepository.countByLessonId(id) == 0 && quizAttemptRepository.countByLessonId(id) == 0) {
+            quizQuestionRepository.deleteByLessonId(id);
+            lessonRepository.delete(lesson);
+            log.info("[lessons] {} deleted untouched lesson {}", callerUserId, id);
+            return;
+        }
         lesson.setPublished(false);
     }
 

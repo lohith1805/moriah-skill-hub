@@ -49,6 +49,10 @@ class LessonServiceTest {
     @Mock
     private LessonProgressRepository progressRepository;
     @Mock
+    private com.moriah.skillhub.learning.repository.LessonQuizQuestionRepository quizQuestionRepository;
+    @Mock
+    private com.moriah.skillhub.learning.repository.LessonQuizAttemptRepository quizAttemptRepository;
+    @Mock
     private UserRepository userRepository;
 
     @InjectMocks
@@ -230,14 +234,30 @@ class LessonServiceTest {
     }
 
     @Test
-    void unpublish_byCreator_flipsPublishedFalse() {
+    void unpublish_lessonWithLearnerHistory_isOnlyUnpublished() {
         authenticateAs(9L, RoleCode.DEVELOPER.name());
         VideoLesson l = lesson(1L, 9L, true);
         when(lessonRepository.findById(1L)).thenReturn(Optional.of(l));
+        when(progressRepository.countByLessonId(1L)).thenReturn(3L);
 
         service.unpublish(1L, 9L);
 
         assertThat(l.isPublished()).isFalse();
+        verify(lessonRepository, org.mockito.Mockito.never()).delete(any());
+    }
+
+    @Test
+    void unpublish_untouchedLesson_isRowDeletedWithItsQuiz() {
+        authenticateAs(9L, RoleCode.DEVELOPER.name());
+        VideoLesson l = lesson(1L, 9L, true);
+        when(lessonRepository.findById(1L)).thenReturn(Optional.of(l));
+        when(progressRepository.countByLessonId(1L)).thenReturn(0L);
+        when(quizAttemptRepository.countByLessonId(1L)).thenReturn(0L);
+
+        service.unpublish(1L, 9L);
+
+        verify(quizQuestionRepository).deleteByLessonId(1L);
+        verify(lessonRepository).delete(l);
     }
 
     @Test

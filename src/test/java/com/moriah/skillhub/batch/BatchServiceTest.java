@@ -75,6 +75,38 @@ class BatchServiceTest {
     }
 
     @Test
+    void list_studentScoped_usesTheEnrolledOnlyQuery() {
+        when(entitlementService.planCodesById()).thenReturn(java.util.Map.of());
+        when(batchRepository.findEnrolledByUserId(org.mockito.ArgumentMatchers.eq(50L), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+
+        batchService.list(50L, true, org.springframework.data.domain.PageRequest.of(0, 20));
+
+        verify(batchRepository).findEnrolledByUserId(org.mockito.ArgumentMatchers.eq(50L), org.mockito.ArgumentMatchers.any());
+        verify(batchRepository, org.mockito.Mockito.never()).findAll(org.mockito.ArgumentMatchers.any(org.springframework.data.domain.Pageable.class));
+    }
+
+    @Test
+    void list_notStudentScoped_usesTheFullList() {
+        when(entitlementService.planCodesById()).thenReturn(java.util.Map.of());
+        when(batchRepository.findAll(org.mockito.ArgumentMatchers.any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+
+        batchService.list(1L, false, org.springframework.data.domain.PageRequest.of(0, 20));
+
+        verify(batchRepository).findAll(org.mockito.ArgumentMatchers.any(org.springframework.data.domain.Pageable.class));
+    }
+
+    @Test
+    void get_studentScoped_notEnrolled_throwsNotFound() {
+        when(batchStudentRepository.findByBatchIdAndUserId(100L, 50L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> batchService.get(100L, 50L, true))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.BATCH_NOT_FOUND);
+    }
+
+    @Test
     void requireOwnerOrAdmin_callerIsThePm_doesNotThrow() {
         authenticateAs(10L, List.of("TRAINER_PM"));
 

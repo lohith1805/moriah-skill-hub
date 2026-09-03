@@ -73,10 +73,32 @@ public class BatchService {
         return toResponse(requireBatch(batchId), null);
     }
 
+    /** {@code GET /api/v1/batches/{id}} — a STUDENT may only read a batch they are enrolled in;
+     * ADMIN / TRAINER_PM may read any. */
+    @Transactional(readOnly = true)
+    public BatchResponse get(Long batchId, Long callerUserId, boolean studentScoped) {
+        if (studentScoped && batchStudentRepository.findByBatchIdAndUserId(batchId, callerUserId).isEmpty()) {
+            throw new ResourceNotFoundException(ErrorCode.BATCH_NOT_FOUND, batchId);
+        }
+        return get(batchId);
+    }
+
     @Transactional(readOnly = true)
     public PageResponse<BatchResponse> list(Pageable pageable) {
         Map<Long, String> planCodes = entitlementService.planCodesById();
         return PageResponse.from(batchRepository.findAll(pageable).map(batch -> toResponse(batch, planCodes)));
+    }
+
+    /** {@code GET /api/v1/batches} — {@code studentScoped} true (a STUDENT-only caller) narrows
+     * the page to the batches they are enrolled in; ADMIN / TRAINER_PM get the full list. */
+    @Transactional(readOnly = true)
+    public PageResponse<BatchResponse> list(Long callerUserId, boolean studentScoped, Pageable pageable) {
+        if (!studentScoped) {
+            return list(pageable);
+        }
+        Map<Long, String> planCodes = entitlementService.planCodesById();
+        return PageResponse.from(
+                batchRepository.findEnrolledByUserId(callerUserId, pageable).map(batch -> toResponse(batch, planCodes)));
     }
 
     @Transactional

@@ -17,4 +17,6 @@ public interface LessonProgressRepository extends JpaRepository<LessonProgress, 
 
     /** {@code GET /api/v1/lessons/me/progress} — the caller's started lessons, paginated. */
     Page<LessonProgress> findByUserId(Long userId, Pageable pageable);
+
+    long countByLessonId(Long lessonId);
 }

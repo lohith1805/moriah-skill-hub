@@ -24,6 +24,13 @@ public interface BatchRepository extends JpaRepository<Batch, Long> {
     @NonNull
     Page<Batch> findAll(@NonNull Pageable pageable);
 
+    /** {@code GET /api/v1/batches} for a STUDENT-only caller — narrowed to the batches they are
+     * enrolled in (any {@code batch_students} status: ACTIVE / ON_PIP / GRADUATED / …). ADMIN and
+     * TRAINER_PM keep the full {@link #findAll} list. */
+    @EntityGraph(attributePaths = "pm")
+    @Query("SELECT b FROM Batch b WHERE b.id IN (SELECT bs.batch.id FROM BatchStudent bs WHERE bs.user.id = :userId)")
+    Page<Batch> findEnrolledByUserId(@Param("userId") Long userId, Pageable pageable);
+
     /**
      * `/architect feature 10`: native SQL, not JPQL — {@code Batch.planTierMinId} is a bare
      * {@code Long} (cross-package reasoning, see {@code Batch}'s Javadoc), so matching it against

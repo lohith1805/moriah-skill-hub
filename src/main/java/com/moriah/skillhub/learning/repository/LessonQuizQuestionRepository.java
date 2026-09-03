@@ -13,4 +13,6 @@ public interface LessonQuizQuestionRepository extends JpaRepository<LessonQuizQu
     long countByLessonId(Long lessonId);
 
     Optional<LessonQuizQuestion> findByIdAndLessonId(Long id, Long lessonId);
+
+    void deleteByLessonId(Long lessonId);
 }

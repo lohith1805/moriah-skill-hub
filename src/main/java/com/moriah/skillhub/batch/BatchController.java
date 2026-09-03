@@ -9,6 +9,8 @@ import com.moriah.skillhub.certificate.dto.GraduationResponse;
 import com.moriah.skillhub.common.dto.ApiResponse;
 import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.common.security.CurrentUser;
+import com.moriah.skillhub.common.security.SecurityUtils;
+import com.moriah.skillhub.user.entity.RoleCode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -27,10 +29,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** No spec'd student-facing read — every method here is {@code TRAINER_PM}/{@code ADMIN} only.
- * Per-batch ownership (a {@code TRAINER_PM} may only manage their own batches; {@code ADMIN}
- * bypasses that) is enforced in {@link BatchService}, not here — it needs the loaded {@code
- * Batch} to check, which a static {@code @PreAuthorize} expression can't do. */
+/** Mutations ({@code create}/{@code update}/{@code addStudent}/{@code removeStudent}/{@code
+ * graduate}) are {@code TRAINER_PM}/{@code ADMIN} only, with per-batch ownership enforced in
+ * {@link BatchService} (it needs the loaded {@code Batch}, which a static {@code @PreAuthorize}
+ * can't check). The two reads ({@code list}, {@code get}) are widened to {@code STUDENT} —
+ * matching {@code SprintController}/{@code TaskController} and the published API doc — but a
+ * STUDENT-only caller sees only the batches they are enrolled in. */
 @RestController
 @RequestMapping("/api/v1/batches")
 @RequiredArgsConstructor
@@ -51,17 +55,24 @@ public class BatchController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
-    @Operation(summary = "List batches")
-    public ResponseEntity<ApiResponse<PageResponse<BatchResponse>>> list(@PageableDefault(size = 20) Pageable pageable) {
-        return ResponseEntity.ok(ApiResponse.success(batchService.list(pageable)));
+    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN','STUDENT')")
+    @Operation(summary = "List batches — a STUDENT sees only the batches they are enrolled in")
+    public ResponseEntity<ApiResponse<PageResponse<BatchResponse>>> list(
+            @PageableDefault(size = 20) Pageable pageable, @CurrentUser Long callerUserId) {
+        return ResponseEntity.ok(ApiResponse.success(batchService.list(callerUserId, isStudentOnly(), pageable)));
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
-    @Operation(summary = "Get one batch")
-    public ResponseEntity<ApiResponse<BatchResponse>> get(@PathVariable Long id) {
-        return ResponseEntity.ok(ApiResponse.success(batchService.get(id)));
+    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN','STUDENT')")
+    @Operation(summary = "Get one batch — a STUDENT may only read a batch they are enrolled in")
+    public ResponseEntity<ApiResponse<BatchResponse>> get(@PathVariable Long id, @CurrentUser Long callerUserId) {
+        return ResponseEntity.ok(ApiResponse.success(batchService.get(id, callerUserId, isStudentOnly())));
+    }
+
+    /** A caller who holds STUDENT and nothing that grants the full list (ADMIN / TRAINER_PM). */
+    private static boolean isStudentOnly() {
+        var roles = SecurityUtils.currentUserRoles();
+        return !roles.contains(RoleCode.ADMIN.name()) && !roles.contains(RoleCode.TRAINER_PM.name());
     }
 
     @PutMapping("/{id}")
