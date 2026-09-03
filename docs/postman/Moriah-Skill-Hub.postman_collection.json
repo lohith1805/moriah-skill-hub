@@ -5788,6 +5788,46 @@
       "name": "Dev",
       "item": [
         {
+          "name": "POST /api/v1/dev/jobs/{job}/run",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dev/jobs/:job/run",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dev",
+                "jobs",
+                ":job",
+                "run"
+              ],
+              "variable": [
+                {
+                  "key": "job",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "DEV ONLY \u2014 run a scheduled job now. job \u2208 {attendance-finalisation, metrics-refresh, pip-evaluation, subscription-expiry, quiz-attempt-expiry}. For a realistic PIP test, run them in that order.\n\nRoles: ADMIN ({{adminAccessToken}}).  Using {{adminAccessToken}} \u2014 run 'Auth / Login \u2014 Admin' first."
+          },
+          "response": []
+        },
+        {
           "name": "GET /api/v1/dev/requirement-documents",
           "request": {
             "method": "GET",

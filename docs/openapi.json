@@ -5190,6 +5190,37 @@
                 }
             }
         },
+        "/api/v1/dev/jobs/{job}/run": {
+            "post": {
+                "tags": [
+                    "Dev"
+                ],
+                "summary": "DEV ONLY — run a scheduled job now. job ∈ {attendance-finalisation, metrics-refresh, pip-evaluation, subscription-expiry, quiz-attempt-expiry}. For a realistic PIP test, run them in that order.",
+                "operationId": "run",
+                "parameters": [
+                    {
+                        "name": "job",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseMapStringObject"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/clients": {
             "post": {
                 "tags": [
@@ -13970,6 +14001,25 @@
                         "type": "string"
                     },
                     "devReviewedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "ApiResponseMapStringObject": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "type": "object",
+                        "additionalProperties": {}
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ErrorDetail"
+                    },
+                    "timestamp": {
                         "type": "string",
                         "format": "date-time"
                     }

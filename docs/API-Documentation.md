@@ -1,6 +1,6 @@
 # Moriah Skill Hub — API Documentation
 
-> Generated from `docs/openapi.json` (OpenAPI 3.1.0). 204 endpoints across 32 groups. Auth/role column is read from each controller's `@PreAuthorize`.
+> Generated from `docs/openapi.json` (OpenAPI 3.1.0). 205 endpoints across 32 groups. Auth/role column is read from each controller's `@PreAuthorize`.
 
 ## Conventions
 
@@ -97,7 +97,7 @@ On success the callback returns the **same `LoginResponse` envelope as `POST /ap
 - [Certificates](#certificates) — 4 endpoints
 - [Checkout](#checkout) — 2 endpoints
 - [Clients](#clients) — 3 endpoints
-- [Dev](#dev) — 3 endpoints
+- [Dev](#dev) — 4 endpoints
 - [HR](#hr) — 24 endpoints
 - [Interviews](#interviews) — 5 endpoints
 - [Lessons](#lessons) — 12 endpoints
@@ -4330,6 +4330,32 @@ Burndown and milestone completion for one client project — never another clien
 ---
 
 ## Dev
+
+### `POST` `/api/v1/dev/jobs/{job}/run`
+
+DEV ONLY — run a scheduled job now. job ∈ {attendance-finalisation, metrics-refresh, pip-evaluation, subscription-expiry, quiz-attempt-expiry}. For a realistic PIP test, run them in that order.
+
+**Auth:** Role: ADMIN
+
+**Path parameters:**
+
+| name | type | description |
+|---|---|---|
+| `job` | string |  |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {},
+  "error": null
+}
+```
+
+**Status codes:** `200`
+
+---
 
 ### `GET` `/api/v1/dev/requirement-documents`
 

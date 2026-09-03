@@ -459,17 +459,35 @@ every unresolved pending row on that track, oldest first, each its own tx. **Eve
 mandatory** — a direct `BatchService → BatchAllocationService` call closes a bean cycle via
 `UserService → TaskService → SprintService → BatchService` (confirmed: `BeanCurrentlyInCreationException`).
 New `GET /api/v1/batches/pending-allocations` (TRAINER_PM/ADMIN) + a card in `trainer/Batches.jsx`
-Students tab. openapi/postman re-exported (155 paths / 204 ops, commit pending).
+Students tab.
+
+**Dev-job trigger + email/PDF + developerService pass (2026-09-03):**
+- **Test scheduled jobs on demand** (BE `a36f9f5`): `POST /api/v1/dev/jobs/{job}/run` — dev
+  profile only, ADMIN-gated, calls the job's service method directly. `{job}` ∈
+  `attendance-finalisation | metrics-refresh | pip-evaluation | subscription-expiry | quiz-attempt-expiry`.
+  Full runbook (incl. SQL to make a student breach a PIP rule): **`docs/testing-scheduled-jobs.md`**.
+  The nightly chain is 01:30 attendance → 01:45 metrics → 02:00 PIP.
+- **Subscription confirmation email now carries the invoice PDF** (BE `035dc3b`): the email moved
+  from `PaymentWebhookService` (webhook time, before the PDF exists) to `InvoiceService.renderAndUpload`
+  (after upload). `EmailDispatcher` gained a generic single attachment (`attachmentBase64` /
+  `attachmentFilename` / `attachmentContentType` in the payload); `NotificationService.enqueueNow`
+  (write+queue in a fresh tx, for a caller with no ambient tx). The instant IN_APP
+  `SUBSCRIPTION_ACTIVATED` row still fires from the webhook.
+- **#1 developerService → real `/projects`** DONE (FE `4317f07`): `getProjects/createProject/
+  updateProject/publishProject/getProjectChallenges` hit `/api/v1/projects*`; `developer/Projects.jsx`
+  is backend-driven. Backend `Project` is lean, so the modal's reference-solution/swagger/ER/video/
+  README/file-upload fields and the Delete button no longer persist; heading → "Practice Projects".
+  **Bug Challenges tab still mock** — backend challenge is a broken-code + test-script *file upload*,
+  not inline `testCases`; wiring it needs that page reshaped.
+- openapi/postman re-exported: **156 paths / 205 ops** (`/dev/jobs/{job}/run` + earlier
+  `/checkout/preview`, `/batches/pending-allocations`).
 
 **Still-open items the user flagged (NOT yet done):**
-- **#1 wire `developerService` → real `/projects`** — endpoints all exist (`GET/POST/PUT /projects`,
-  `/publish`, `/projects/{id}/challenges`, `/challenges/{id}`); `developer/Projects.jsx` + the
-  Bug-Challenges tab consume the mock shape, so it's a page migration not a swap.
 - **#3 admin invoice list + PDF download** — no admin invoice endpoint (student has
   `/subscriptions/me/invoices`); add an admin-scoped variant + a column in admin Payments.
-- **#4 "all downloads should be PDF"** — backend already renders real PDFs (certificates, invoices,
-  HR letters) served via presigned URLs; several FE "download" buttons render client-side HTML/txt
-  instead. Each needs pointing at the backend's presigned PDF.
+- **#4 "all downloads should be PDF"** — the real backend PDFs (certificate, invoice) work via
+  presigned URLs; the offer-letter / HR-doc / invoice-fallback / profile-CV downloads render
+  client-side `.txt` / `.html`. Needs a shared client-side PDF generator (jsPDF) pass — ~8 sites.
 - **#7 client "view projects" → 403 "no access to this document"** — `GET /api/v1/projects` excludes
   CLIENT by design (internal training catalogue); there is **no `GET /clients/projects` list**
   endpoint (only `POST /clients/projects` + `GET /clients/projects/{id}/progress`). `clientService`
@@ -485,10 +503,11 @@ Students tab. openapi/postman re-exported (155 paths / 204 ops, commit pending).
   delivery succeed (tunnel up, MinIO up, `RAZORPAY_WEBHOOK_SECRET` set). `WebhookReconciliationJob`
   (every 10 min) is the backstop.
 
-**HEADs:** Frontend `88327dc` (branch `master`). Backend `70645f1` on top of `9e4e8b7` / `0e2c13c` /
-`f7cacfc`. Targeted unit slices green each pass; full surefire (547) not re-run since the seed/spec
-work. `*IT` need Docker (the cycle showed up as a `BatchFlowIT` context-load failure — good to keep
-running an IT after bean-wiring changes).
+**HEADs:** Frontend `4317f07` (branch `master`). Backend `035dc3b` on top of `a36f9f5` / `70645f1`
+/ `9e4e8b7`. Targeted unit slices green each pass (invoice/payment/notification/batch); full
+surefire (547) not re-run since the seed/spec work. `*IT` need Docker — a bean-wiring change once
+showed up only as a `BatchFlowIT` context-load failure, so run one IT (or restart the app, which
+also fails fast on a cycle) after touching bean graphs.
 
 **Local run state right now:** Docker `skillhub-mysql` / `-redis` / `-minio` are UP but MySQL is
 published on **3316** (I remapped it — native Windows service `MySQL97`, StartMode Auto, squats
