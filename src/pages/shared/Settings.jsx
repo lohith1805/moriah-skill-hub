@@ -1,148 +1,119 @@
 import { useState } from "react";
-import { Save, Settings2, ShieldAlert, BellRing, Eye, EyeOff } from "lucide-react";
+import { Settings2, ShieldAlert, BellRing, Mail, KeyRound } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
+import Modal from "../../components/ui/Modal";
 import { Input } from "../../components/ui/FormField";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
+import {
+  requestPasswordReset,
+  startTwoFactorSetup,
+  confirmTwoFactorSetup,
+  disableTwoFactor,
+} from "../../services/authService";
+
+const NOTIF_KEY = "msh_notif_prefs";
+const readNotifPrefs = () => {
+  try {
+    return JSON.parse(localStorage.getItem(NOTIF_KEY) || "null") || { email: true, whatsapp: false, desktop: true };
+  } catch {
+    return { email: true, whatsapp: false, desktop: true };
+  }
+};
 
 export default function SharedSettings() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { notify } = useToast();
-  const [saving, setSaving] = useState(false);
-  const [passwords, setPasswords] = useState({ old: "", newPassword: "", confirm: "" });
-  const [showOld, setShowOld] = useState(false);
-  const [showNew, setShowNew] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
-  
-  // Notification states loaded dynamically from user context
-  const [notifications, setNotifications] = useState(() => {
-    return user?.notifications || {
-      email: true,
-      whatsapp: false,
-      desktop: true,
-    };
-  });
 
-  const [mfaEnabled, setMfaEnabled] = useState(() => {
-    return user?.mfaEnabled || localStorage.getItem("msh_mfa_enabled") === "true";
-  });
+  const [notifications, setNotifications] = useState(readNotifPrefs);
+  const [sendingReset, setSendingReset] = useState(false);
+
+  // 2FA
+  const twoFaOn = !!user?.twoFactorEnabled;
+  const [setup, setSetup] = useState(null); // { secret, provisioningUri }
+  const [code, setCode] = useState("");
+  const [twoFaBusy, setTwoFaBusy] = useState(false);
+  const [disableOpen, setDisableOpen] = useState(false);
 
   const handleNotificationChange = (key, checked) => {
-    // Side effects (localStorage writes, toast) must live outside the
-    // setState updater. React 18/19 Strict Mode intentionally invokes state
-    // updater functions twice in development to surface impure updaters —
-    // when notify()/localStorage calls lived inside the updater above, that
-    // meant every checkbox click fired two toasts. Compute `next` from the
-    // current state directly and run side effects once, after the update.
     const next = { ...notifications, [key]: checked };
     setNotifications(next);
+    try {
+      localStorage.setItem(NOTIF_KEY, JSON.stringify(next));
+    } catch {
+      /* non-fatal */
+    }
+    notify("Notification preference saved to this browser.", { type: "success" });
+  };
 
-    if (user) {
-      const updatedUser = { ...user, notifications: next };
-      try {
-        localStorage.setItem("msh_user", JSON.stringify(updatedUser));
-        const rawList = localStorage.getItem("mORIAH_REGISTERED_USERS");
-        if (rawList) {
-          const list = JSON.parse(rawList);
-          const idx = list.findIndex((u) => u.id === user.id);
-          if (idx > -1) {
-            list[idx] = updatedUser;
-            localStorage.setItem("mORIAH_REGISTERED_USERS", JSON.stringify(list));
-          }
-        }
-        notify("Notification preferences updated.", { type: "success", title: "Preferences Saved" });
-      } catch (err) {
-        console.warn("Failed to persist notification updates:", err);
-      }
+  const sendReset = async () => {
+    if (!user?.email) return;
+    setSendingReset(true);
+    try {
+      await requestPasswordReset(user.email);
+      notify(`We've emailed a password-reset link to ${user.email}.`, { type: "success", title: "Check your inbox" });
+    } catch (err) {
+      notify(err.message || "Could not send the reset link.", { type: "error" });
+    } finally {
+      setSendingReset(false);
     }
   };
 
-  const handleMfaChange = (checked) => {
-    setMfaEnabled(checked);
-    localStorage.setItem("msh_mfa_enabled", checked ? "true" : "false");
-    
-    if (user) {
-      const updatedUser = { ...user, mfaEnabled: checked };
-      try {
-        localStorage.setItem("msh_user", JSON.stringify(updatedUser));
-        const rawList = localStorage.getItem("mORIAH_REGISTERED_USERS");
-        if (rawList) {
-          const list = JSON.parse(rawList);
-          const idx = list.findIndex((u) => u.id === user.id);
-          if (idx > -1) {
-            list[idx] = updatedUser;
-            localStorage.setItem("mORIAH_REGISTERED_USERS", JSON.stringify(list));
-          }
-        }
-        notify(checked ? "Multi-factor authentication (MFA) enabled." : "Multi-factor authentication (MFA) disabled.", {
-          type: checked ? "success" : "warning",
-          title: "MFA Settings Updated"
-        });
-      } catch (err) {
-        console.warn("Failed to persist MFA preference:", err);
-      }
+  const beginEnable = async () => {
+    setTwoFaBusy(true);
+    try {
+      const res = await startTwoFactorSetup();
+      setSetup(res);
+      setCode("");
+    } catch (err) {
+      notify(err.message || "Could not start 2FA setup.", { type: "error" });
+    } finally {
+      setTwoFaBusy(false);
     }
   };
 
-  const save = async (e) => {
-    e.preventDefault();
-    if (!passwords.old || !passwords.newPassword || !passwords.confirm) {
-      notify("Please fill in all password fields.", { type: "error", title: "Validation Error" });
-      return;
+  const confirmEnable = async () => {
+    setTwoFaBusy(true);
+    try {
+      await confirmTwoFactorSetup(code.trim());
+      await refreshUser();
+      setSetup(null);
+      setCode("");
+      notify("Two-factor authentication is on.", { type: "success", title: "2FA enabled" });
+    } catch (err) {
+      notify(err.message || "That code didn't verify. Try the current one.", { type: "error" });
+    } finally {
+      setTwoFaBusy(false);
     }
-    if (passwords.newPassword !== passwords.confirm) {
-      notify("New passwords do not match.", { type: "error", title: "Validation Error" });
-      return;
-    }
-    if (passwords.newPassword.length < 8) {
-      notify("New password must be at least 8 characters long.", { type: "error", title: "Validation Error" });
-      return;
-    }
+  };
 
-    setSaving(true);
-    await new Promise((r) => setTimeout(r, 600));
-
-    // Actually update password in session & list
-    if (user) {
-      const updatedUser = { ...user, password: passwords.newPassword };
-      try {
-        localStorage.setItem("msh_user", JSON.stringify(updatedUser));
-        const rawList = localStorage.getItem("mORIAH_REGISTERED_USERS");
-        if (rawList) {
-          const list = JSON.parse(rawList);
-          const idx = list.findIndex((u) => u.id === user.id);
-          if (idx > -1) {
-            list[idx] = updatedUser;
-            localStorage.setItem("mORIAH_REGISTERED_USERS", JSON.stringify(list));
-          }
-        }
-      } catch (err) {
-        console.warn("Failed to persist password update:", err);
-      }
+  const confirmDisable = async () => {
+    setTwoFaBusy(true);
+    try {
+      await disableTwoFactor(code.trim());
+      await refreshUser();
+      setDisableOpen(false);
+      setCode("");
+      notify("Two-factor authentication is off.", { type: "warning", title: "2FA disabled" });
+    } catch (err) {
+      notify(err.message || "That code didn't verify.", { type: "error" });
+    } finally {
+      setTwoFaBusy(false);
     }
-
-    setSaving(false);
-    notify("Your password has been changed successfully.", { type: "success", title: "Password Changed" });
-    setPasswords({ old: "", newPassword: "", confirm: "" });
-    setTimeout(() => {
-      window.location.reload();
-    }, 800);
   };
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Account Settings"
-        subtitle="Manage notifications, authentication options, and theme preferences"
+        subtitle="Notifications, two-factor authentication, and password"
         breadcrumbs={[{ label: "Dashboard" }, { label: "Settings" }]}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Preference Blocks */}
         <div className="flex flex-col gap-6 lg:col-span-1">
-          {/* Notification Preferences Card */}
           <Card>
             <h3 className="font-display font-bold text-ink-900 text-sm mb-4 flex items-center gap-2">
               <BellRing size={16} className="text-primary-600" /> Notifications
@@ -164,103 +135,122 @@ export default function SharedSettings() {
                 </label>
               ))}
             </div>
+            <p className="text-[10px] text-ink-400 leading-normal mt-3">
+              Stored in this browser — a server-side preference API is not available yet.
+            </p>
           </Card>
 
-          {/* MFA Config Card */}
           <Card>
             <h3 className="font-display font-bold text-ink-900 text-sm mb-4 flex items-center gap-2">
-              <ShieldAlert size={16} className="text-primary-600" /> Multi-Factor Auth (MFA)
+              <ShieldAlert size={16} className="text-primary-600" /> Two-Factor Auth
             </h3>
-            <div className="flex flex-col gap-3">
-              <label className="flex items-center gap-3 cursor-pointer text-sm text-ink-700">
-                <input
-                  type="checkbox"
-                  checked={mfaEnabled}
-                  onChange={(e) => handleMfaChange(e.target.checked)}
-                  className="h-4 w-4 rounded border-border text-primary-600 focus:ring-primary-500"
-                />
-                <span>Enable Google/GitHub Authenticator OTP</span>
-              </label>
-              <p className="text-[10px] text-ink-400 leading-normal">
-                When enabled, logging in with your password will require entering a 6-digit verification code.
-              </p>
-            </div>
+            <p className="text-sm text-ink-700">
+              Status:{" "}
+              <span className={twoFaOn ? "font-semibold text-success-700" : "font-semibold text-ink-500"}>
+                {twoFaOn ? "Enabled" : "Disabled"}
+              </span>
+            </p>
+            <p className="text-[11px] text-ink-400 leading-normal mt-1 mb-3">
+              An authenticator app (Google Authenticator, 1Password, …) generates a 6-digit code you enter after your password.
+            </p>
+            {twoFaOn ? (
+              <Button size="sm" variant="secondary" onClick={() => { setCode(""); setDisableOpen(true); }}>
+                Disable 2FA
+              </Button>
+            ) : (
+              <Button size="sm" loading={twoFaBusy && !setup} onClick={beginEnable}>
+                Enable 2FA
+              </Button>
+            )}
           </Card>
         </div>
 
-        {/* Right Column: Change Password Panel */}
         <Card className="lg:col-span-2">
           <h3 className="font-display font-bold text-ink-900 text-base mb-5 flex items-center gap-2">
-            <Settings2 size={17} className="text-primary-600" /> Security Credentials
+            <Settings2 size={17} className="text-primary-600" /> Password
           </h3>
-
-          <form onSubmit={save} className="flex flex-col gap-4">
-            <Input
-              label="Current Password"
-              type={showOld ? "text" : "password"}
-              value={passwords.old}
-              onChange={(e) => setPasswords((p) => ({ ...p, old: e.target.value }))}
-              placeholder="••••••••"
-              rightElement={
-                <button
-                  type="button"
-                  onClick={() => setShowOld(!showOld)}
-                  className="text-ink-400 hover:text-ink-600 transition-colors p-1"
-                >
-                  {showOld ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              }
-            />
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Input
-                label="New Password"
-                type={showNew ? "text" : "password"}
-                value={passwords.newPassword}
-                onChange={(e) => setPasswords((p) => ({ ...p, newPassword: e.target.value }))}
-                placeholder="••••••••"
-                hint="Minimum 8 characters with numbers."
-                rightElement={
-                  <button
-                    type="button"
-                    onClick={() => setShowNew(!showNew)}
-                    className="text-ink-400 hover:text-ink-600 transition-colors p-1"
-                  >
-                    {showNew ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                }
-              />
-              <Input
-                label="Confirm New Password"
-                type={showConfirm ? "text" : "password"}
-                value={passwords.confirm}
-                onChange={(e) => setPasswords((p) => ({ ...p, confirm: e.target.value }))}
-                placeholder="••••••••"
-                rightElement={
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirm(!showConfirm)}
-                    className="text-ink-400 hover:text-ink-600 transition-colors p-1"
-                  >
-                    {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                }
-              />
-            </div>
-
-            <div className="flex items-start gap-2 bg-warning-50 px-4 py-3 rounded-lg border border-warning-100 text-xs text-warning-600 mt-2">
-              <ShieldAlert size={14} className="shrink-0 mt-0.5" />
-              <p>Changing your password will terminate all active browser sessions across other devices.</p>
-            </div>
-
-            <div className="pt-2">
-              <Button type="submit" icon={Save} loading={saving}>
-                Apply Security Settings
-              </Button>
-            </div>
-          </form>
+          <p className="text-sm text-ink-600 max-w-md">
+            For your security, password changes go through an emailed reset link rather than an in-page form. We'll send
+            a one-time link to <strong className="text-ink-900">{user?.email}</strong>; it expires shortly after.
+          </p>
+          <div className="flex items-start gap-2 bg-warning-50 px-4 py-3 rounded-lg border border-warning-100 text-xs text-warning-600 mt-4 max-w-md">
+            <ShieldAlert size={14} className="shrink-0 mt-0.5" />
+            <p>Completing a reset signs you out of every other device.</p>
+          </div>
+          <div className="pt-4">
+            <Button icon={Mail} loading={sendingReset} onClick={sendReset}>
+              Email me a reset link
+            </Button>
+          </div>
         </Card>
       </div>
+
+      {/* Enable 2FA modal */}
+      <Modal
+        open={!!setup}
+        onClose={() => setSetup(null)}
+        title="Enable two-factor authentication"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setSetup(null)} disabled={twoFaBusy}>Cancel</Button>
+            <Button icon={KeyRound} onClick={confirmEnable} disabled={twoFaBusy || code.trim().length !== 6}>
+              {twoFaBusy ? "Verifying…" : "Verify & enable"}
+            </Button>
+          </>
+        }
+      >
+        {setup && (
+          <div className="flex flex-col gap-4 text-left font-sans">
+            <p className="text-sm text-ink-600">
+              Add this secret to your authenticator app (choose “enter a setup key”), then type the current 6-digit code.
+            </p>
+            <div className="rounded-lg border border-border bg-cream-50 p-3">
+              <p className="text-[10px] font-bold uppercase text-ink-400">Setup key</p>
+              <p className="font-mono text-sm break-all text-ink-900">{setup.secret}</p>
+            </div>
+            {setup.provisioningUri && (
+              <p className="text-[11px] text-ink-400 break-all">
+                otpauth URI: <span className="font-mono">{setup.provisioningUri}</span>
+              </p>
+            )}
+            <Input
+              label="6-digit code"
+              inputMode="numeric"
+              maxLength={6}
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+              placeholder="123456"
+            />
+          </div>
+        )}
+      </Modal>
+
+      {/* Disable 2FA modal */}
+      <Modal
+        open={disableOpen}
+        onClose={() => setDisableOpen(false)}
+        title="Disable two-factor authentication"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDisableOpen(false)} disabled={twoFaBusy}>Cancel</Button>
+            <Button variant="danger" onClick={confirmDisable} disabled={twoFaBusy || code.trim().length !== 6}>
+              {twoFaBusy ? "Verifying…" : "Disable 2FA"}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4 text-left font-sans">
+          <p className="text-sm text-ink-600">Enter a current code from your authenticator app to confirm.</p>
+          <Input
+            label="6-digit code"
+            inputMode="numeric"
+            maxLength={6}
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+            placeholder="123456"
+          />
+        </div>
+      </Modal>
     </div>
   );
 }

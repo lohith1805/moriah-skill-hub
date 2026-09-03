@@ -60,6 +60,7 @@ function toFeUser(me, accessToken) {
     portfolioSlug: me.portfolioSlug,
     profileComplete: !!me.isComplete,
     completionPercent: me.completionPercent ?? 0,
+    twoFactorEnabled: !!(me.twoFactorEnabled ?? me.mfaEnabled),
   };
 }
 
@@ -100,6 +101,32 @@ export function getPersistedUser() {
 
 export async function getMe() {
   const me = await apiClient.get("/users/me");
+  const user = toFeUser(me);
+  persistUser(user);
+  return user;
+}
+
+// PUT /api/v1/users/me/profile — self-service profile fields only. NOTE: name,
+// email and phone are NOT editable here (name/phone go through admin's
+// PUT /admin/users/{uuid}, B1.17); this endpoint takes bio / location /
+// currentTitle / githubUsername / experienceLevel / yearsExperience / skills /
+// education / workExperience. Returns the refreshed FE user.
+export async function updateProfile(patch = {}) {
+  const body = {
+    githubUsername: patch.githubUsername ?? undefined,
+    bio: patch.bio ?? undefined,
+    location: patch.location ?? undefined,
+    currentTitle: patch.currentTitle ?? undefined,
+    experienceLevel: patch.experienceLevel ?? undefined,
+    yearsExperience:
+      patch.yearsExperience === "" || patch.yearsExperience == null
+        ? undefined
+        : Number(patch.yearsExperience),
+    skills: patch.skills ?? undefined,
+    education: patch.education ?? undefined,
+    workExperience: patch.workExperience ?? undefined,
+  };
+  const me = await apiClient.put("/users/me/profile", body);
   const user = toFeUser(me);
   persistUser(user);
   return user;
@@ -146,6 +173,26 @@ export async function verifyTwoFactor({ challengeToken, totpCode }) {
 // { secret, provisioningUri } to render a QR; confirm with verifyTwoFactor().
 export async function beginTwoFactorSetup(challengeToken) {
   return apiClient.post("/auth/2fa/enable", challengeToken ? { challengeToken } : {});
+}
+
+// --- Voluntary 2FA management (already-logged-in caller, Account Settings) ---
+
+// POST /auth/2fa/enable {} -> { secret, provisioningUri }. Not yet in effect
+// until confirmTwoFactorSetup() is called with a code from that secret.
+export async function startTwoFactorSetup() {
+  return apiClient.post("/auth/2fa/enable", {});
+}
+
+// POST /auth/2fa/verify { totpCode } (no challengeToken) -> setup confirmed.
+export async function confirmTwoFactorSetup(totpCode) {
+  await apiClient.post("/auth/2fa/verify", { totpCode });
+  return getMe();
+}
+
+// POST /auth/2fa/disable { totpCode } — needs a currently-valid code.
+export async function disableTwoFactor(totpCode) {
+  await apiClient.post("/auth/2fa/disable", { totpCode });
+  return getMe();
 }
 
 export async function refreshSession() {

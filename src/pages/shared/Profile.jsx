@@ -9,19 +9,19 @@ import { Input, Textarea } from "../../components/ui/FormField";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { ROLE_LABELS } from "../../utils/constants";
+import { updateProfile } from "../../services/authService";
 
 export default function SharedProfile() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { notify } = useToast();
   const [saving, setSaving] = useState(false);
   const [photoError, setPhotoError] = useState("");
-  const [values, setValues] = useState(() => {
-    return {
-      name: user?.name || "",
-      phone: user?.phone || "+91 98765 43210",
-      bio: user?.bio || "Technical professional contributing to Moriah Skill Hub operations.",
-    };
-  });
+  const [values, setValues] = useState(() => ({
+    bio: user?.bio || "",
+    location: user?.location || "",
+    currentTitle: user?.currentTitle || "",
+    githubUsername: user?.githubUsername || "",
+  }));
 
   const handlePhotoChange = (e) => {
     const file = e.target.files?.[0];
@@ -44,26 +44,17 @@ export default function SharedProfile() {
       }
 
       setPhotoError("");
+      // The backend profile has no avatar field yet, so the photo is kept
+      // locally in this browser only.
       const reader = new FileReader();
       reader.onloadend = () => {
-        const base64 = reader.result;
-        if (user) {
-          const updatedUser = { ...user, photo: base64 };
-          localStorage.setItem("msh_user", JSON.stringify(updatedUser));
-          const rawList = localStorage.getItem("mORIAH_REGISTERED_USERS");
-          if (rawList) {
-            const list = JSON.parse(rawList);
-            const idx = list.findIndex((u) => u.id === user.id);
-            if (idx > -1) {
-              list[idx] = updatedUser;
-              localStorage.setItem("mORIAH_REGISTERED_USERS", JSON.stringify(list));
-            }
-          }
-          notify("Profile photo updated successfully.", { type: "success", title: "Photo Updated" });
-          setTimeout(() => {
-            window.location.reload();
-          }, 800);
+        try {
+          localStorage.setItem("msh_profile_photo", String(reader.result));
+        } catch {
+          /* quota / private mode — non-fatal */
         }
+        notify("Profile photo saved to this browser.", { type: "success", title: "Photo Updated" });
+        setTimeout(() => window.location.reload(), 600);
       };
       reader.readAsDataURL(file);
     }
@@ -72,37 +63,24 @@ export default function SharedProfile() {
   const save = async (e) => {
     e.preventDefault();
     setSaving(true);
-    await new Promise((r) => setTimeout(r, 600));
-    setSaving(false);
-
-    if (user) {
-      const updatedUser = { 
-        ...user, 
-        name: values.name, 
-        phone: values.phone, 
-        bio: values.bio 
-      };
-
-      try {
-        localStorage.setItem("msh_user", JSON.stringify(updatedUser));
-        const rawList = localStorage.getItem("mORIAH_REGISTERED_USERS");
-        if (rawList) {
-          const list = JSON.parse(rawList);
-          const idx = list.findIndex((u) => u.id === user.id);
-          if (idx > -1) {
-            list[idx] = updatedUser;
-            localStorage.setItem("mORIAH_REGISTERED_USERS", JSON.stringify(list));
-          }
-        }
-        notify("Profile details updated successfully.", { type: "success", title: "Saved" });
-        setTimeout(() => {
-          window.location.reload();
-        }, 800);
-      } catch (err) {
-        console.warn("Failed to persist shared profile update:", err);
-      }
+    try {
+      await updateProfile(values);
+      await refreshUser();
+      notify("Profile updated.", { type: "success", title: "Saved" });
+    } catch (err) {
+      notify(err.message || "Could not save your profile.", { type: "error" });
+    } finally {
+      setSaving(false);
     }
   };
+
+  const localPhoto = (() => {
+    try {
+      return localStorage.getItem("msh_profile_photo") || undefined;
+    } catch {
+      return undefined;
+    }
+  })();
 
   return (
     <div>
@@ -116,7 +94,7 @@ export default function SharedProfile() {
         {/* Left Column: Avatar & Role Summary Card */}
         <Card className="flex flex-col items-center text-center">
           <div className="relative group cursor-pointer" onClick={() => document.getElementById("avatar-upload-input")?.click()}>
-            <Avatar name={user?.name} color={user?.avatarColor} size={80} src={user?.photo} />
+            <Avatar name={user?.name} color={user?.avatarColor} size={80} src={localPhoto} />
             <div className="absolute inset-0 rounded-full bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
               <Camera className="text-white" size={22} />
             </div>
@@ -133,7 +111,7 @@ export default function SharedProfile() {
             className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-primary-600 hover:text-primary-700 bg-primary-50 hover:bg-primary-100 px-3 py-1.5 rounded-lg border border-primary-200 transition-colors cursor-pointer"
           >
             <Camera size={13} />
-            <span>{user?.photo ? "Replace Photo" : "Upload Photo"}</span>
+            <span>{localPhoto ? "Replace Photo" : "Upload Photo"}</span>
           </button>
           {photoError && (
             <p className="mt-2 text-xs text-error-500 font-semibold max-w-[180px] text-center leading-normal">
@@ -165,31 +143,55 @@ export default function SharedProfile() {
           </h3>
 
           <form onSubmit={save} className="flex flex-col gap-4">
-            <Input
-              name="name"
-              autoComplete="name"
-              label="Full Name"
-              value={values.name}
-              onChange={(e) => setValues((v) => ({ ...v, name: e.target.value }))}
-              required
-            />
-            
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Input
+                name="name"
+                label="Full Name"
+                value={user?.name || ""}
+                disabled
+                hint="Name and phone are managed by an administrator."
+              />
               <Input
                 name="email"
                 autoComplete="email"
                 label="Email address"
                 value={user?.email || ""}
                 disabled
-                hint="Your email address is managed by your administrator."
               />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Input
                 name="phone"
                 autoComplete="tel"
                 label="Phone Number"
-                value={values.phone}
-                onChange={(e) => setValues((v) => ({ ...v, phone: e.target.value }))}
+                value={user?.phone || "—"}
+                disabled
                 icon={Phone}
+              />
+              <Input
+                name="currentTitle"
+                label="Current Title / Role"
+                value={values.currentTitle}
+                onChange={(e) => setValues((v) => ({ ...v, currentTitle: e.target.value }))}
+                placeholder="e.g. Senior Trainer"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Input
+                name="location"
+                label="Location"
+                value={values.location}
+                onChange={(e) => setValues((v) => ({ ...v, location: e.target.value }))}
+                placeholder="e.g. Bengaluru"
+              />
+              <Input
+                name="githubUsername"
+                label="GitHub Username"
+                value={values.githubUsername}
+                onChange={(e) => setValues((v) => ({ ...v, githubUsername: e.target.value }))}
+                placeholder="octocat"
               />
             </div>
 
