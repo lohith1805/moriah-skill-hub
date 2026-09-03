@@ -62,7 +62,10 @@ thrashing DB pool). **Re-ran `PipFlowIT` alone → 14/14 PASS.** Environmental, 
 (`mvn test` / `surefire:test`, ~15s) do not.
 
 ### Backend — Part B still open
-- **B1.18** installment/EMI plans at checkout — deferred, "if the product needs it" (user: "discuss later").
+- **B1.18** installment/EMI plans at checkout — **DROPPED** (user, 2026-09-03). Was an admin-only
+  localStorage mock (`msh_installment_plans`) with no consumer; removed from `admin/Plans.jsx` +
+  the admin Dashboard caption in frontend `867a6c0`. No backend was ever built. Do not revive
+  without a fresh product decision.
 - **B1.4 per-lesson quiz — DONE** (`60741b3`, V32 `lesson_quiz_questions`/`lesson_quiz_attempts`).
   `learning/LessonQuizService`: `GET /lessons/{id}/quiz` (any auth), `POST /{id}/quiz/questions` +
   `DELETE /{id}/quiz/questions/{qid}` (curators), `POST /{id}/quiz/submit` (any auth). ≥60% →
