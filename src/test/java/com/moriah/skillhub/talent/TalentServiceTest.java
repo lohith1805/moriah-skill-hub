@@ -56,6 +56,8 @@ class TalentServiceTest {
     private UserRepository userRepository;
     @Mock
     private com.moriah.skillhub.common.audit.AuditLogService auditLogService;
+    @Mock
+    private com.moriah.skillhub.placement.PlacementService placementService;
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
 

@@ -72,6 +72,7 @@ public enum ErrorCode {
     LEAD_CAMPAIGN_NOT_FOUND(HttpStatus.NOT_FOUND, "This campaign does not exist."),
     INTERVIEW_NOT_FOUND(HttpStatus.NOT_FOUND, "This interview does not exist."),
     RECRUITMENT_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "This recruitment request does not exist."),
+    PLACEMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "This placement does not exist."),
     SALES_TARGET_NOT_FOUND(HttpStatus.NOT_FOUND, "No sales target has been set for you this month."),
     EMPLOYEE_NOT_FOUND(HttpStatus.NOT_FOUND, "This employee record does not exist."),
     EMPLOYEE_EXIT_NOT_FOUND(HttpStatus.NOT_FOUND, "This exit record does not exist."),

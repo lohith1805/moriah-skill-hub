@@ -8,6 +8,7 @@ import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
 import com.moriah.skillhub.common.security.SecurityUtils;
+import com.moriah.skillhub.placement.PlacementService;
 import com.moriah.skillhub.talent.dto.CreateRecruitmentRequestRequest;
 import com.moriah.skillhub.talent.dto.DecideRecruitmentRequestRequest;
 import com.moriah.skillhub.talent.dto.RecruitmentRequestResponse;
@@ -50,6 +51,7 @@ public class TalentService {
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
     private final ObjectMapper objectMapper;
+    private final PlacementService placementService;
 
     @Transactional(readOnly = true)
     public PageResponse<TalentPoolCandidateResponse> browse(String search, String skill, Pageable pageable) {
@@ -102,6 +104,11 @@ public class TalentService {
         entity.setDecisionNote(blankToNull(request.decisionNote()));
         entity.setDecidedBy(callerUserId);
         entity.setDecidedAt(Instant.now());
+
+        if (request.status() == RecruitmentRequestStatus.APPROVED) {
+            // Approving a request opens the placement pipeline for that candidate.
+            placementService.createForApprovedRequest(entity.getId(), entity.getCandidateId(), entity.getRequestedBy());
+        }
 
         auditLogService.record(callerUserId, "RECRUITMENT_REQUEST_DECIDED", "RecruitmentRequest",
                 entity.getId(), null, request.status());

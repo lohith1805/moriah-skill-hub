@@ -1103,6 +1103,51 @@ auth: «token as ADMIN» → `active = false`.
 
 ---
 
+## Flow 23 · Placement pipeline — client → HR → student
+
+A **placement** is created automatically when a recruitment request is **APPROVED** (Flow 20
+Step 4). It then moves through `PlacementStage` (ordinal, forward-only; `REJECTED` from any
+non-terminal): `SHORTLISTED → TECHNICAL_SCHEDULED → TECHNICAL_COMPLETED → TECHNICAL_APPROVED →
+HR_SCHEDULED → HR_COMPLETED → HR_APPROVED → DOCUMENT_VERIFICATION → OFFER_CREATED → CLIENT_SIGNED
+→ STUDENT_SIGNED → PLACED`. Per-**target**-stage write permission: the requesting **CLIENT** owns
+the technical stages + `CLIENT_SIGNED`; **HR_MANAGER/ADMIN** own the HR stages, doc verification,
+offer creation and `PLACED`; the candidate **STUDENT** sets `STUDENT_SIGNED`; `REJECTED` = client
+or HR.
+
+**Step 1 (any of client / HR / student) — list** · `GET {{baseUrl}}/api/v1/placements` · auth: «that token»
+→ a CLIENT sees placements they requested, a STUDENT the ones where they're the candidate,
+HR/ADMIN all. Optional `?stage=TECHNICAL_APPROVED`. → keep a `data.content[].id` as «placementId».
+
+**Step 2 (client) — schedule the technical round** ·
+`PUT {{baseUrl}}/api/v1/placements/«placementId»` · auth: «token as CLIENT»
+```json
+{ "stage": "TECHNICAL_SCHEDULED",
+  "details": { "roundType": "Technical Interview", "date": "2026-10-05", "time": "15:00",
+               "meetingLink": "https://meet.google.com/abc-defg-hij", "notes": "DS + system design" } }
+```
+`details` is a free-form object **merged** into whatever's stored (a key set to `null` is removed);
+`{ "stage": "<same as current>", "details": {…} }` updates fields without advancing.
+
+**Step 3 (client) — complete + approve** · two more `PUT`s with
+`"stage": "TECHNICAL_COMPLETED"` (add `details.technicalFeedback`, `details.technicalRating`) then
+`"stage": "TECHNICAL_APPROVED"`.
+
+**Step 4 (HR) — HR round → offer** · `PUT` as «token as HR_MANAGER», stage by stage:
+`HR_SCHEDULED` (`details.hrRoundDate`, `details.hrRoundLink`) → `HR_COMPLETED` → `HR_APPROVED` →
+`DOCUMENT_VERIFICATION` (`details.documentChecklist`) → `OFFER_CREATED`
+(`details.offerText`, `details.offerCtc`).
+
+**Step 5 (client) — sign the offer** · `PUT` «token as CLIENT» `{ "stage": "CLIENT_SIGNED",
+"details": { "clientSignedAt": "2026-10-12T09:00:00Z" } }`. A client trying to set an HR stage →
+`403 INSUFFICIENT_ROLE`; going backwards → `409`.
+
+**Step 6 (student) — countersign** · `PUT` «token as STUDENT» `{ "stage": "STUDENT_SIGNED" }`.
+
+**Step 7 (HR) — finalise** · `PUT` «token as HR_MANAGER» `{ "stage": "PLACED" }`. Terminal — any
+further `PUT` → `409`. (`REJECTED` is the other terminal, reachable earlier from client or HR.)
+
+---
+
 ## Appendix A · Getting a TOTP code from «secret» (5 ways)
 
 The secret is Base32; TOTP is **HMAC-SHA1, 6 digits, 30-second step**, ±1 step drift tolerated.
