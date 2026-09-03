@@ -373,11 +373,12 @@ server `score/total` + pass/fail; ≥60% flips the lesson to COMPLETED. Cross-ch
 ## 13 · Flow K — Student certificates / PIP (`student1@moriah.test`)
 
 **K1 · Certificates.** `/student/certificates` → `GET /api/v1/certificates/me`. Empty until a PM
-issues one (Flow N7 / `testing-flow.md` Flow 6). After issue: certificate number, verification
+issues one (Flow N5 / `testing-flow.md` Flow 6). After issue: certificate number, verification
 code, download link; a revoked cert shows **Revoked**.
 
 **K2 · PIP status.** `/student/pip` → `GET /api/v1/pip/me`. `404` → "no active plan" state. If a
-PIP was raised (Flow N6), the page shows the trigger reason, status, dates and milestones.
+PIP was raised (nightly job; reviewed in Flow N4), the page shows the trigger reason, status,
+dates and milestones.
 
 ---
 
@@ -414,9 +415,12 @@ NOT_BATCH_OWNER`.
   `{userFullName, leaveType, fromDate, toDate, days, status, createdAt}`.
 - **Apply.** `POST /api/v1/hr/leaves` is `isAuthenticated()` — any logged-in user can file one
   for themselves. **Request Leave** → type + from/to + reason → **PENDING**. Overlapping approved
-  leave → `409`. (`hr@` filing their own request is the simplest single-account path.)
-- **Decide.** Back as `hr@`, row → **Approve** / **Reject** → `PUT /api/v1/hr/leaves/{id}/decision`
-  `{decision:"APPROVED"}` (REJECT needs a reason). Verify: status + `decidedAt` + `approvedByUuid`.
+  leave → `409`. (`hr@` filing their own request is the simplest single-account path — but you
+  can't decide your own: `POST` and the decision below must be different accounts, else
+  `403 SELF_DECISION_NOT_ALLOWED`.)
+- **Decide.** As the reporting manager or `hr@`, row → **Approve** / **Reject** →
+  `PUT /api/v1/hr/leaves/{id}/decision` `{decision:"APPROVED"|"REJECTED"}` (that's the whole
+  body — no reason field). Verify: status + `decidedAt` + `approvedByUuid`.
 - The **Attendance** and **Check-in** tabs on this page are still demo data (`msh_*` keys) — no
   biometric-attendance endpoint.
 
@@ -425,12 +429,14 @@ NOT_BATCH_OWNER`.
 - **List.** `GET /api/v1/hr/documents` → rows `{userFullName, documentType, verificationStatus,
   downloadUrl (presigned, 15-min TTL), createdAt}`. Status / type filters map to
   `?status=` / `?documentType=`.
-- **Upload.** **Upload Document** → pick a PDF + document type → `POST /api/v1/hr/documents`
-  (`multipart/form-data`, field `file` + `documentType`) → **PENDING**. `downloadUrl` is `null` on
-  this response — re-list to get a link.
+- **Seed a row.** This tab is **read + verify only — there is no wired upload control** (the
+  `uploadHrDocument` service helper exists but nothing calls it yet). Create a PENDING row with
+  `POST /api/v1/hr/documents` (`multipart/form-data`, field `file` PDF + `documentType`) via
+  Postman / `testing-flow.md` Flow 9 Step 2. `downloadUrl` is `null` on that POST response —
+  re-list to get a link.
 - **Verify / reject.** Row → **Verify** or **Reject** (reason modal) →
-  `PUT /api/v1/hr/documents/{id}/verify` `{decision:"VERIFIED"|"REJECTED", rejectionReason}`. You
-  can't verify your own document.
+  `PUT /api/v1/hr/documents/{id}/verify` `{decision:"VERIFIED"|"REJECTED", rejectionReason}`
+  (`HR_MANAGER` / `ADMIN` only; you can't verify your own document).
 - The other tabs on this page (offer / experience / relieving **letters**) are still mock — those
   are the separate `/hr/letters` flow.
 
@@ -465,14 +471,17 @@ add `student2` to it via `testing-flow.md` Flow 3 Step 2 if the seed batch isn't
 
 - **Queue.** `GET /api/v1/reviews/queue?size=50` on load → submissions awaiting review.
 - Open one → `GET /api/v1/submissions?taskId=` resolves the latest submission id.
-- **Submit review** → `POST /api/v1/reviews` `{submissionId, score, decision
-  (APPROVED|CHANGES_REQUESTED), comment, inlineComments[]}`. Verify: the item leaves the queue;
-  an APPROVED review moves the task to COMPLETED.
+- **Submit review** → `POST /api/v1/reviews` `{submissionId, score (1–10), verdict
+  (APPROVED|CHANGES_REQUESTED), comments, inlineComments:[{filePath,line,comment}]}`. Verify: the
+  item leaves the queue; an APPROVED verdict moves the task to COMPLETED, CHANGES_REQUESTED sends
+  it back.
 
 ### N4 · PIP management — `/trainer/pip`
 
 - **List.** `GET /api/v1/pip?batchId=&status=`.
-- **Review a case** → `POST /api/v1/pip/{id}/review` `{decision, reviewNotes}`.
+- **Review a case** (day-15) → `POST /api/v1/pip/{id}/review` `{outcome
+  (CLEARED|TERMINATED|REASSIGNED), reviewNotes}`. `CLEARED` is server-gated on ≥85% task
+  completion and no unsatisfactory reviews.
 - **Complete a milestone** → `POST /api/v1/pip/{pipId}/milestones/{milestoneId}/complete`.
 - **"Trigger manual PIP"** and **"Remove case"** buttons **throw a "not supported" error** on
   purpose — there is no create/delete PIP endpoint; PIPs are raised by the nightly job only.
@@ -527,17 +536,19 @@ browser**. Verify the numbers by hand against those four responses.
 
 ---
 
-## 18 · Flow P — Student subscription & real checkout (`student3@moriah.test`)
+## 18 · Flow P — Student subscription & real checkout
 
-`student3@` is on STARTER, so entitlement-gated screens 403 until they upgrade.
-
-**P1 · Dashboard guard.** Log in as `student3@` → `/student/dashboard` fires
-`GET /api/v1/subscriptions/me`; if it's `null` you are redirected straight to
-`/student/subscription`.
+**P1 · Dashboard guard.** `/student/dashboard` fires `GET /api/v1/subscriptions/me`; **only if it
+`404`s** (no active subscription at all) are you redirected to `/student/subscription`. The seed
+gives `student1@` / `student2@` an ACTIVE `PROJECT_BASED` sub and `student3@` an ACTIVE `STARTER`
+one, so **none of the seeded students hit this redirect** — to see it, register a fresh student
+(Flow A5), verify the email, log in, and you land on `/student/subscription` with no plan.
+`student3@` instead demonstrates the *entitlement* path: STARTER loads the dashboard fine but
+batch / sprint / PIP calls return `403 ENTITLEMENT_REQUIRED`.
 
 **P2 · Plan list.** `/student/subscription` → `GET /api/v1/plans` renders the real plan cards;
-`GET /api/v1/subscriptions/me` marks the current plan. A **track** picker (`TRACK_CODES`) sets
-`trackCode` for the checkout body.
+`GET /api/v1/subscriptions/me` marks the current plan (for `student3@`, STARTER). A **track**
+picker (`TRACK_CODES`) sets `trackCode` for the checkout body.
 
 **P3 · Checkout (needs real Razorpay/Stripe TEST keys in the backend `.env`).**
 - Pick a plan + gateway → **Upgrade** → `POST /api/v1/subscriptions/checkout`
@@ -630,7 +641,7 @@ placement exists at `SHORTLISTED`. Every step is `PUT /api/v1/placements/{id}` w
 17. `student1@` → `/student/tasks`: pull a BACKLOG task → ASSIGNED.
 18. `student1@` → `/student/submissions`: submit a PR URL → task IN_REVIEW.
 19. `student1@` → `/student/assessments`: start → answer → submit → server percentage; CODE quiz → PENDING_MANUAL_GRADING.
-20. `student3@` → `/student/dashboard` redirects to `/student/subscription`; plan list + `subscriptions/me` load.
+20. Fresh registered+verified student → `/student/dashboard` redirects to `/student/subscription` (guard). `student3@` (STARTER) does *not* redirect but a batch/sprint call 403s `ENTITLEMENT_REQUIRED`.
 21. Placement Flow Q: client → HR → student PUTs advance one row `SHORTLISTED → … → PLACED`; a cross-role PUT 403s.
 22. Any role → `/{role}/profile`: edit bio, save → `PUT /users/me/profile`; name/email stay read-only.
 23. Any role → `/{role}/settings`: enable 2FA (secret → verify), then disable (non-mandatory roles).
