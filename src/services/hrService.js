@@ -451,6 +451,58 @@ export async function actionLeaveRequest(id, feDecision) {
   );
 }
 
+// --- HR / KYC documents (WIRED) --------------------------------------
+// GET /api/v1/hr/documents, POST (multipart), PUT /{id}/verify.
+// An employee sees own; HR_MANAGER/ADMIN see all. Rows carry a presigned
+// downloadUrl (15-min TTL). The placement-pipeline tabs on hr/Documents.jsx
+// are unrelated and stay on utils/placementPipeline.js.
+
+const HR_DOC_STATUS_TO_FE = { PENDING: "Pending", VERIFIED: "Verified", REJECTED: "Rejected" };
+const FE_HR_DOC_DECISION = { Verified: "VERIFIED", Rejected: "REJECTED" };
+
+function toFeHrDocument(d) {
+  return {
+    id: d.id,
+    userUuid: d.userUuid,
+    employee: d.userFullName || "",
+    documentType: d.documentType,
+    status: HR_DOC_STATUS_TO_FE[d.verificationStatus] || d.verificationStatus,
+    verifiedByUuid: d.verifiedByUuid || null,
+    verifiedAt: d.verifiedAt || null,
+    rejectionReason: d.rejectionReason || "",
+    downloadUrl: d.downloadUrl || null,
+    createdAt: d.createdAt || null,
+  };
+}
+
+export async function getHrDocuments({ status, userUuid, documentType } = {}) {
+  const params = { size: 100 };
+  if (status) params.status = status; // backend enum e.g. "PENDING"
+  if (userUuid) params.userUuid = userUuid;
+  if (documentType) params.documentType = documentType;
+  const res = await apiClient.get("/hr/documents", params);
+  return asRows(res).map(toFeHrDocument);
+}
+
+// POST /api/v1/hr/documents — multipart (field `file` PDF + `documentType`).
+export async function uploadHrDocument(file, documentType) {
+  const res = await apiClient.requestMultipart("/hr/documents", {
+    method: "POST",
+    fields: { documentType: documentType || "OTHER" },
+    files: { file },
+  });
+  return toFeHrDocument(res);
+}
+
+// PUT /api/v1/hr/documents/{id}/verify — feDecision "Verified" | "Rejected".
+export async function verifyHrDocument(id, feDecision, rejectionReason = "") {
+  const res = await apiClient.put(`/hr/documents/${id}/verify`, {
+    decision: FE_HR_DOC_DECISION[feDecision] || feDecision,
+    rejectionReason: feDecision === "Rejected" ? rejectionReason || "Not acceptable" : null,
+  });
+  return toFeHrDocument(res);
+}
+
 export async function getClockinLogs() {
   try {
     const raw = localStorage.getItem("msh_attendance_logs");
