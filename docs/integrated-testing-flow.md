@@ -99,6 +99,8 @@ backend with no CORS setup. To point at a deployed backend instead, set
 | Developer | `/developer/assessment-bank` | ✅ wired | `/api/v1/assessments/banks**` |
 | Developer | `/developer/client-requirements` | ✅ wired | `/api/v1/dev/requirement-documents**` |
 | Lead-gen | `/leads/campaigns` | ✅ wired | `/api/v1/leads/campaigns**` |
+| Lead-gen | `/leads/pipeline` (board, create, edit, archive, activity log) | ✅ wired | `/api/v1/leads**`, `/leads/{id}/activities` |
+| Lead-gen | `/leads/targets` (leaderboard) | ✅ wired | `GET /api/v1/leads/targets/leaderboard` (+ `/targets/me`) |
 | BA | `/ba/meetings` | ✅ wired | `/api/v1/ba/meetings**` |
 | Client | `/client/talent-pool` — candidate list, "recruit", **and** the placement pipeline | ✅ wired | `/api/v1/talent-pool`, `/recruitment-requests`, `/placements**` |
 | HR | `/hr/onboarding` | ✅ wired | `/api/v1/hr/onboardings**`, `/hr/employees` |
@@ -123,7 +125,7 @@ backend with no CORS setup. To point at a deployed backend instead, set
 | Student | `/student/subscription` — plan list **and checkout** | ✅ wired | `GET /plans`, `GET /subscriptions/me`, `POST /subscriptions/checkout` (real gateway) |
 | Student | `/student/dashboard` (no-subscription guard) | ✅ wired | `GET /api/v1/subscriptions/me` → redirect to `/student/subscription` if null |
 | — | **everything below is still localStorage mock** | ❌ | — |
-| Lead-gen | `/leads/pipeline`, `/leads/targets`, campaign "Send" helper | ❌ mock | `/leads` has no per-lead detail / activity list / delete yet |
+| Lead-gen | campaign "Send" helper (bulk WhatsApp/email), public landing-page capture form (`Home.jsx`) | ❌ mock | opens `wa.me`/`mailto` tabs; no unauthenticated inbound-lead endpoint |
 | BA | `/ba/documents`, `/ba/resource-planning`, `/ba/client-review` | ❌ mock | doc API is text-only (no file upload); no resource-plan endpoint |
 | Client | `/client/projects`, `/client/demos` | ❌ mock | no project-brief / demo endpoint |
 | HR | `/hr/attendance` **Attendance + Check-in tabs**, `/hr/documents` **letter tabs**, Exit page's **PIP tab** | ❌ mock | no biometric-attendance endpoint; letters are a separate `/hr/letters` flow |
@@ -248,18 +250,50 @@ ARTICLE/VIDEO/BOOK/TOOL/TEMPLATE/COURSE/OTHER). Edit → `PUT /{id}`. Delete →
 
 ---
 
-## 7 · Flow E — Lead campaigns (`sales@moriah.test`)
+## 7 · Flow E — Lead-gen: campaigns, pipeline & leaderboard (`sales@moriah.test`)
 
-`/leads/campaigns`.
+The `dev` seed gives `sales@` one lead per pipeline stage, two logged activities and a
+current-month `sales_targets` row, so all three pages have data on first load.
 
-**E1 · List.** `GET /api/v1/leads/campaigns` on load.
-**E2 · Create.** **New Campaign** → name + channel (EMAIL/SOCIAL/EVENT/REFERRAL/PAID_ADS/WEBINAR)
-+ optional dates, budget, target leads → `POST /api/v1/leads/campaigns` → status **PLANNED**.
-**E3 · Edit / status.** Row → **Edit** → status **ACTIVE** → `PUT /api/v1/leads/campaigns/{id}`.
-**E4 · Cancel.** Row → **Cancel** → `DELETE /api/v1/leads/campaigns/{id}` → status **CANCELLED**.
+### E1 · Campaigns — `/leads/campaigns`
 
-> The row-click **"Send"** modal is a client-side helper only — it reads the still-mock
-> `getLeads()` and opens `wa.me` / `mailto` tabs; templates live in `localStorage`.
+- **List** → `GET /api/v1/leads/campaigns`.
+- **New Campaign** → name + channel (EMAIL/SOCIAL/EVENT/REFERRAL/PAID_ADS/WEBINAR) + optional
+  dates, budget, target leads → `POST /api/v1/leads/campaigns` → **PLANNED**.
+- **Edit** → status **ACTIVE** → `PUT /api/v1/leads/campaigns/{id}`.
+- **Cancel** → `DELETE /api/v1/leads/campaigns/{id}` → **CANCELLED** (row stays).
+- The row-click **"Send"** modal is a client-side helper only — opens `wa.me` / `mailto` tabs;
+  it *does* log a real `POST /api/v1/leads/{id}/activities` per recipient.
+
+### E2 · Pipeline — `/leads/pipeline`
+
+- **Board** → `GET /api/v1/leads?size=100`; columns are the FE stage labels mapped from
+  `LeadStatus` (`Plan Selected` = `COUNSELLING_DONE`).
+- **Capture** → **New Lead** (name, phone, **email required**, type, source ∈ Landing Page /
+  College Outreach / Corporate Inquiry / Referral / Walk-in, deal value) → `POST /api/v1/leads`.
+  A second submit for the same email+phone **updates that lead in place** (server dedupe) — never
+  a duplicate row.
+- **Drag a card forward** → `PUT /api/v1/leads/{id}/status` `{newStatus}`. Skipping a stage →
+  `409 LEAD_PIPELINE_SKIP`.
+- **Drag backward** → the page prompts for a reason → `{newStatus, reason}` (409 without it).
+- **Drag to "Won / Enrolled"** → the page prompts for the student's registered **email** →
+  `{newStatus:"ENROLLED", convertedUserEmail}`; the backend links `converted_user_id`.
+- **Edit** (pencil) → `PUT /api/v1/leads/{id}` (name / type / deal value only — phone, email and
+  source are fixed at capture).
+- **Log interaction** (phone icon) → the drawer lazy-loads history via
+  `GET /api/v1/leads/{id}/activities`; saving → `POST …/activities` `{activityType, outcome,
+  notes, nextFollowUpAt, occurredAt}`. A WhatsApp activity also fires the template dispatch
+  (no-op in dev — `WHATSAPP_ACCESS_TOKEN` is a placeholder).
+- **Archive** (trash) → `DELETE /api/v1/leads/{id}` → soft delete; the row + its activity
+  history stay, it just leaves the board and the leaderboard.
+
+### E3 · Leaderboard — `/leads/targets`
+
+- `GET /api/v1/leads/targets/leaderboard` — one row per agent with a non-archived lead: live
+  `totalLeads` / `converted` / `pipelineValue` from `leads`, plus calls-made / quota columns
+  from that agent's current-month `sales_targets` row (null if none). The FE re-derives the
+  commission tiers (5 % / 8 % / 10 %) from `pipelineValue`.
+- `GET /api/v1/leads/targets/me` still backs any "my target" widget (404 → no target set).
 
 ---
 

@@ -314,12 +314,19 @@ patch — keep its 4-space / LF / no-unicode-escape formatting if you patch it a
 association was off-by-one for this codebase's mapping-then-preauth style and dropped bare
 `@GetMapping`; now correct for all 192 handlers.
 
-**`mockData.js` / `pipEngine.js` cannot be deleted** — 7 feature areas have no backend (BA docs
-+ resource plans, client project briefs, lead pipeline detail/activity/delete, developer projects
-+ bug challenges, HR biometric attendance, trainer cross-batch student mgmt, student
-`getPerformanceSummary` + auto-PIP). `placementPipeline.js` stays too (now a display-helper +
-backend adapter, not a mock).
+**Lead pipeline is now WIRED** (backend `3208192`, FE `d16349f`). V34 added `deal_value` /
+`next_follow_up_at` / `archived_at` to `leads`; new endpoints `GET`/`PUT`/`DELETE /api/v1/leads/{id}`,
+`GET /leads/{id}/activities`, `GET /leads/targets/leaderboard`; `UpdateLeadStatusRequest` also
+takes `convertedUserEmail`. `crmService.js` lead layer + `leadgen/Pipeline.jsx` no longer use
+`msh_crm_leads`. Also wired earlier this session: a **client-side audit trail** (`utils/auditLog.js`,
+FE `88daf4f`) and **2FA QR codes** (`qrcode.react`, FE `fd0c681`).
 
-Frontend HEAD `038d67f`. Backend HEAD `fc5a84b` (code HEAD `60e58d3`).
+**`mockData.js` / `pipEngine.js` still cannot be deleted** — 6 feature areas have no backend
+(BA docs + resource plans, client project briefs, developer projects + bug challenges, HR
+biometric attendance, trainer cross-batch student mgmt, student `getPerformanceSummary` +
+auto-PIP) + the public landing-page lead form (`Home.jsx` — no unauthenticated inbound endpoint).
+`placementPipeline.js` stays too (display-helper + backend adapter).
+
+Frontend HEAD `d16349f`. Backend HEAD `3208192`.
 `README.md` still has the user's uncommitted Razorpay-test-key edit — never `git add -A`; scope
-every `git add`.
+every `git add`. Untracked `*_Integration*.zip` / `bun.lock` in both repos are the user's — leave them.

@@ -537,19 +537,33 @@ verified server-side, the PM can't override it. Other outcomes: `TERMINATED`, `R
 **Step 1 — create a lead** · `POST {{baseUrl}}/api/v1/leads`
 ```json
 { "name": "Ravi Kumar", "email": "ravi.k@example.com", "phone": "919812300011",
-  "source": "LANDING_PAGE", "leadType": "B2C", "institution": "Self", "interestedPlanId": null }
+  "source": "LANDING_PAGE", "leadType": "B2C", "institution": "Self",
+  "interestedPlanId": null, "dealValue": 29999.00 }
 ```
 → keep `data.id` as «leadId». (Same email+phone again → updates the existing lead + logs an
-activity, never a duplicate.)
+activity, never a duplicate. `dealValue` is optional.)
 
 **Step 2 — list** · `GET {{baseUrl}}/api/v1/leads?status=NEW&source=LANDING_PAGE`.
+Archived leads are never returned.
+
+**Step 2b — one lead** · `GET {{baseUrl}}/api/v1/leads/«leadId»` → `data.nextFollowUpAt` is the
+latest follow-up across its activities. `404` if it was archived.
 
 **Step 3 — move the pipeline** · `PUT {{baseUrl}}/api/v1/leads/«leadId»/status`
 ```json
-{ "newStatus": "CONTACTED", "reason": "First call done", "lostReason": null, "convertedUserUuid": null }
+{ "newStatus": "CONTACTED", "reason": "First call done", "lostReason": null,
+  "convertedUserUuid": null, "convertedUserEmail": null }
 ```
-Forward skips → `409`. Backward → allowed **with** `reason`. `LOST` needs `lostReason`.
-`ENROLLED` needs `convertedUserUuid`.
+Forward skips → `409 LEAD_PIPELINE_SKIP`. Backward → allowed **with** `reason`. `LOST` needs
+`lostReason`. `ENROLLED` needs **`convertedUserUuid` or `convertedUserEmail`** (the email of an
+existing user account; uuid wins if both given).
+
+**Step 3b — edit descriptive fields** · `PUT {{baseUrl}}/api/v1/leads/«leadId»`
+```json
+{ "name": null, "leadType": "B2B", "institution": "Zoho Corp", "interestedPlanId": null,
+  "dealValue": 450000.00 }
+```
+Partial — `null` fields are left unchanged. Cannot touch email/phone (dedupe identity) or status.
 
 **Step 4 — log an activity** · `POST {{baseUrl}}/api/v1/leads/«leadId»/activities`
 ```json
@@ -559,7 +573,19 @@ Forward skips → `409`. Backward → allowed **with** `reason`. `LOST` needs `l
 (`activityType: "WHATSAPP"` also fires an outbound template — needs `WHATSAPP_*` keys and a
 `templateCode`.)
 
-**Step 5 — my targets** · `GET {{baseUrl}}/api/v1/leads/targets/me`.
+**Step 4b — activity history** · `GET {{baseUrl}}/api/v1/leads/«leadId»/activities` — paginated,
+newest first (includes the auto `STATUS_CHANGE` / `LEAD_CREATED` / `LEAD_UPDATED` rows).
+
+**Step 5 — my targets** · `GET {{baseUrl}}/api/v1/leads/targets/me` (`404 SALES_TARGET_NOT_FOUND`
+if none set for the current month — the `dev` seed sets one for `sales@`).
+
+**Step 5b — the leaderboard** · `GET {{baseUrl}}/api/v1/leads/targets/leaderboard` → one row per
+agent: live `totalLeads` / `converted` / `pipelineValue` from `leads` + quota columns from that
+agent's current-month `sales_targets` row (null when unset).
+
+**Step 6 — archive a lead** · `DELETE {{baseUrl}}/api/v1/leads/«leadId»` · no body → soft delete
+(row + activity history kept; drops out of every list and the leaderboard). Re-archiving →
+`409 LEAD_ALREADY_ARCHIVED`.
 
 ---
 
@@ -1241,7 +1267,7 @@ prints a `whsec_…` (put it in `.env`), then `stripe trigger checkout.session.c
 | `POST /assessments/{id}/attempts` | `data.id`, `data.questions[].id` | `«attemptId»`, `questionId` in the submit body |
 | `POST /subscriptions/checkout` | `data.paymentId`, `data.razorpayOrderId` | webhook body `client_reference_id` / `order_id` |
 | `POST /certificates/issue` | `data.verificationCode`, `data.id` | `GET /certificates/verify/{code}`, `/certificates/{id}/revoke` |
-| `POST /leads` | `data.id` | `«leadId»` — `/leads/{id}/status`, `/leads/{id}/activities` |
+| `POST /leads` | `data.id` | `«leadId»` — `GET`/`PUT`/`DELETE /leads/{id}`, `/leads/{id}/status`, `/leads/{id}/activities` |
 | `POST /hr/employees` | `data.id` | `«employeeId»` — `payroll/generate` `lines[].employeeId` |
 | `GET /admin/users` | `data.content[].uuid` | `/admin/users/{userUuid}/status`, `/roles` |
 | `GET /notifications` | `data.content[].id` | `«notificationId»` — `PUT /notifications/{id}/read` |
