@@ -6,9 +6,24 @@ body** and **which field of one response feeds the next request**.
 - Base URL (local): `http://localhost:8080` — written `{{baseUrl}}` below.
 - Every non-public call needs `Authorization: Bearer «accessToken»`.
 - `«name»` = a value you captured from an earlier step.
-- Companion docs: `API-Documentation.md` (every endpoint's shapes), `PROJECT-REFERENCE.md`
+- **Every step below names its auth explicitly** as `· auth: «token as ROLE»` — meaning "log in
+  as the seeded `ROLE` account (Flow 1), take its `data.tokens.accessToken`, and send it as the
+  `Authorization: Bearer` header on this call". `· auth: none` = public, send no header.
+  If you send a token whose role is not listed, you get `403 INSUFFICIENT_ROLE` (or `404` when the
+  route hides existence from non-owners).
+- Companion docs: `API-Documentation.md` (every endpoint's shapes + the **Auth** line, which is
+  read straight from each controller's `@PreAuthorize` — regenerate with
+  `python scripts/gen-api-doc.py` after any controller change), `PROJECT-REFERENCE.md`
   (call chains), `webhooks.md` (gateway signatures), `required-integrations.md` (API keys),
   `postman/` (importable collection — the login request auto-captures the token).
+
+> **Doc-accuracy note (2026-09-03).** `docs/openapi.json` is a static export from a running app and
+> currently predates the Flow 12–19 endpoints below — so those ~35 routes are absent from both
+> `openapi.json` and the generated `API-Documentation.md`. To refresh: start the app and re-run the
+> pipeline in `scripts/README.md` (`GET /v3/api-docs` → `openapi.json` → `gen-api-doc.py`). The
+> **Auth** lines for routes that *are* in `API-Documentation.md` were regenerated on 2026-09-03 and
+> now match the controllers (this fixed stale lines on `PUT /admin/plans/{id}`, `POST /ba/documents`
+> and the two `GET /batches` routes — see the Flow 2 Step 3 note).
 
 ---
 
@@ -32,6 +47,19 @@ All password **`Password123!`**. UUIDs are fixed so you can paste them.
 Also seeded: batch `FS-2026-01` (track `FULL_STACK`, PM = `pm@`), sprint 1 (`ACTIVE`), 3 tasks
 (one `BACKLOG` "Implement GET /todos", one `ASSIGNED`, one `IN_REVIEW`), one `SCHEDULED` standup,
 a `PUBLISHED` project "Todo API", one `NEW` lead, two `employees`.
+
+### Which token unlocks which flow
+
+| Log in as | Token drives | Flows |
+|---|---|---|
+| `student1@` (STUDENT) | learning journey, quiz-taking, own interviews, notifications, resource/lesson **browse** | 2, 4 (student half), 12, 13 (browse), 14 (browse + submit), 16 (`/me`) |
+| `pm@` (TRAINER_PM) | batches, sprints, tasks, standups, reviews, graduation, interviews, question banks | 3, 6, 7 (browse), 16, 17 |
+| `dev@` (DEVELOPER) | projects, bug challenges, requirement-doc **review**, resource & lesson **authoring** | 4, 13 (author), 14 (author), 15 (Dev side) |
+| `sales@` (LEAD_GEN) | leads, lead campaigns, talent-pool browse | 8, 18, 20 (browse) |
+| `ba@` (BUSINESS_ANALYST) | requirement documents, allocations, BA meetings, resource authoring | 13 (author), 15 (BA side), 19 |
+| `hr@` (HR_MANAGER) | employees, payroll, letters, exits, onboarding, disciplinary, recruitment decisions | 9, 20 (decide), 21 |
+| `client@` (CLIENT) | talent-pool browse, recruitment requests | 20 |
+| `admin@` (ADMIN) | everything above + admin metrics/users/plans/payments/coupons/audit/exports | 10, 22, and any staff route |
 
 > **You do not need the payment flow to test the learning journey** — `student1` / `student2`
 > are already enrolled. Payments (Flow 5) need real Razorpay/Stripe **test-mode** keys.
@@ -172,8 +200,15 @@ otherwise pull the token from the DB:
 ```
 → response `completionPercent` recalculates server-side.
 
-**Step 3 — my batches** · `GET {{baseUrl}}/api/v1/batches`
+**Step 3 — my batches** · `GET {{baseUrl}}/api/v1/batches` · auth: «token as STUDENT»
 → from `data.content[]` find `name = "FS-2026-01"`; keep its `id` as «batchId».
+
+> **Auth scoping (fixed 2026-09-03).** This route is `TRAINER_PM` / `ADMIN` / `STUDENT`. A
+> STUDENT-only token gets **only the batches they are enrolled in** (any `batch_students` status),
+> not the whole list — the same narrowing `GET /sprints`, `GET /tasks` and `GET /standups` already
+> do for students. `GET /api/v1/batches/{id}` likewise returns `404 BATCH_NOT_FOUND` to a student
+> who is not enrolled in that batch. TRAINER_PM / ADMIN still see every batch. (Before this fix the
+> controller was staff-only, contradicting the published API doc — now code and doc agree.)
 
 **Step 4 — sprints in my batch** · `GET {{baseUrl}}/api/v1/sprints?batchId=«batchId»`
 → keep the `ACTIVE` sprint's `id` as «sprintId».
@@ -623,6 +658,432 @@ require the student to be `GRADUATED` or cleanly `EXITED` — never terminated.
 
 ---
 
+# Flows 12–22 · Post-launch modules (not yet in `openapi.json` / `API-Documentation.md`)
+
+Every route here is under `/api/v1`. Auth is the controller's `@PreAuthorize` verbatim.
+`«…»` values still carry over exactly as in Appendix C.
+
+---
+
+## Flow 12 · Notifications — any logged-in user
+
+**Step 1 — my feed** · `GET {{baseUrl}}/api/v1/notifications?page=0&size=20` · auth: «any token»
+(add `&unreadOnly=true` to limit to unread). → `data.content[]` rows are
+`{ id, templateCode, payload, read, createdAt }`. Keep one unread row's `id` as «notificationId».
+
+**Step 2 — unread badge count** · `GET {{baseUrl}}/api/v1/notifications/unread-count` · auth: «any token»
+→ `data.count`.
+
+**Step 3 — mark one read** · `PUT {{baseUrl}}/api/v1/notifications/«notificationId»/read` · no body ·
+auth: «same token as Step 1» → idempotent; `404` if the id is not the caller's own row.
+
+**Step 4 — mark all read** · `PUT {{baseUrl}}/api/v1/notifications/read-all` · no body ·
+auth: «any token» → `data.updated` = how many rows flipped.
+
+---
+
+## Flow 13 · Resource library — browse (any user) · author (curators)
+
+Curators = `TRAINER_PM` / `DEVELOPER` / `BUSINESS_ANALYST` / `ADMIN`.
+
+**Step 1 — browse** · `GET {{baseUrl}}/api/v1/resources?page=0&size=20` · auth: «any token»
+(optional `&category=ARTICLE` — one of `ARTICLE｜VIDEO｜BOOK｜TOOL｜TEMPLATE｜COURSE｜OTHER` — and
+`&search=spring`). → keep a `data.content[].id` as «resourceId».
+
+**Step 2 — one resource** · `GET {{baseUrl}}/api/v1/resources/«resourceId»` · auth: «any token».
+
+**Step 3 — add a resource** · `POST {{baseUrl}}/api/v1/resources` · auth: «token as DEVELOPER»
+```json
+{ "title": "Spring Data JPA Guide", "description": "Reference for repositories & queries.",
+  "category": "ARTICLE", "url": "https://docs.spring.io/spring-data/jpa/reference/",
+  "tags": ["spring","jpa","backend"] }
+```
+→ keep `data.id` as «resourceId». The caller becomes the resource's creator.
+
+**Step 4 — edit** · `PUT {{baseUrl}}/api/v1/resources/«resourceId»` · auth: «creator token or ADMIN»
+— same body shape as Step 3. `403` for a curator who is not the creator (and not ADMIN).
+
+**Step 5 — deactivate** · `DELETE {{baseUrl}}/api/v1/resources/«resourceId»` · no body ·
+auth: «creator token or ADMIN» → sets `is_active = false`; the row is never deleted.
+
+---
+
+## Flow 14 · Video lessons + per-lesson quiz
+
+Authoring roles = `DEVELOPER` / `TRAINER_PM` / `ADMIN`. Browsing / progress / quiz submit = any user.
+
+### Author side (login as `dev@`)
+
+**Step 1 — create a lesson** · `POST {{baseUrl}}/api/v1/lessons` · auth: «token as DEVELOPER»
+```json
+{ "title": "Intro to Spring Boot", "description": "Beans, auto-config, starters.",
+  "moduleName": "Backend Foundations", "videoUrl": "https://youtu.be/dQw4w9WgXcQ",
+  "durationSeconds": 900, "sortOrder": 0, "published": true }
+```
+→ keep `data.id` as «lessonId». (`published:false` hides it from student browse until
+`PUT /lessons/{id}` flips it.)
+
+**Step 2 — add a quiz question** · `POST {{baseUrl}}/api/v1/lessons/«lessonId»/quiz/questions` ·
+auth: «creator token or ADMIN»
+```json
+{ "questionText": "Which annotation bootstraps a Spring Boot app?",
+  "options": ["@SpringBootApplication","@EnableAutoConfiguration","@ComponentScan","@Configuration"],
+  "correctIndex": 0, "explanation": "@SpringBootApplication = @Configuration + @EnableAutoConfiguration + @ComponentScan" }
+```
+Repeat for as many questions as you want. `correctIndex` must be `< options.length` (2–6 options).
+→ keep each `data.id` as «quizQuestionId». **`correctIndex` is never returned on read.**
+
+**Step 3 — remove a question** (optional) ·
+`DELETE {{baseUrl}}/api/v1/lessons/«lessonId»/quiz/questions/«quizQuestionId»` · no body ·
+auth: «creator token or ADMIN».
+
+### Student side (login as `student1@`)
+
+**Step 4 — browse lessons** · `GET {{baseUrl}}/api/v1/lessons?page=0&size=20` · auth: «token as STUDENT»
+(optional `&module=Backend%20Foundations`). Each row carries the caller's `progress`.
+→ keep a `data.content[].id` as «lessonId». `GET /api/v1/lessons/modules` lists distinct module
+names + counts.
+
+**Step 5 — report watch progress** · `POST {{baseUrl}}/api/v1/lessons/«lessonId»/progress` ·
+auth: «token as STUDENT»
+```json
+{ "watchedSeconds": 420, "completed": false }
+```
+Upsert — `watchedSeconds` never moves backwards; `completed:true` (or crossing the quiz pass mark)
+stamps `completedAt` once.
+
+**Step 6 — my progress across all lessons** · `GET {{baseUrl}}/api/v1/lessons/me/progress` ·
+auth: «token as STUDENT».
+
+**Step 7 — read the quiz** · `GET {{baseUrl}}/api/v1/lessons/«lessonId»/quiz` · auth: «any token»
+→ `data[]` = `{ id, questionText, options, explanation }` (no answer key). Keep the `id`s in order
+as «q1Id», «q2Id»…
+
+**Step 8 — submit the quiz** · `POST {{baseUrl}}/api/v1/lessons/«lessonId»/quiz/submit` ·
+auth: «token as STUDENT»
+```json
+{ "answers": [0, 2] }
+```
+`answers[i]` is the chosen option index for question `i`, **positionally matched** to Step 7's
+order. A missing or out-of-range entry counts wrong. Response:
+```json
+{ "success": true, "data": {
+    "score": 1, "total": 2, "passed": false, "passMarkPercent": 60, "submittedAt": "…" } }
+```
+`passed` = `score*100 >= total*60`. One attempt row per `(lesson, user)` — resubmitting overwrites
+it. On the first pass, the lesson's `LessonProgress` is upserted to `COMPLETED`.
+
+---
+
+## Flow 15 · Requirement documents — BA authors, Developer reviews
+
+### BA side (login as `ba@`)
+
+**Step 1 — create a doc** · `POST {{baseUrl}}/api/v1/ba/documents` · auth: «token as BUSINESS_ANALYST»
+```json
+{ "clientProjectId": 1, "docType": "BRD", "title": "Todo API — Business Requirements",
+  "content": "## Goals\n- CRUD todos\n- Auth\n" }
+```
+`docType`: `BRD｜SRS｜FRS｜USER_STORY`. → lands `IN_REVIEW`. Keep `data.id` as «docId».
+
+**Step 2 — approve it** · `PUT {{baseUrl}}/api/v1/ba/documents/«docId»/approve` · no body ·
+auth: «token as BUSINESS_ANALYST» → `IN_REVIEW → APPROVED`.
+
+**Step 3 — list (BA view)** · `GET {{baseUrl}}/api/v1/ba/documents?status=APPROVED` ·
+auth: «token as BUSINESS_ANALYST» (optional `&clientProjectId=1`).
+
+### Developer side (login as `dev@`)
+
+**Step 4 — list docs to review** · `GET {{baseUrl}}/api/v1/dev/requirement-documents?status=APPROVED` ·
+auth: «token as DEVELOPER» (optional `&clientProjectId=1`). → keep a `data.content[].id` as «docId».
+
+**Step 5 — read full content** · `GET {{baseUrl}}/api/v1/dev/requirement-documents/«docId»` ·
+auth: «token as DEVELOPER» → `data.content` is the full markdown.
+
+**Step 6 — acknowledge** · `POST {{baseUrl}}/api/v1/dev/requirement-documents/«docId»/acknowledge` ·
+no body · auth: «token as DEVELOPER» → stamps `dev_reviewed_at` / `dev_reviewed_by` for the caller;
+idempotent; **does not** change the document status.
+
+---
+
+## Flow 16 · Student interviews — PM schedules, student views
+
+**Step 1 (PM) — schedule** · `POST {{baseUrl}}/api/v1/interviews` · auth: «token as TRAINER_PM»
+```json
+{ "studentUuid": "11111111-0000-0000-0000-000000000008",
+  "interviewType": "MOCK", "scheduledAt": "2026-09-20T10:00:00Z", "durationMinutes": 45,
+  "mode": "ONLINE", "location": null, "interviewerName": "Priya (PM)",
+  "meetingLink": "https://meet.google.com/abc-defg-hij" }
+```
+`interviewType`: `MOCK｜TECHNICAL｜HR｜PLACEMENT`. `mode`: `ONLINE｜ONSITE`.
+→ starts `SCHEDULED`; keep `data.id` as «interviewId».
+
+**Step 2 (PM) — list** · `GET {{baseUrl}}/api/v1/interviews?status=SCHEDULED` · auth: «token as TRAINER_PM»
+(optional `&type=MOCK`, `&studentUuid=…`).
+
+**Step 3 (student) — my interviews** · `GET {{baseUrl}}/api/v1/interviews/me` · auth: «token as STUDENT».
+
+**Step 4 (PM) — update / add feedback** · `PUT {{baseUrl}}/api/v1/interviews/«interviewId»` ·
+auth: «token as TRAINER_PM»
+```json
+{ "interviewType": "MOCK", "scheduledAt": "2026-09-20T10:00:00Z", "durationMinutes": 45,
+  "mode": "ONLINE", "location": null, "interviewerName": "Priya (PM)",
+  "meetingLink": "https://meet.google.com/abc-defg-hij",
+  "status": "COMPLETED", "feedback": "Strong on data structures; revise system design.", "rating": 4 }
+```
+
+**Step 5 (PM) — cancel** · `DELETE {{baseUrl}}/api/v1/interviews/«interviewId»` · no body ·
+auth: «token as TRAINER_PM» → `status = CANCELLED`, never row-deleted.
+
+---
+
+## Flow 17 · Question banks — assessment authoring (`pm@` or `admin@`)
+
+**Step 1 — create a bank** · `POST {{baseUrl}}/api/v1/assessments/banks` · auth: «token as TRAINER_PM»
+```json
+{ "name": "Java Core — Set A", "topic": "Java", "description": "Reusable MCQ/CODE pool." }
+```
+→ keep `data.id` as «bankId».
+
+**Step 2 — list banks** · `GET {{baseUrl}}/api/v1/assessments/banks?active=true` ·
+auth: «token as TRAINER_PM» (optional `&topic=Java`).
+
+**Step 3 — add a question** · `POST {{baseUrl}}/api/v1/assessments/banks/«bankId»/questions` ·
+auth: «token as TRAINER_PM»
+```json
+{ "questionText": "What is the default value of a boolean field?",
+  "questionType": "MCQ", "options": ["true","false","0","null"],
+  "correctAnswerIndices": [1], "marks": 2, "explanation": "Primitive boolean defaults to false.",
+  "difficulty": "EASY" }
+```
+`questionType`: `MCQ｜MULTI_SELECT｜CODE`. A `CODE` question must have **no** `options` and **no**
+`correctAnswerIndices`; MCQ/MULTI_SELECT need ≥ 2 options. → keep `data.id` as «bankQuestionId».
+**Answer keys are never returned** on `GET .../questions`.
+
+**Step 4 — list questions** · `GET {{baseUrl}}/api/v1/assessments/banks/«bankId»/questions` ·
+auth: «token as TRAINER_PM».
+
+**Step 5 — rename / toggle active** · `PUT {{baseUrl}}/api/v1/assessments/banks/«bankId»` ·
+auth: «token as TRAINER_PM»
+```json
+{ "name": "Java Core — Set A (2026)", "topic": "Java", "description": "…", "active": true }
+```
+
+**Step 6 — remove a question** ·
+`DELETE {{baseUrl}}/api/v1/assessments/banks/«bankId»/questions/«bankQuestionId»` · no body ·
+auth: «token as TRAINER_PM».
+
+**Step 7 — deactivate the bank** · `DELETE {{baseUrl}}/api/v1/assessments/banks/«bankId»` · no body ·
+auth: «token as TRAINER_PM» → `is_active = false`; never row-deletes.
+
+---
+
+## Flow 18 · Lead campaigns — login as `sales@moriah.test` (1A)
+
+**Step 1 — create** · `POST {{baseUrl}}/api/v1/leads/campaigns` · auth: «token as LEAD_GEN»
+```json
+{ "name": "Sep 2026 LinkedIn Push", "channel": "SOCIAL", "description": "Target final-year CS.",
+  "startDate": "2026-09-01", "endDate": "2026-09-30", "budget": 50000.00, "targetLeads": 200 }
+```
+`channel`: `EMAIL｜SOCIAL｜EVENT｜REFERRAL｜PAID_ADS｜WEBINAR`. → starts `PLANNED`; keep `data.id` as
+«campaignId».
+
+**Step 2 — list** · `GET {{baseUrl}}/api/v1/leads/campaigns?status=PLANNED` · auth: «token as LEAD_GEN».
+
+**Step 3 — update (incl. status)** · `PUT {{baseUrl}}/api/v1/leads/campaigns/«campaignId»` ·
+auth: «token as LEAD_GEN» — full body as Step 1 plus `"status": "ACTIVE"`
+(`PLANNED｜ACTIVE｜COMPLETED｜CANCELLED`).
+
+**Step 4 — cancel** · `DELETE {{baseUrl}}/api/v1/leads/campaigns/«campaignId»` · no body ·
+auth: «token as LEAD_GEN» → `status = CANCELLED`, never row-deleted.
+
+---
+
+## Flow 19 · BA meetings — login as `ba@moriah.test` (1A)
+
+**Step 1 — schedule** · `POST {{baseUrl}}/api/v1/ba/meetings` · auth: «token as BUSINESS_ANALYST»
+```json
+{ "title": "Kickoff — Todo API", "agenda": "Scope, timeline, stakeholders.",
+  "clientProjectId": 1, "scheduledAt": "2026-09-10T09:30:00Z", "durationMinutes": 60,
+  "location": "Google Meet" }
+```
+→ starts `SCHEDULED`; keep `data.id` as «meetingId».
+
+**Step 2 — list** · `GET {{baseUrl}}/api/v1/ba/meetings?status=SCHEDULED` ·
+auth: «token as BUSINESS_ANALYST» (optional `&clientProjectId=1`).
+
+**Step 3 — update / add minutes** · `PUT {{baseUrl}}/api/v1/ba/meetings/«meetingId»` ·
+auth: «token as BUSINESS_ANALYST» — full body as Step 1 plus `"status": "COMPLETED"` and
+`"minutes": "Agreed on v1 scope; BA to draft BRD by 2026-09-15."`.
+
+**Step 4 — cancel** · `DELETE {{baseUrl}}/api/v1/ba/meetings/«meetingId»` · no body ·
+auth: «token as BUSINESS_ANALYST» → `status = CANCELLED`.
+
+---
+
+## Flow 20 · Talent pool & recruitment requests
+
+Browse talent = `CLIENT` / `ADMIN` / `HR_MANAGER` / `LEAD_GEN`. Raise a request = `CLIENT`.
+Decide = `ADMIN` / `HR_MANAGER`.
+
+**Step 1 (client) — browse candidates** · `GET {{baseUrl}}/api/v1/talent-pool?search=java&skill=spring` ·
+auth: «token as CLIENT» → `data.content[]` candidate profiles; keep a `data.content[].uuid` as
+«candidateUuid».
+
+**Step 2 (client) — request to recruit** · `POST {{baseUrl}}/api/v1/recruitment-requests` ·
+auth: «token as CLIENT»
+```json
+{ "candidateUuid": "«candidateUuid»", "roleTitle": "Junior Backend Engineer",
+  "engagementType": "FULL_TIME", "message": "6-month contract, remote." }
+```
+`engagementType`: `FULL_TIME｜CONTRACT｜INTERNSHIP`. → lands `PENDING`; keep `data.id` as «requestId».
+
+**Step 3 (client) — list my requests** · `GET {{baseUrl}}/api/v1/recruitment-requests` ·
+auth: «token as CLIENT» (a CLIENT sees only their own; ADMIN / HR see all).
+
+**Step 4 (HR/Admin) — decide** · `PUT {{baseUrl}}/api/v1/recruitment-requests/«requestId»/status` ·
+auth: «token as HR_MANAGER»
+```json
+{ "status": "APPROVED", "decisionNote": "Cleared with the batch PM." }
+```
+`status` must be `APPROVED` or `REJECTED` (anything else → `400`).
+
+---
+
+## Flow 21 · HR employee lifecycle — login as `hr@moriah.test` (1B — HR has mandatory 2FA)
+
+Uses «employeeId» from **Flow 9 Step 1** (`POST /hr/employees` → `data.id`).
+List: `GET {{baseUrl}}/api/v1/hr/employees?status=ACTIVE&department=Engineering&search=EMP-1001`.
+
+### Onboarding
+
+**Step 1 — start** · `POST {{baseUrl}}/api/v1/hr/onboardings` · auth: «token as HR_MANAGER»
+```json
+{ "employeeId": «employeeId», "startDate": "2026-09-01",
+  "buddyUuid": "11111111-0000-0000-0000-000000000005" }
+```
+→ starts `NOT_STARTED`; keep `data.id` as «onboardingId».
+
+**Step 2 — list / get** · `GET {{baseUrl}}/api/v1/hr/onboardings?status=NOT_STARTED` /
+`GET {{baseUrl}}/api/v1/hr/onboardings/«onboardingId»` · auth: «token as HR_MANAGER».
+
+**Step 3 — progress it** · `PUT {{baseUrl}}/api/v1/hr/onboardings/«onboardingId»` ·
+auth: «token as HR_MANAGER»
+```json
+{ "startDate": "2026-09-01", "buddyUuid": "11111111-0000-0000-0000-000000000005",
+  "status": "COMPLETED",
+  "checklist": [{ "label": "Laptop issued", "done": true }, { "label": "Email set up", "done": true }],
+  "notes": "All set." }
+```
+`status`: `NOT_STARTED｜IN_PROGRESS｜COMPLETED｜CANCELLED`; `COMPLETED` stamps `completedAt`.
+
+### Disciplinary
+
+**Step 4 — raise** · `POST {{baseUrl}}/api/v1/hr/disciplinary` · auth: «token as HR_MANAGER»
+```json
+{ "employeeId": «employeeId», "actionType": "WRITTEN_WARNING", "severity": "MEDIUM",
+  "incidentDate": "2026-09-05", "description": "Repeated late logins despite a verbal warning." }
+```
+`actionType`: `VERBAL_WARNING｜WRITTEN_WARNING｜PIP｜SUSPENSION｜TERMINATION_RECOMMENDATION｜OTHER`.
+`severity`: `LOW｜MEDIUM｜HIGH`. → starts `OPEN`; keep `data.id` as «disciplinaryId».
+
+**Step 5 — list / get** · `GET {{baseUrl}}/api/v1/hr/disciplinary?status=OPEN&severity=MEDIUM` /
+`GET {{baseUrl}}/api/v1/hr/disciplinary/«disciplinaryId»` · auth: «token as HR_MANAGER».
+
+**Step 6 — update** · `PUT {{baseUrl}}/api/v1/hr/disciplinary/«disciplinaryId»` ·
+auth: «token as HR_MANAGER» — the four create fields are re-sent, plus `status` and the outcome text:
+```json
+{ "actionType": "WRITTEN_WARNING", "severity": "MEDIUM", "incidentDate": "2026-09-05",
+  "description": "Repeated late logins despite a verbal warning.",
+  "status": "RESOLVED", "actionTaken": "Written warning issued and acknowledged.",
+  "resolutionNotes": "No further incidents in 30 days." }
+```
+`status`: `OPEN｜ACKNOWLEDGED｜RESOLVED｜ESCALATED` — `ACKNOWLEDGED` / `RESOLVED` stamp their own timestamps.
+
+### Exit / offboarding
+
+**Step 7 — initiate** · `POST {{baseUrl}}/api/v1/hr/exits` · auth: «token as HR_MANAGER»
+```json
+{ "employeeId": «employeeId», "exitType": "RESIGNATION", "lastWorkingDay": "2026-10-31",
+  "reason": "Higher studies.", "noticePeriodDays": 30 }
+```
+`exitType`: `RESIGNATION｜TERMINATION｜RETIREMENT｜CONTRACT_END`. → starts `INITIATED`; keep
+`data.id` as «exitId».
+
+**Step 8 — list** · `GET {{baseUrl}}/api/v1/hr/exits?status=INITIATED` · auth: «token as HR_MANAGER»
+(optional `&employeeId=«employeeId»`).
+
+**Step 9 — progress the checklist** · `PUT {{baseUrl}}/api/v1/hr/exits/«exitId»` ·
+auth: «token as HR_MANAGER»
+```json
+{ "exitType": "RESIGNATION", "lastWorkingDay": "2026-10-31", "reason": "Higher studies.",
+  "noticePeriodDays": 30, "status": "IN_PROGRESS",
+  "clearanceChecklist": [{ "label": "Assets returned", "done": true },
+                         { "label": "Access revoked", "done": false }],
+  "exitInterviewNotes": "Positive; would rejoin." }
+```
+`status` here may be `INITIATED` or `IN_PROGRESS` only — sending `COMPLETED` is rejected (use
+Step 10).
+
+**Step 10 — finalise** · `POST {{baseUrl}}/api/v1/hr/exits/«exitId»/complete` · no body ·
+auth: «token as HR_MANAGER» → flips `employees.status` to `EXITED` (or `TERMINATED` when
+`exitType = TERMINATION`) and stamps `date_of_exit`. After this the experience/relieving letter in
+**Flow 9 Step 8** becomes available for that user.
+
+---
+
+## Flow 22 · Admin payments, coupons & runtime plans — login as `admin@moriah.test` (1B — mandatory 2FA)
+
+### Payments
+
+**Step 1 — list** · `GET {{baseUrl}}/api/v1/admin/payments?status=CAPTURED&gateway=RAZORPAY` ·
+auth: «token as ADMIN» (optional `&userUuid=…`). → keep a row's `id` as «paymentId» and its
+`gatewayOrderId` as «gatewayOrderId».
+
+**Step 2 — summary** · `GET {{baseUrl}}/api/v1/admin/payments/summary` · auth: «token as ADMIN»
+→ per-status counts + totals, plus total captured / refunded.
+
+**Step 3 — one payment** · `GET {{baseUrl}}/api/v1/admin/payments/«gatewayOrderId»` · auth: «token as ADMIN».
+
+**Step 4 — refund** · `POST {{baseUrl}}/api/v1/admin/payments/«gatewayOrderId»/refund` · auth: «token as ADMIN»
+```json
+{ "reason": "Customer requested within 7 days." }
+```
+Only a `CAPTURED` payment, once — otherwise `409 PAYMENT_NOT_REFUNDABLE`. Sets status `REFUNDED`
+optimistically; the gateway's own refund webhook then no-ops.
+
+### Coupons
+
+**Step 5 — create** · `POST {{baseUrl}}/api/v1/admin/coupons` · auth: «token as ADMIN»
+```json
+{ "code": "DIWALI25", "discountType": "PERCENTAGE", "discountValue": 25.0,
+  "validFrom": "2026-10-01", "validUntil": "2026-11-15", "maxRedemptions": 500 }
+```
+`discountType`: `PERCENTAGE｜FLAT`. `code` must match `^[A-Z0-9][A-Z0-9_-]*$`; a taken code →
+`409 COUPON_CODE_TAKEN`. → the `code` **is** the id for the next calls.
+
+**Step 6 — list** · `GET {{baseUrl}}/api/v1/admin/coupons` · auth: «token as ADMIN».
+
+**Step 7 — update** · `PUT {{baseUrl}}/api/v1/admin/coupons/DIWALI25` · auth: «token as ADMIN» —
+same body minus `code`, plus `"active": true`.
+
+**Step 8 — deactivate** · `DELETE {{baseUrl}}/api/v1/admin/coupons/DIWALI25` · no body ·
+auth: «token as ADMIN» → `active = false`; redemption history is kept.
+
+Use a live coupon in **Flow 5 Step 2** — `{ "couponCode": "DIWALI25", … }` on
+`POST /subscriptions/checkout`.
+
+### Runtime plans (create / retire — editing pricing is Flow 10 Step 6)
+
+**Step 9 — create a plan** · `POST {{baseUrl}}/api/v1/admin/plans` · auth: «token as ADMIN» — plan
+body as Flow 10 Step 6 plus a `"code"` (e.g. `"WEEKEND_TRACK"`; a taken code → `409 PLAN_CODE_TAKEN`).
+The plan cache is evicted on write.
+
+**Step 10 — retire a plan** · `DELETE {{baseUrl}}/api/v1/admin/plans/«planId»` · no body ·
+auth: «token as ADMIN» → `active = false`.
+
+---
+
 ## Appendix A · Getting a TOTP code from «secret» (5 ways)
 
 The secret is Base32; TOTP is **HMAC-SHA1, 6 digits, 30-second step**, ±1 step drift tolerated.
@@ -702,3 +1163,23 @@ prints a `whsec_…` (put it in `.env`), then `stripe trigger checkout.session.c
 | `POST /leads` | `data.id` | `«leadId»` — `/leads/{id}/status`, `/leads/{id}/activities` |
 | `POST /hr/employees` | `data.id` | `«employeeId»` — `payroll/generate` `lines[].employeeId` |
 | `GET /admin/users` | `data.content[].uuid` | `/admin/users/{userUuid}/status`, `/roles` |
+| `GET /notifications` | `data.content[].id` | `«notificationId»` — `PUT /notifications/{id}/read` |
+| `POST /resources` | `data.id` | `«resourceId»` — `PUT` / `DELETE /resources/{id}` |
+| `POST /lessons` | `data.id` | `«lessonId»` — `/lessons/{id}/quiz/**`, `/lessons/{id}/progress` |
+| `POST /lessons/{id}/quiz/questions` | `data.id` | `«quizQuestionId»` — `DELETE …/quiz/questions/{questionId}` |
+| `GET /lessons/{id}/quiz` | `data[].id` (in order) | positional index in `POST …/quiz/submit` `answers[]` |
+| `POST /ba/documents` | `data.id` | `«docId»` — `/ba/documents/{id}/approve`, then `/dev/requirement-documents/{id}` |
+| `GET /dev/requirement-documents` | `data.content[].id` | `«docId»` — `/dev/requirement-documents/{id}/acknowledge` |
+| `POST /interviews` | `data.id` | `«interviewId»` — `PUT` / `DELETE /interviews/{id}` |
+| `POST /assessments/banks` | `data.id` | `«bankId»` — `/assessments/banks/{id}/questions`, `PUT` / `DELETE` |
+| `POST /assessments/banks/{id}/questions` | `data.id` | `«bankQuestionId»` — `DELETE …/questions/{questionId}` |
+| `POST /leads/campaigns` | `data.id` | `«campaignId»` — `PUT` / `DELETE /leads/campaigns/{id}` |
+| `POST /ba/meetings` | `data.id` | `«meetingId»` — `PUT` / `DELETE /ba/meetings/{id}` |
+| `GET /talent-pool` | `data.content[].uuid` | `«candidateUuid»` — `POST /recruitment-requests` body |
+| `POST /recruitment-requests` | `data.id` | `«requestId»` — `PUT /recruitment-requests/{id}/status` |
+| `POST /hr/employees` | `data.id` | `«employeeId»` — `/hr/onboardings`, `/hr/disciplinary`, `/hr/exits` bodies |
+| `POST /hr/onboardings` | `data.id` | `«onboardingId»` — `PUT /hr/onboardings/{id}` |
+| `POST /hr/disciplinary` | `data.id` | `«disciplinaryId»` — `PUT /hr/disciplinary/{id}` |
+| `POST /hr/exits` | `data.id` | `«exitId»` — `PUT /hr/exits/{id}`, `POST /hr/exits/{id}/complete` |
+| `GET /admin/payments` | `data.content[].gatewayOrderId` | `«gatewayOrderId»` — `/admin/payments/{id}`, `…/refund` |
+| `POST /admin/coupons` | `data.code` | coupon `code` — `PUT` / `DELETE /admin/coupons/{code}`, `checkout` `couponCode` |

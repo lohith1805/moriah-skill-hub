@@ -398,7 +398,7 @@ Monthly captured revenue for an optional date range, defaults to the trailing 12
 
 Update a subscription plan's pricing/feature flags at runtime — cache evicted immediately
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: ADMIN
 
 **Path parameters:**
 
@@ -1611,7 +1611,7 @@ Allocate a student/staff user and batch to a client project
 
 Create a requirement document (BRD/SRS/FRS/USER_STORY) — lands IN_REVIEW directly
 
-**Auth:** Authenticated (any logged-in user) — no explicit role check on the route
+**Auth:** Role: BUSINESS_ANALYST or ADMIN
 
 **Request body:**
 
@@ -1780,7 +1780,7 @@ Create a batch — the caller becomes its PM
 
 Get one batch
 
-**Auth:** Role: TRAINER_PM or ADMIN
+**Auth:** Role: TRAINER_PM or ADMIN or STUDENT
 
 **Path parameters:**
 
@@ -1818,7 +1818,7 @@ Get one batch
 
 Update a batch
 
-**Auth:** Role: TRAINER_PM or ADMIN
+**Auth:** Role: TRAINER_PM or ADMIN or STUDENT
 
 **Path parameters:**
 
