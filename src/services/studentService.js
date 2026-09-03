@@ -513,106 +513,95 @@ export async function getSubmissionsForTask(taskId) {
 
 
 
-// Assessments are authored and published entirely by the Developer role
-// (see developerService: createAssessmentBank → addQuestionToBank →
-// publishAssessment). This just reads whatever is currently published and
-// layers the logged-in student's own attempt history on top, so two
-// different demo student accounts never see or overwrite each other's
-// scores (msh_assessment_attempts is keyed by student email).
-function readPublishedAssessments() {
-  try {
-    const raw = localStorage.getItem("msh_dev_assessments");
-    const list = raw ? JSON.parse(raw) : [];
-    return list.filter((a) => a.status === "Published");
-  } catch (e) {
-    return [];
-  }
+// --- Assessments (WIRED, server-graded) -----------------------------
+// GET /api/v1/assessments?batchId=, POST /{id}/attempts (start/resume),
+// GET /assessments/attempts/{id}, POST /assessments/attempts/{id}/submit.
+// The old in-browser CODE runner is gone — CODE answers are submitted as
+// text and land PENDING_MANUAL_GRADING; MCQ / MULTI_SELECT auto-grade.
+
+const Q_TYPE_TO_FE = { MCQ: "MCQ", MULTI_SELECT: "MULTI_SELECT", CODE: "CODE" };
+
+function toFeQuestion(q) {
+  return {
+    id: q.questionId,
+    text: q.questionText,
+    type: Q_TYPE_TO_FE[q.questionType] || q.questionType,
+    options: q.options || [],
+    marks: q.marks ?? null,
+    // present only on a graded (terminal) attempt:
+    givenAnswerIndices: q.givenAnswerIndices || [],
+    givenCodeAnswer: q.givenCodeAnswer || "",
+    isCorrect: q.isCorrect ?? null,
+    marksAwarded: q.marksAwarded != null ? Number(q.marksAwarded) : null,
+    explanation: q.explanation || "",
+  };
 }
 
-function readAttempts() {
-  try {
-    const raw = localStorage.getItem("msh_assessment_attempts");
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    return [];
-  }
+function toFeAttempt(a) {
+  return {
+    attemptId: a.id,
+    assessmentId: a.quizId,
+    title: a.quizTitle,
+    attemptNumber: a.attemptNumber,
+    status: a.status, // IN_PROGRESS | SUBMITTED | EXPIRED | PENDING_MANUAL_GRADING
+    durationMinutes: a.durationMinutes ?? null,
+    startedAt: a.startedAt || null,
+    submittedAt: a.submittedAt || null,
+    questions: (a.questions || []).map(toFeQuestion),
+    autoGradedMarks: a.autoGradedMarks != null ? Number(a.autoGradedMarks) : null,
+    autoGradableMarks: a.autoGradableMarks != null ? Number(a.autoGradableMarks) : null,
+    percentage: a.percentage != null ? Number(a.percentage) : null,
+    passed: a.passed ?? null,
+  };
 }
 
 export async function getAssessments() {
-  const user = getPersistedUser();
-  const email = (user?.email || "").toLowerCase();
-  const attempts = readAttempts().filter((a) => a.studentEmail?.toLowerCase() === email);
-
-  const list = readPublishedAssessments().map((a) => {
-    const attempt = attempts.find((at) => at.assessmentId === a.id);
-    return {
+  const batchIds = await myBatchIds();
+  if (!batchIds.length) return [];
+  const perBatch = await Promise.all(
+    batchIds.map((id) =>
+      apiClient.get("/assessments", { batchId: id, size: 100 }).then(asRows).catch(() => [])
+    )
+  );
+  return perBatch
+    .flat()
+    .filter((a) => a.active)
+    .map((a) => ({
       id: a.id,
       title: a.title,
-      type: a.type,
-      duration: a.duration,
-      score: attempt ? attempt.score : null,
-      status: attempt ? "Completed" : "Available",
-    };
-  });
-
-  return mockRequest(list);
+      type: "Assessment",
+      duration: a.durationMinutes ? `${a.durationMinutes} min` : "",
+      durationMinutes: a.durationMinutes ?? null,
+      passPercentage: a.passPercentage ?? 60,
+      maxAttempts: a.maxAttempts ?? null,
+      score: null,
+      status: "Available",
+    }));
 }
 
-export async function getAssessmentDetails(id) {
-  const assessment = readPublishedAssessments().find((a) => a.id === id);
-  if (!assessment) return [];
+// POST /api/v1/assessments/{id}/attempts — start or resume; returns the
+// questions WITHOUT any answer key.
+export async function startAssessmentAttempt(assessmentId) {
+  return toFeAttempt(await apiClient.post(`/assessments/${assessmentId}/attempts`, {}));
+}
 
-  // Bypassing mockRequest (no JSON clone) so we can attach real, callable
-  // testFn closures reconstructed from the developer-authored spec
-  // (functionName + args + expected output per test case).
-  return Promise.resolve(
-    assessment.questions.map((q) => {
-      if (q.type !== "Code") return q;
-      return {
-        ...q,
-        testCases: (q.testCases || []).map((tc) => ({
-          ...tc,
-          inputDesc: tc.inputDesc || `${q.functionName}(${(tc.args || []).map((a) => JSON.stringify(a)).join(", ")})`,
-          testFn: (codeStr) => {
-            try {
-              const argNames = (tc.args || []).map((_, i) => `arg${i}`);
-              const fn = new Function(...argNames, `${codeStr}\nreturn ${q.functionName}(${argNames.join(", ")});`);
-              const result = fn(...(tc.args || []));
-              return JSON.stringify(result) === JSON.stringify(tc.expected);
-            } catch (e) {
-              return false;
-            }
-          },
-        })),
-      };
+// GET /api/v1/assessments/attempts/{id}
+export async function getAssessmentAttempt(attemptId) {
+  return toFeAttempt(await apiClient.get(`/assessments/attempts/${attemptId}`));
+}
+
+// POST /api/v1/assessments/attempts/{id}/submit
+// answers: [{ questionId, selectedOptionIndices?: number[], codeAnswer?: string }]
+export async function submitAssessmentAttempt(attemptId, answers) {
+  return toFeAttempt(
+    await apiClient.post(`/assessments/attempts/${attemptId}/submit`, {
+      answers: (answers || []).map((x) => ({
+        questionId: Number(x.questionId),
+        selectedOptionIndices: x.selectedOptionIndices || [],
+        codeAnswer: x.codeAnswer || null,
+      })),
     })
   );
-}
-
-export async function submitAssessment(id, score) {
-  const user = getPersistedUser();
-  const assessment = readPublishedAssessments().find((a) => a.id === id);
-
-  const attempt = {
-    id: `att_${Date.now()}`,
-    assessmentId: id,
-    assessmentTitle: assessment?.title || "Assessment",
-    studentEmail: user?.email || null,
-    studentName: user?.name || "Student",
-    score,
-    passed: score >= (assessment?.passingScore ?? 60),
-    submittedAt: new Date().toISOString(),
-  };
-
-  // A retake replaces the previous attempt for this student+assessment
-  // rather than piling up duplicates.
-  const attempts = readAttempts().filter(
-    (a) => !(a.assessmentId === id && a.studentEmail === attempt.studentEmail)
-  );
-  attempts.unshift(attempt);
-  localStorage.setItem("msh_assessment_attempts", JSON.stringify(attempts));
-
-  return mockRequest(attempt);
 }
 // --- Video Player & Quiz screen (MSH-FR-STU-07 / MSH-FR-STU-08) ---------
 // Video lessons are authored and published entirely by the Developer role

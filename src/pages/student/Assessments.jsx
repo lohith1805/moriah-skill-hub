@@ -1,377 +1,283 @@
 import { useEffect, useState, useRef } from "react";
-import { Clock, CheckCircle2, PlayCircle, Award, ArrowLeft, ArrowRight, Terminal, Check, X, AlertCircle } from "lucide-react";
+import { Clock, CheckCircle2, PlayCircle, Award, ArrowLeft, ArrowRight, Check, AlertCircle } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
-import Card, { CardHeader } from "../../components/ui/Card";
+import Card from "../../components/ui/Card";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
-import ProgressBar from "../../components/ui/ProgressBar";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
-import { getAssessments, getAssessmentDetails, submitAssessment } from "../../services/studentService";
+import { getAssessments, startAssessmentAttempt, submitAssessmentAttempt } from "../../services/studentService";
 import { useToast } from "../../context/ToastContext";
+
+const formatTime = (seconds) => {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s < 10 ? "0" : ""}${s}`;
+};
 
 export default function StudentAssessments() {
   const { notify } = useToast();
   const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Active quiz state
-  const [activeQuiz, setActiveQuiz] = useState(null);
-  const [questions, setQuestions] = useState([]);
-  const [loadingQuestions, setLoadingQuestions] = useState(false);
+  const [attempt, setAttempt] = useState(null); // { attemptId, title, durationMinutes, questions }
+  const [starting, setStarting] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
-
-  // Answers & Coding inputs
-  const [selectedAnswers, setSelectedAnswers] = useState({}); // { qId: option }
-  const [codeAnswers, setCodeAnswers] = useState({}); // { qId: code }
-
-  // Code runner logs & console
-  const [testResults, setTestResults] = useState([]);
-  const [consoleOutput, setConsoleOutput] = useState("");
-
-  // Countdown timer
+  const [answers, setAnswers] = useState({}); // { [questionId]: { selectedOptionIndices:[], codeAnswer:"" } }
+  const [submitting, setSubmitting] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
+  const [showResult, setShowResult] = useState(null);
   const timerRef = useRef(null);
 
-  // Result overlay
-  const [showResults, setShowResults] = useState(null);
+  const load = () => {
+    setLoading(true);
+    getAssessments()
+      .then(setAssessments)
+      .catch((e) => notify(e.message || "Could not load assessments.", { type: "error" }))
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
     load();
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
+    return () => timerRef.current && clearInterval(timerRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const load = () => {
-    setLoading(true);
-    getAssessments().then((data) => {
-      let foundFirstIncomplete = false;
-      const lockedData = data.map((a) => {
-        if (a.status === "Completed") {
-          return a;
-        }
-        if (!foundFirstIncomplete) {
-          foundFirstIncomplete = true;
-          return { ...a, status: "Available" };
-        }
-        return { ...a, status: "Locked" };
-      });
-      setAssessments(lockedData);
-      setLoading(false);
-    });
-  };  const startQuiz = async (quiz) => {
-    setActiveQuiz(quiz);
-    setLoadingQuestions(true);
+
+  const buildAnswers = (att, state) =>
+    att.questions.map((q) => ({
+      questionId: q.id,
+      selectedOptionIndices: state[q.id]?.selectedOptionIndices || [],
+      codeAnswer: state[q.id]?.codeAnswer || "",
+    }));
+
+  const finishAttempt = async (att, state, auto = false) => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    setSubmitting(true);
     try {
-      const data = await getAssessmentDetails(quiz.id);
-      setQuestions(data);
+      const graded = await submitAssessmentAttempt(att.attemptId, buildAnswers(att, state));
+      setAttempt(null);
+      setShowResult(graded);
+      if (auto) notify("Time's up — your attempt was submitted.", { type: "warning" });
+      load();
+    } catch (err) {
+      notify(err.message || "Could not submit the attempt.", { type: "error" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-      // Reset test state
+  const start = async (a) => {
+    setStarting(true);
+    try {
+      const att = await startAssessmentAttempt(a.id);
+      setAttempt(att);
       setCurrentIndex(0);
-      setSelectedAnswers({});
-      setTestResults([]);
-      setConsoleOutput("");
-
-      // Set starter code templates
-      const starterCodes = {};
-      data.forEach((q) => {
-        if (q.type === "Code") {
-          starterCodes[q.id] = q.starterCode;
-        }
-      });
-      setCodeAnswers(starterCodes);
-
-      // Start countdown
-      const minutes = parseInt(quiz.duration) || 15;
-      setTimeLeft(minutes * 60);
-
+      setAnswers({});
+      setShowResult(null);
+      const secs = (att.durationMinutes || a.durationMinutes || 15) * 60;
+      setTimeLeft(secs);
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = setInterval(() => {
         setTimeLeft((prev) => {
           if (prev <= 1) {
             clearInterval(timerRef.current);
-            notify("Time limit reached. Automatically grading your submissions.", { type: "warning" });
-            submitQuiz(data, starterCodes, {}, true);
+            setAttempt((cur) => {
+              if (cur) finishAttempt(cur, answersRef.current, true);
+              return cur;
+            });
             return 0;
           }
           return prev - 1;
         });
       }, 1000);
-
-    } catch (e) {
-      notify("Failed to retrieve assessment details.", { type: "error" });
-      setActiveQuiz(null);
+    } catch (err) {
+      notify(err.message || "Could not start the assessment.", { type: "error" });
     } finally {
-      setLoadingQuestions(false);
+      setStarting(false);
     }
   };
 
-  const runCodeTests = (question) => {
-    const code = codeAnswers[question.id] || "";
-    setConsoleOutput("Initializing sandbox runner...\nCompiling script...\n");
+  // keep a ref of answers so the timer's stale closure can read the latest
+  const answersRef = useRef(answers);
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
 
-    setTimeout(() => {
-      let passedCount = 0;
-      const logs = [];
-      const results = question.testCases.map((tc) => {
-        const passed = tc.testFn(code);
-        if (passed) {
-          passedCount++;
-          logs.push(`✓ [PASS] ${tc.name}`);
-        } else {
-          logs.push(`✗ [FAIL] ${tc.name}\n  Expected output not matched. Input: ${tc.inputDesc}`);
-        }
-        return { ...tc, passed };
-      });
-
-      setTestResults(results);
-      setConsoleOutput(
-        `Sandbox Run Summary:\n------------------\n` +
-        logs.join("\n") +
-        `\n\nScore: ${passedCount}/${question.testCases.length} tests passed.` +
-        (passedCount === question.testCases.length ? "\n\nSuccess! All code checks cleared." : "\n\nWarning: Code logic has errors.")
-      );
-    }, 450);
+  const setOption = (q, optIdx) => {
+    setAnswers((prev) => {
+      const cur = prev[q.id]?.selectedOptionIndices || [];
+      let next;
+      if (q.type === "MULTI_SELECT") {
+        next = cur.includes(optIdx) ? cur.filter((i) => i !== optIdx) : [...cur, optIdx];
+      } else {
+        next = [optIdx];
+      }
+      return { ...prev, [q.id]: { ...prev[q.id], selectedOptionIndices: next } };
+    });
   };
+  const setCode = (q, value) =>
+    setAnswers((prev) => ({ ...prev, [q.id]: { ...prev[q.id], codeAnswer: value } }));
 
-  const submitQuiz = async (loadedQs = questions, codes = codeAnswers, mcqs = selectedAnswers, isAuto = false) => {
-    if (timerRef.current) clearInterval(timerRef.current);
-
-    const actualQs = loadedQs.length ? loadedQs : questions;
-    let score = 0;
-
-    if (activeQuiz.type === "MCQ") {
-      let correct = 0;
-      actualQs.forEach((q) => {
-        const ans = mcqs[q.id] || selectedAnswers[q.id];
-        if (ans === q.correctAnswer) {
-          correct++;
-        }
-      });
-      score = Math.round((correct / actualQs.length) * 100);
-    } else {
-      let totalTests = 0;
-      let passedTests = 0;
-      actualQs.forEach((q) => {
-        const code = codes[q.id] || codeAnswers[q.id] || "";
-        q.testCases.forEach((tc) => {
-          totalTests++;
-          if (tc.testFn(code)) {
-            passedTests++;
-          }
-        });
-      });
-      score = totalTests > 0 ? Math.round((passedTests / totalTests) * 100) : 0;
-    }
-
-    try {
-      await submitAssessment(activeQuiz.id, score);
-      setShowResults({
-        title: activeQuiz.title,
-        score,
-        passed: score >= 60,
-        type: activeQuiz.type
-      });
-      setActiveQuiz(null);
-      load();
-    } catch (e) {
-      notify("Failed to record score. Please reload.", { type: "error" });
-    }
-  };
-
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
-  };
-
-  if (showResults) {
+  // ---- Result screen ----
+  if (showResult) {
+    const r = showResult;
+    const pct = r.percentage != null ? Math.round(r.percentage) : null;
+    const manual = r.status === "PENDING_MANUAL_GRADING";
     return (
       <div>
-        <PageHeader title="Assessment Results" subtitle="Graded automatically based on benchmark keys & tests" breadcrumbs={[{ label: "Assessments", to: "/student/assessments" }]} />
+        <PageHeader
+          title="Assessment Result"
+          subtitle={r.title}
+          breadcrumbs={[{ label: "Assessments", to: "/student/assessments" }]}
+        />
         <Card className="max-w-2xl mx-auto text-center py-8">
           <div className="flex justify-center mb-4">
-            <div className={`h-16 w-16 rounded-full flex items-center justify-center ${showResults.passed ? "bg-success-50 text-success-500" : "bg-error-50 text-error-500"}`}>
-              {showResults.passed ? <Award size={36} /> : <AlertCircle size={36} />}
+            <div className={`h-16 w-16 rounded-full flex items-center justify-center ${r.passed ? "bg-success-50 text-success-500" : "bg-error-50 text-error-500"}`}>
+              {r.passed ? <Award size={36} /> : <AlertCircle size={36} />}
             </div>
           </div>
-          <h2 className="text-2xl font-bold font-display text-ink-900">{showResults.title}</h2>
-          <p className="text-sm text-ink-500 mt-1">{showResults.type === "MCQ" ? "Multiple Choice Quiz" : "Live Coding Challenge"}</p>
-
-          <div className="my-8">
-            <p className="text-5xl font-extrabold text-ink-900 font-display">{showResults.score}%</p>
-            <p className="text-xs text-ink-500 mt-2">Required score to pass: 60%</p>
-            <div className="mt-4 flex justify-center">
-              <Badge tone={showResults.passed ? "success" : "error"} className="px-4 py-1 text-sm font-semibold">
-                {showResults.passed ? "PASS / CERTIFIED" : "FAIL / PIP ELIGIBLE"}
-              </Badge>
-            </div>
+          <h2 className="text-2xl font-bold font-display text-ink-900">{pct != null ? `${pct}%` : "Submitted"}</h2>
+          <p className="text-sm text-ink-500 mt-1">
+            {r.autoGradedMarks != null && r.autoGradableMarks != null
+              ? `${r.autoGradedMarks} / ${r.autoGradableMarks} auto-graded marks`
+              : "Auto-graded portion"}
+          </p>
+          <div className="mt-4 flex justify-center">
+            <Badge tone={r.passed ? "success" : manual ? "gold" : "error"} className="px-4 py-1 text-sm font-semibold">
+              {manual ? "CODE ANSWERS PENDING MANUAL GRADING" : r.passed ? "PASS" : "FAIL"}
+            </Badge>
           </div>
 
-          <div className="border-t border-border pt-6 mt-6 flex justify-center gap-3">
-            <Button onClick={() => setShowResults(null)} variant="primary">Return to Assessments</Button>
+          {r.questions?.length > 0 && (
+            <div className="mt-8 text-left flex flex-col gap-3">
+              {r.questions.map((q, i) => (
+                <div key={q.id} className="rounded-lg border border-border p-3">
+                  <div className="flex items-start gap-2">
+                    {q.isCorrect === true ? (
+                      <CheckCircle2 size={16} className="text-success-600 shrink-0 mt-0.5" />
+                    ) : q.isCorrect === false ? (
+                      <AlertCircle size={16} className="text-error-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <Clock size={16} className="text-ink-400 shrink-0 mt-0.5" />
+                    )}
+                    <div>
+                      <p className="text-sm font-medium text-ink-900">Q{i + 1}. {q.text}</p>
+                      {q.explanation && <p className="text-xs text-ink-500 mt-1">{q.explanation}</p>}
+                      <p className="text-[11px] text-ink-400 mt-1">
+                        {q.marksAwarded != null ? `${q.marksAwarded}` : "—"} / {q.marks ?? "—"} marks
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="border-t border-border pt-6 mt-6">
+            <Button onClick={() => setShowResult(null)}>Back to Assessments</Button>
           </div>
         </Card>
       </div>
     );
   }
 
-  if (activeQuiz) {
-    const currentQ = questions[currentIndex];
-    const progress = questions.length ? Math.round(((currentIndex + 1) / questions.length) * 100) : 0;
-    const isLast = currentIndex === questions.length - 1;
+  // ---- Active attempt ----
+  if (attempt) {
+    const q = attempt.questions[currentIndex];
+    const isLast = currentIndex === attempt.questions.length - 1;
+    const chosen = answers[q?.id]?.selectedOptionIndices || [];
+    const answered = q?.type === "CODE" ? true : chosen.length > 0;
 
     return (
       <div className="min-h-screen flex flex-col -m-4 lg:-m-6 bg-cream-100">
         <header className="bg-white border-b border-border px-6 py-4 flex items-center justify-between shrink-0">
           <div>
-            <h2 className="font-display font-semibold text-ink-900 text-lg">{activeQuiz.title}</h2>
-            <p className="text-xs text-ink-500">Question {currentIndex + 1} of {questions.length}</p>
+            <h2 className="font-display font-semibold text-ink-900 text-lg">{attempt.title}</h2>
+            <p className="text-xs text-ink-500">Question {currentIndex + 1} of {attempt.questions.length}</p>
           </div>
           <div className="flex items-center gap-4">
             <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold ${timeLeft < 120 ? "bg-error-50 text-error-600 animate-pulse" : "bg-primary-50 text-primary-700"}`}>
-              <Clock size={16} />
-              <span>{formatTime(timeLeft)}</span>
+              <Clock size={16} /><span>{formatTime(timeLeft)}</span>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => { if (confirm("Are you sure you want to exit? Your progress will be lost.")) setActiveQuiz(null); }}>Exit Test</Button>
           </div>
         </header>
 
-        <div className="w-full bg-cream-200 h-1 shrink-0">
-          <div className="bg-primary-600 h-full transition-all duration-300" style={{ width: `${progress}%` }} />
-        </div>
+        <main className="flex-1 overflow-y-auto p-6">
+          {q ? (
+            <div className="max-w-3xl w-full mx-auto flex flex-col gap-6">
+              <Card>
+                <Badge tone="primary" className="mb-3">
+                  {q.type === "CODE" ? "Coding (manually graded)" : q.type === "MULTI_SELECT" ? "Multiple answers" : "Single answer"}
+                </Badge>
+                <h3 className="font-display text-lg font-bold text-ink-900 whitespace-pre-line">{q.text}</h3>
 
-        <main className="flex-1 overflow-y-auto p-6 flex flex-col">
-          {loadingQuestions ? (
-            <div className="flex-1 flex items-center justify-center"><LoadingSpinner label="Loading assessment task..." /></div>
-          ) : currentQ ? (
-            <div className="flex-1 flex flex-col gap-6 max-w-5xl w-full mx-auto">
-              <Card className="flex-1 flex flex-col">
-                <div className="mb-4">
-                  <Badge tone="primary" className="mb-2">{currentQ.type === "MCQ" ? "Multiple Choice" : "Coding Arena"}</Badge>
-                  <h3 className="font-display text-lg font-bold text-ink-900 whitespace-pre-line">{currentQ.text}</h3>
-                </div>
-
-                {currentQ.type === "MCQ" ? (
-                  <div className="flex flex-col gap-3 mt-4 flex-1 justify-center max-w-xl mx-auto w-full">
-                    {currentQ.options.map((opt) => {
-                      const isSelected = selectedAnswers[currentQ.id] === opt;
+                {q.type === "CODE" ? (
+                  <textarea
+                    className="mt-4 w-full min-h-[280px] rounded-xl border border-border bg-primary-950 text-white font-mono text-xs p-4 focus:outline-none resize-y leading-relaxed"
+                    value={answers[q.id]?.codeAnswer || ""}
+                    onChange={(e) => setCode(q, e.target.value)}
+                    placeholder="// Write your solution here — a reviewer grades this after submission."
+                  />
+                ) : (
+                  <div className="flex flex-col gap-3 mt-4">
+                    {q.options.map((opt, idx) => {
+                      const sel = chosen.includes(idx);
                       return (
                         <button
-                          key={opt}
-                          onClick={() => setSelectedAnswers((prev) => ({ ...prev, [currentQ.id]: opt }))}
+                          key={idx}
+                          type="button"
+                          onClick={() => setOption(q, idx)}
                           className={`w-full text-left p-4 rounded-xl border transition-all flex items-center justify-between ${
-                            isSelected
-                              ? "border-primary-600 bg-primary-50 text-primary-900 ring-2 ring-primary-500/20"
-                              : "border-border bg-white hover:bg-cream-50 text-ink-700"
+                            sel ? "border-primary-600 bg-primary-50 text-primary-900 ring-2 ring-primary-500/20" : "border-border bg-white hover:bg-cream-50 text-ink-700"
                           }`}
                         >
                           <span className="font-medium text-sm">{opt}</span>
-                          {isSelected && <CheckCircle2 size={16} className="text-primary-600" />}
+                          {sel && <CheckCircle2 size={16} className="text-primary-600" />}
                         </button>
                       );
                     })}
                   </div>
-                ) : (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4 flex-1">
-                    {/* Left: Challenge Specs */}
-                    <div className="flex flex-col gap-4">
-                      <div className="bg-cream-100 rounded-lg p-4 border border-border text-sm text-ink-700 leading-relaxed overflow-y-auto max-h-[300px]">
-                        <p className="font-semibold text-ink-900 mb-1">Functional Specs:</p>
-                        <p className="whitespace-pre-line text-xs font-mono">{currentQ.text}</p>
-                      </div>
-
-                      <div className="flex flex-col gap-2">
-                        <p className="text-xs font-semibold text-ink-600">Unit Verification Tests</p>
-                        <div className="flex flex-col gap-2">
-                          {currentQ.testCases.map((tc) => {
-                            const runResult = testResults.find((r) => r.id === tc.id);
-                            return (
-                              <div key={tc.id} className="flex items-center justify-between bg-white border border-border rounded-lg p-2.5 text-xs">
-                                <span className="font-medium text-ink-700">{tc.name}</span>
-                                {runResult ? (
-                                  <Badge tone={runResult.passed ? "success" : "error"}>
-                                    {runResult.passed ? "Passed" : "Failed"}
-                                  </Badge>
-                                ) : (
-                                  <Badge tone="neutral">Untested</Badge>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Right: Code Sandbox Editor */}
-                    <div className="flex flex-col gap-3 min-h-[360px]">
-                      <div className="flex-1 flex flex-col border border-border rounded-xl overflow-hidden bg-primary-900">
-                        <div className="bg-primary-950 px-4 py-2 border-b border-primary-800 flex items-center justify-between">
-                          <span className="text-xs text-primary-200 font-mono">sandbox_module.js</span>
-                          <Button size="xs" variant="secondary" className="bg-primary-800 border-primary-700 text-white hover:bg-primary-700" icon={Terminal} onClick={() => runCodeTests(currentQ)}>Run Tests</Button>
-                        </div>
-                        <textarea
-                          className="flex-1 w-full bg-transparent text-white font-mono text-xs p-4 focus:outline-none resize-none leading-relaxed"
-                          value={codeAnswers[currentQ.id] || ""}
-                          onChange={(e) => setCodeAnswers((prev) => ({ ...prev, [currentQ.id]: e.target.value }))}
-                          placeholder="// Write JavaScript code here"
-                        />
-                      </div>
-
-                      {/* Mock Console */}
-                      <div className="h-32 bg-primary-950 border border-primary-800 rounded-xl p-3 font-mono text-[11px] text-emerald-400 overflow-y-auto leading-relaxed whitespace-pre-wrap">
-                        {consoleOutput || "Terminal logs idle. Press 'Run Tests' above to execute specs."}
-                      </div>
-                    </div>
-                  </div>
                 )}
               </Card>
 
-              <div className="flex items-center justify-between shrink-0 pb-4">
-                <Button
-                  variant="secondary"
-                  icon={ArrowLeft}
-                  disabled={currentIndex === 0}
-                  onClick={() => setCurrentIndex((idx) => idx - 1)}
-                >
+              <div className="flex items-center justify-between pb-4">
+                <Button variant="secondary" icon={ArrowLeft} disabled={currentIndex === 0} onClick={() => setCurrentIndex((i) => i - 1)}>
                   Previous
                 </Button>
-
                 {isLast ? (
-                  <Button variant="primary" icon={Check} onClick={() => submitQuiz()}>
+                  <Button icon={Check} loading={submitting} onClick={() => finishAttempt(attempt, answers)}>
                     Submit Assessment
                   </Button>
                 ) : (
-                  <Button
-                    variant="primary"
-                    icon={ArrowRight}
-                    iconPosition="right"
-                    disabled={currentQ.type === "MCQ" && !selectedAnswers[currentQ.id]}
-                    onClick={() => setCurrentIndex((idx) => idx + 1)}
-                  >
+                  <Button icon={ArrowRight} iconPosition="right" disabled={!answered} onClick={() => setCurrentIndex((i) => i + 1)}>
                     Next
                   </Button>
                 )}
               </div>
             </div>
           ) : (
-            <div className="flex-1 flex items-center justify-center text-ink-500">Invalid question configuration.</div>
+            <div className="flex items-center justify-center text-ink-500 py-16">This assessment has no questions.</div>
           )}
         </main>
       </div>
     );
   }
 
+  // ---- List ----
   return (
     <div>
       <PageHeader
         title="Assessments"
-        subtitle="Timed quizzes and live coding challenges — 60% minimum to pass"
+        subtitle="Timed quizzes — auto-graded MCQ + manually reviewed coding questions"
         breadcrumbs={[{ label: "Dashboard", to: "/student/dashboard" }, { label: "Assessments" }]}
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {loading ? (
-          <div className="col-span-2 flex justify-center py-16"><LoadingSpinner label="Loading assessments list…" /></div>
+          <div className="col-span-2 flex justify-center py-16"><LoadingSpinner label="Loading assessments…" /></div>
+        ) : assessments.length === 0 ? (
+          <div className="col-span-2 text-sm text-ink-400 py-12 text-center">
+            No assessments have been published for your batch yet.
+          </div>
         ) : (
           assessments.map((a) => (
             <Card key={a.id}>
@@ -379,32 +285,18 @@ export default function StudentAssessments() {
                 <div>
                   <h3 className="font-medium text-ink-900">{a.title}</h3>
                   <div className="flex items-center gap-3 mt-1.5 text-xs text-ink-500">
-                    <span>{a.type}</span>
-                    <span className="flex items-center gap-1"><Clock size={12} /> {a.duration}</span>
+                    {a.duration && <span className="flex items-center gap-1"><Clock size={12} /> {a.duration}</span>}
+                    <span>Pass ≥ {a.passPercentage}%</span>
+                    {a.maxAttempts != null && <span>{a.maxAttempts} attempt{a.maxAttempts === 1 ? "" : "s"}</span>}
                   </div>
                 </div>
-                <Badge tone={a.status === "Completed" ? "success" : a.status === "Available" ? "gold" : "neutral"}>
-                  {a.status}
-                </Badge>
+                <Badge tone="gold">Available</Badge>
               </div>
-
-              {a.score !== null ? (
-                <div className="mt-4">
-                  <ProgressBar value={a.score} tone={a.score >= 60 ? "success" : "error"} label={`Your score: ${a.score}%`} />
-                </div>
-              ) : (
-                <div className="mt-4">
-                  <Button
-                    fullWidth
-                    variant={a.status === "Available" ? "primary" : "secondary"}
-                    icon={a.status === "Available" ? PlayCircle : Clock}
-                    disabled={a.status === "Locked"}
-                    onClick={() => startQuiz(a)}
-                  >
-                    {a.status === "Available" ? "Start Assessment" : "Locked"}
-                  </Button>
-                </div>
-              )}
+              <div className="mt-4">
+                <Button fullWidth icon={PlayCircle} loading={starting} onClick={() => start(a)}>
+                  Start Assessment
+                </Button>
+              </div>
             </Card>
           ))
         )}
@@ -412,4 +304,3 @@ export default function StudentAssessments() {
     </div>
   );
 }
-
