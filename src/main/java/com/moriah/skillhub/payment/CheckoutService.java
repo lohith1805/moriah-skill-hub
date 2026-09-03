@@ -2,6 +2,7 @@ package com.moriah.skillhub.payment;
 
 import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
+import com.moriah.skillhub.payment.dto.CheckoutPreviewResponse;
 import com.moriah.skillhub.payment.dto.CheckoutRequest;
 import com.moriah.skillhub.payment.dto.CheckoutResponse;
 import com.moriah.skillhub.payment.entity.Payment;
@@ -42,6 +43,31 @@ public class CheckoutService {
     private final RazorpayService razorpayService;
     private final RazorpayProperties razorpayProperties;
     private final StripeService stripeService;
+
+    /**
+     * "What would I pay for this plan with this coupon?" — read-only, creates nothing and
+     * reserves no coupon capacity. An invalid coupon comes back as {@code couponApplied=false}
+     * with a reason rather than an error, so the checkout page can show the message inline.
+     */
+    @Transactional(readOnly = true)
+    public CheckoutPreviewResponse previewCheckout(String planCode, String couponCode) {
+        SubscriptionPlan plan = subscriptionPlanRepository.findByCode(planCode)
+                .filter(SubscriptionPlan::isActive)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PLAN_NOT_FOUND));
+
+        BigDecimal original = plan.getPriceInr();
+        if (couponCode == null || couponCode.isBlank()) {
+            return new CheckoutPreviewResponse(plan.getCode(), plan.getName(), original, original, CURRENCY, false, null);
+        }
+        try {
+            BigDecimal discounted = couponService.preview(couponCode, original).discountedAmount();
+            return new CheckoutPreviewResponse(plan.getCode(), plan.getName(), original, discounted, CURRENCY,
+                    true, "Coupon applied.");
+        } catch (BusinessException e) {
+            return new CheckoutPreviewResponse(plan.getCode(), plan.getName(), original, original, CURRENCY,
+                    false, "That coupon code isn't valid or has expired.");
+        }
+    }
 
     @Transactional
     public CheckoutResponse checkout(Long userId, CheckoutRequest request) {

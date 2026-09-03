@@ -2,6 +2,8 @@ package com.moriah.skillhub.payment;
 
 import com.moriah.skillhub.common.dto.ApiResponse;
 import com.moriah.skillhub.common.security.CurrentUser;
+import com.moriah.skillhub.payment.dto.CheckoutPreviewRequest;
+import com.moriah.skillhub.payment.dto.CheckoutPreviewResponse;
 import com.moriah.skillhub.payment.dto.CheckoutRequest;
 import com.moriah.skillhub.payment.dto.CheckoutResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -27,6 +29,16 @@ public class CheckoutController {
      * so the intent is made explicit here rather than relying only on SecurityConfig's default
      * (code-standards.md "Security Rules": a missing @PreAuthorize is a defect, not an oversight,
      * even where the check is "authenticated is enough"). */
+    @PostMapping("/checkout/preview")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Preview the payable amount for a plan + optional coupon — creates no order "
+            + "and reserves no coupon capacity")
+    public ResponseEntity<ApiResponse<CheckoutPreviewResponse>> previewCheckout(
+            @Valid @RequestBody CheckoutPreviewRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(
+                checkoutService.previewCheckout(request.planCode(), request.couponCode())));
+    }
+
     @PostMapping("/checkout")
     @PreAuthorize("isAuthenticated()")
     @Operation(summary = "Create a payment order/session for a plan; never activates anything directly")
