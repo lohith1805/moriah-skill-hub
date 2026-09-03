@@ -131,7 +131,7 @@ admin services. `npm install` done (`node_modules` gitignored). **Every commit v
   `getCoupons`/`createCoupon`/`updateCoupon`/`deleteCoupon` → `/admin/coupons` (B1.12).
   Backend enum codes translated; `PageResponse.content` unwrapped.
 
-### FRONTEND — Part A integration status (branch `master`, HEAD `fe7fb5d`)
+### FRONTEND — Part A integration status (branch `master`, HEAD `4435d11`)
 
 `npm run build` green after every commit (2796 modules, Node v24). **Nothing browser-tested yet.**
 Commit trail (…`fd63107` student resume+profile) → **BE `04368c0` `GET /batches/{id}/students`
@@ -200,14 +200,24 @@ and now-wired: PM task assignment, `trainer/Graduation.jsx`, `trainer/Standups.j
   `createdAt`. `hrService` leave fns wired; `hr/AttendanceLeave.jsx` Leave-Approvals tab + the
   `ApplyLeaveWidget` are LIVE (FE `fe7fb5d`). The page's Attendance-ledger + biometric-checkin
   tabs stay mock — still no HR staff-attendance endpoint.
-- **No `GET /api/v1/hr/documents`** list → `hr/Documents.jsx` KYC list can't load. (Letters COULD
-  wire via `getEmployees()` uuid → `POST /hr/letters/{type}`, but the page is 1193 lines fused
-  with the placement pipeline — needs a dedicated rebuild.)
-- **No `POST /subscriptions/checkout`** on SubscriptionController → `subscribeToPlan` stays mock
-  (real flow lives in the payment module).
-- **No backend for the client placement pipeline** (shortlist → interview rounds → offer → sign →
-  placed) → `client/TalentPool.jsx`, `student/Interviews.jsx`, most of `hr/Documents.jsx` stay on
-  `utils/placementPipeline.js`. Biggest gap — decide if it's ever backend-backed.
+- ~~`GET /api/v1/hr/documents`~~ **DONE** (BE `a689457`): isAuthenticated; own docs / HR-all with
+  status/userUuid/documentType filters; presigned `downloadUrl` per row. `hr/Documents.jsx` gained
+  an **Employee KYC Docs** tab (list + verify/reject) — FE `7927204`. Upload has no FE caller (it's
+  a self-upload by `@CurrentUser`); the 5 placement tabs are separate (see below).
+- ~~`POST /subscriptions/checkout`~~ **ALREADY EXISTED** (`payment/CheckoutController`, path
+  `/api/v1/subscriptions/checkout`) — just wired. `studentService.subscribeToPlan` now calls it;
+  `student/Subscription.jsx` opens the real Razorpay widget / Stripe redirect and polls
+  `/subscriptions/me` for webhook activation (FE `f8619e5`). Without real test-mode keys the
+  backend 502s — surfaced.
+- ~~client placement pipeline~~ **BUILT** — new `placement/` module (BE `60e58d3`): `Placement`
+  entity + `PlacementStage` (13, ordered), V33 migration, `GET/GET{id}/PUT /api/v1/placements`,
+  auto-created when `TalentService.decide` APPROVES a request, per-target-stage role gates
+  (client=technical+CLIENT_SIGNED, HR=HR-rounds+docs+offer+PLACED, student=STUDENT_SIGNED),
+  forward-only, `details` = merged JSON bag. 7 unit tests, Flow 23. FE `4435d11`:
+  `placementService.js` + `placementPipeline.js` re-based to the 13 stages + a
+  loadRecruitments/saveRecruitments adapter that diffs & PUTs; `client/TalentPool.jsx`
+  ("Shortlist" → `requestRecruitment`), `student/Interviews.jsx`, `hr/Documents.jsx` all read/write
+  `/placements`. `loadDocs/saveDocs` (rendered offer-letter artifacts) stay local.
 - **Lead pipeline**: `/leads` has no per-lead detail / activity-list GET / DELETE →
   `leadgen/Pipeline.jsx` + `leadgen/Targets.jsx` stay mock.
 - **BA docs text-only** (no file upload) + **no resource-plan endpoint** → `ba/Documents.jsx`,
@@ -224,11 +234,14 @@ drop the dead Register plan/payment handlers.
 **Recommended Part B round 2, smallest first:**
 1. ~~`GET /api/v1/batches/{id}/students`~~ **DONE** (`04368c0`).
 2. ~~`GET /api/v1/hr/leaves`~~ **DONE** (`7758f89`).
-3. `POST /api/v1/subscriptions/checkout` surfaced on SubscriptionController (or document that the
-   FE calls the payment module directly).
-4. `GET /api/v1/hr/documents` list.
-5. Decide: `student/Assessments.jsx` → server-graded rewrite (endpoints ready).
-6. Client placement-pipeline module (biggest) — or confirm it stays FE-only.
+3. ~~`GET /api/v1/hr/documents`~~ **DONE** (`a689457`).
+4. ~~`POST /subscriptions/checkout`~~ — already existed, now wired (`f8619e5`).
+5. ~~client placement-pipeline module~~ **DONE** (BE `60e58d3`, FE `4435d11`).
+6. Still to do: `student/Assessments.jsx` → server-graded rewrite (endpoints exist; drop the
+   in-browser code runner) — a product call + ~400-line page.
+7. Mock-layer cleanup: `mockData.js` / `pipEngine.js` are still imported by student/trainer
+   services (getPerformanceSummary etc.); `placementPipeline.js` is now backend-backed but keeps
+   its display helpers. Delete once the last mock readers go.
 
 ### Docs
 - `docs/testing-flow.md` — API-only E2E (Postman), Flows 1–22, per-step auth tags.
