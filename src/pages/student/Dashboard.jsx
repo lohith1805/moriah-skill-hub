@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ListChecks, Percent, AlertTriangle, Trophy, GitFork, ArrowRight, Search, PlayCircle, CalendarDays, CheckCircle2, Clock, Check, FileText, UploadCloud, RefreshCw, Eye, Briefcase, Video } from "lucide-react";
+import { ListChecks, Percent, AlertTriangle, Trophy, GitFork, ArrowRight, Search, PlayCircle, CalendarDays, CheckCircle2, Clock, FileText, UploadCloud, RefreshCw, Eye, Briefcase, Video } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import StatCard from "../../components/widgets/StatCard";
 import Card, { CardHeader } from "../../components/ui/Card";
@@ -11,7 +11,7 @@ import FileUpload from "../../components/ui/FileUpload";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
-import { getPerformanceSummary, getMyTasks, getMyPipStatus, getVideoLessons, getResumeStatus, saveResumeFile, getMySubscription, getMyBatch, getMyStandups, getMyAttendance, checkInToStandup } from "../../services/studentService";
+import { getPerformanceSummary, getMyTasks, getMyPipStatus, getVideoLessons, getResumeStatus, saveResumeFile, getMySubscription, getMyBatch, getMyStandups, getMyAttendance } from "../../services/studentService";
 import { loadRecruitments, stageTone, stageMessage, REJECTED } from "../../utils/placementPipeline";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { Input } from "../../components/ui/FormField";
@@ -55,12 +55,10 @@ export default function StudentDashboard() {
   }, []);
 
   // Today's standup + the caller's attendance for it — real, from
-  // /api/v1/standups and /api/v1/attendance/me. The full history and the
-  // join/check-in flow also live on /student/attendance.
+  // /api/v1/standups and /api/v1/attendance/me. Students only join the meeting
+  // link; the trainer records attendance at the start of the day.
   const [todayStandup, setTodayStandup] = useState(null);
   const [standupMark, setStandupMark] = useState(null); // { status, markedByPm, autoMarked } | null
-  const [standupNote, setStandupNote] = useState("");
-  const [standupCheckingIn, setStandupCheckingIn] = useState(false);
 
   const loadStandup = () => {
     const today = new Date().toISOString().slice(0, 10);
@@ -78,20 +76,6 @@ export default function StudentDashboard() {
   useEffect(() => {
     loadStandup();
   }, []);
-
-  const handleStandupCheckIn = async () => {
-    if (!todayStandup) return;
-    setStandupCheckingIn(true);
-    try {
-      const res = await checkInToStandup(todayStandup.id, standupNote.trim());
-      notify(`Checked in — marked ${res.status}.`, { type: "success" });
-      loadStandup();
-    } catch (err) {
-      notify(err.message || "Could not check in to the standup.", { type: "error" });
-    } finally {
-      setStandupCheckingIn(false);
-    }
-  };
 
   // Resume upload — required before the student becomes eligible for
   // client job opportunities (see HR Exit → Client Talent Pool handoff).
@@ -296,11 +280,11 @@ export default function StudentDashboard() {
 
           {standupMark ? (
             <Badge tone={standupMark.status === "Present" ? "success" : standupMark.status === "Late" ? "warning" : "error"} className="text-sm px-3 py-1 font-semibold flex items-center gap-1">
-              <CheckCircle2 size={14} /> {standupMark.markedByPm ? "Marked" : "Checked in"} — {standupMark.status}
+              <CheckCircle2 size={14} /> Marked by trainer — {standupMark.status}
             </Badge>
           ) : todayStandup ? (
-            <span className="text-xs font-semibold text-warning-600 bg-warning-50 px-2.5 py-1 rounded-md border border-warning-100 flex items-center gap-1">
-              <Clock size={12} /> Not checked in
+            <span className="text-xs font-semibold text-ink-500 bg-cream-50 px-2.5 py-1 rounded-md border border-border/60 flex items-center gap-1">
+              <Clock size={12} /> Attendance not marked yet
             </span>
           ) : null}
         </div>
@@ -310,28 +294,11 @@ export default function StudentDashboard() {
             {todayStandup.notes && (
               <p className="text-xs text-ink-600 bg-cream-50 p-3 rounded-lg border border-border/40">{todayStandup.notes}</p>
             )}
-            {!standupMark && (
-              <div className="flex flex-col gap-1.5 text-left">
-                <label className="text-xs font-semibold text-ink-700">Anything blocking you today? <span className="font-normal text-ink-400">(optional)</span></label>
-                <textarea
-                  value={standupNote}
-                  onChange={(e) => setStandupNote(e.target.value)}
-                  placeholder="e.g. Working on checkout flow. Blocked on Stripe API test tokens."
-                  className="w-full text-sm rounded-lg border border-border p-3 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none placeholder:text-ink-300"
-                  rows={2}
-                />
-              </div>
-            )}
             <div className="flex justify-end gap-2">
               {todayStandup.meetingLink && (
                 <a href={todayStandup.meetingLink} target="_blank" rel="noreferrer">
-                  <Button icon={Video} variant={standupMark ? "primary" : "secondary"}>Join meet</Button>
+                  <Button icon={Video}>Join meet</Button>
                 </a>
-              )}
-              {!standupMark && (
-                <Button onClick={handleStandupCheckIn} loading={standupCheckingIn} icon={Check}>
-                  I've joined — check in
-                </Button>
               )}
               <Link to="/student/attendance"><Button variant="ghost">View history</Button></Link>
             </div>

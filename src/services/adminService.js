@@ -14,10 +14,10 @@
 
 import { apiClient } from "./apiClient";
 import {
-  BACKEND_ROLE_TO_FE,
   BACKEND_STATUS_TO_FE,
   FE_ROLE_TO_BACKEND,
   PLAN_CODE_TO_FE,
+  primaryFeRole,
 } from "../utils/constants";
 import { logAudit, AUDIT_CATEGORIES } from "../utils/auditLog";
 
@@ -76,7 +76,9 @@ function toFeUserRow(u) {
     phone: u.phone || "",
     githubUsername: u.githubUsername || "",
     linkedinUrl: u.linkedinUrl || "",
-    role: (u.roles || []).map((r) => BACKEND_ROLE_TO_FE[r]).find(Boolean) || "student",
+    // Priority-collapse a multi-role user the same way the router does, so a
+    // Corporate Client who also happens to carry STUDENT never shows as "Student".
+    role: primaryFeRole(u.roles || []),
     roles: u.roles || [],
     status: BACKEND_STATUS_TO_FE[u.status] || "active",
     backendStatus: u.status,

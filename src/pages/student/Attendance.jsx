@@ -7,7 +7,7 @@ import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import { useToast } from "../../context/ToastContext";
-import { getMyStandups, getMyAttendance, checkInToStandup } from "../../services/studentService";
+import { getMyStandups, getMyAttendance } from "../../services/studentService";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const TONE = { Present: "success", Late: "warning", Absent: "error", Excused: "neutral" };
@@ -17,8 +17,6 @@ export default function StudentAttendance() {
   const [loading, setLoading] = useState(true);
   const [standup, setStandup] = useState(null);
   const [history, setHistory] = useState([]);
-  const [note, setNote] = useState("");
-  const [checkingIn, setCheckingIn] = useState(false);
 
   const myAttendanceForStandup = (standupId) => history.find((h) => String(h.standupId) === String(standupId));
 
@@ -38,20 +36,6 @@ export default function StudentAttendance() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const checkIn = async () => {
-    if (!standup) return;
-    setCheckingIn(true);
-    try {
-      const res = await checkInToStandup(standup.id, note.trim());
-      notify(`Checked in — marked ${res.status}.`, { type: "success" });
-      load();
-    } catch (err) {
-      notify(err.message || "Could not check in.", { type: "error" });
-    } finally {
-      setCheckingIn(false);
-    }
-  };
-
   const mine = standup ? myAttendanceForStandup(standup.id) : null;
   const standupTime = standup
     ? new Date(standup.scheduledAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
@@ -61,7 +45,7 @@ export default function StudentAttendance() {
     <div>
       <PageHeader
         title="Standups & Attendance"
-        subtitle="Join today's standup and check in — your trainer confirms attendance from their dashboard"
+        subtitle="Join today's standup from the link below — your trainer records attendance at the start of the day"
         breadcrumbs={[{ label: "Dashboard", to: "/student/dashboard" }, { label: "Standups" }]}
       />
 
@@ -95,26 +79,12 @@ export default function StudentAttendance() {
 
               {mine ? (
                 <Badge tone={TONE[mine.status] || "neutral"} className="px-3 py-1 flex items-center gap-1">
-                  <CheckCircle2 size={14} /> {mine.markedByPm ? "Marked" : "Checked in"} — {mine.status}
+                  <CheckCircle2 size={14} /> Marked by trainer — {mine.status}
                 </Badge>
-              ) : null}
+              ) : (
+                <span className="text-xs text-ink-400">Your trainer hasn't marked attendance for this standup yet.</span>
+              )}
             </div>
-
-            {!mine && (
-              <div className="flex flex-col gap-2 border-t border-border/50 pt-4">
-                <label className="text-xs font-semibold text-ink-700">Anything blocking you today? <span className="font-normal text-ink-400">(optional)</span></label>
-                <textarea
-                  rows={2}
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  placeholder="e.g. Blocked on API test credentials for the checkout task."
-                  className="w-full text-sm rounded-lg border border-border p-3 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
-                />
-                <div className="flex justify-end">
-                  <Button icon={CheckCircle2} loading={checkingIn} onClick={checkIn}>I've joined — check in</Button>
-                </div>
-              </div>
-            )}
           </div>
         )}
       </Card>
@@ -142,13 +112,7 @@ export default function StudentAttendance() {
               key: "source",
               header: "Recorded",
               className: "text-left text-xs text-ink-500",
-              render: (r) => (r.autoMarked ? "Auto (no check-in)" : r.markedByPm ? "By trainer" : "Self check-in"),
-            },
-            {
-              key: "checkedInAt",
-              header: "Checked in",
-              className: "text-left text-xs text-ink-500",
-              render: (r) => (r.checkedInAt ? new Date(r.checkedInAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"),
+              render: (r) => (r.autoMarked ? "Auto (not marked)" : r.markedByPm ? "By trainer" : "By trainer"),
             },
           ]}
         />

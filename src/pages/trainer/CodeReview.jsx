@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { GitFork, ThumbsUp, ThumbsDown, Star, Video, Play, MessageSquare, Plus, FileCode, CheckCircle2 } from "lucide-react";
+import { GitFork, ThumbsUp, ThumbsDown, Star, Video, Play, MessageSquare, Plus, FileCode, CheckCircle2, GitPullRequest, ExternalLink } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card, { CardHeader } from "../../components/ui/Card";
 import Badge from "../../components/ui/Badge";
@@ -166,11 +166,20 @@ export default function TrainerCodeReview() {
           onClose={() => setActive(null)}
           title="Review Submission"
           description={active.title}
-          size="lg"
-          footer={<>
-            <Button variant="danger" icon={ThumbsDown} loading={submitting} onClick={() => decide("Rejected")}>Reject Deliverable</Button>
-            <Button icon={ThumbsUp} loading={submitting} onClick={() => decide("Approved")}>Approve & Complete</Button>
-          </>}
+          size="full"
+          footer={<div className="flex w-full items-center justify-between gap-2">
+            <a
+              href={active.githubPr || active.repoUrl || "https://github.com"}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Button variant="secondary" icon={GitPullRequest}>Open in GitHub</Button>
+            </a>
+            <div className="flex gap-2">
+              <Button variant="danger" icon={ThumbsDown} loading={submitting} onClick={() => decide("Rejected")}>Reject Deliverable</Button>
+              <Button icon={ThumbsUp} loading={submitting} onClick={() => decide("Approved")}>Approve & Complete</Button>
+            </div>
+          </div>}
         >
           <div className="flex flex-col gap-4 text-left mt-3">
             <Tabs 
@@ -185,6 +194,20 @@ export default function TrainerCodeReview() {
                 if (activeTab === "details") {
                   return (
                     <div className="flex flex-col gap-4 mt-2">
+                      {/* Jump straight to GitHub — the diff tab below is a lightweight
+                          in-app preview; the full PR (checks, history, threads) lives on GitHub. */}
+                      <a
+                        href={active.githubPr || active.repoUrl || "https://github.com"}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center justify-between gap-3 rounded-xl border border-primary-200 bg-primary-50/60 px-4 py-3 hover:bg-primary-50 transition-colors"
+                      >
+                        <span className="flex items-center gap-2 text-sm font-semibold text-primary-800">
+                          <GitPullRequest size={16} /> Open this pull request on GitHub
+                        </span>
+                        <ExternalLink size={15} className="text-primary-600" />
+                      </a>
+
                       {/* Video Walkthrough Player */}
                       {active.videoUrl && (
                         <div className="border border-border rounded-xl p-3 bg-cream-50/20">

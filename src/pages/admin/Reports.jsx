@@ -1,15 +1,14 @@
 import { useState } from "react";
 import {
   FileSpreadsheet, FileText, FileJson, Download, Eye,
-  Building, IndianRupee, Users, ShieldCheck, CheckCircle2, Sparkles
 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
-import Card, { CardHeader } from "../../components/ui/Card";
+import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
 import Badge from "../../components/ui/Badge";
-import { exportReport } from "../../services/adminService";
 import { useToast } from "../../context/ToastContext";
+import { downloadPdf } from "../../utils/pdf";
 
 const REPORTS = [
   {
@@ -87,43 +86,81 @@ const REPORTS = [
   }
 ];
 
+const FORMATS = [
+  { value: "csv", label: "CSV spreadsheet (.csv)" },
+  { value: "pdf", label: "PDF document (.pdf)" },
+  { value: "txt", label: "Plain text (.txt)" },
+];
+
+const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+const stamp = () => new Date().toISOString().slice(0, 10);
+
+function saveBlob(filename, text, mime) {
+  const blob = new Blob([text], { type: `${mime};charset=utf-8;` });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function toCsv(report) {
+  const esc = (c) => `"${String(c).replace(/"/g, '""')}"`;
+  const lines = [report.headers.map(esc).join(",")];
+  report.rows.forEach((row) => lines.push(row.map(esc).join(",")));
+  return lines.join("\r\n");
+}
+
+function toText(report) {
+  const cols = report.headers.map((h, i) =>
+    Math.max(h.length, ...report.rows.map((r) => String(r[i] ?? "").length)));
+  const fmtRow = (cells) => cells.map((c, i) => String(c ?? "").padEnd(cols[i])).join("  |  ");
+  const head = fmtRow(report.headers);
+  return [
+    "MORIAH SKILL HUB — OFFICIAL CORPORATE REPORT",
+    `Title:        ${report.title}`,
+    `Category:     ${report.category}`,
+    `Generated at: ${new Date().toLocaleString()}`,
+    "",
+    head,
+    "-".repeat(head.length),
+    ...report.rows.map((r) => fmtRow(r)),
+  ].join("\n");
+}
+
+function download(report, format) {
+  const base = `${slug(report.title)}_${stamp()}`;
+  if (format === "csv") return saveBlob(`${base}.csv`, toCsv(report), "text/csv");
+  if (format === "txt") return saveBlob(`${base}.txt`, toText(report), "text/plain");
+  // pdf
+  const colHeader = report.headers.join("  •  ");
+  const lines = [colHeader, ...report.rows.map((r) => r.join("  •  "))];
+  downloadPdf(`${base}.pdf`, report.title, [
+    { keyValues: [["Category", report.category], ["Generated", new Date().toLocaleString()]] },
+    { heading: "Data", lines },
+  ]);
+}
+
 export default function AdminReports() {
-  const [exportingId, setExportingId] = useState(null);
-  const [viewingReport, setViewingReport] = useState(null);
   const { notify } = useToast();
+  const [viewingReport, setViewingReport] = useState(null);
+  const [exportFor, setExportFor] = useState(null); // report awaiting a format choice
+  const [format, setFormat] = useState("csv");
 
-  const downloadReport = (report) => {
-    let content = `MORIAH SKILL HUB — OFFICIAL CORPORATE REPORT\n`;
-    content += `Title: ${report.title}\n`;
-    content += `Category: ${report.category}\n`;
-    content += `Generated At: ${new Date().toLocaleString()}\n`;
-    content += `Format: .${report.format}\n\n`;
+  const openExport = (report) => { setFormat(report.format === "csv" ? "csv" : report.format === "pdf" ? "pdf" : "csv"); setExportFor(report); };
 
-    content += report.headers.join(",") + "\n";
-    report.rows.forEach((row) => {
-      content += row.map((cell) => `"${cell}"`).join(",") + "\n";
-    });
-
-    const honestExt = report.format === "pdf" ? "preview.txt" : "csv";
-    const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${report.title.toLowerCase().replace(/[^a-z0-9]/g, "_")}_${new Date().toISOString().slice(0, 10)}.${honestExt}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const runExport = async (report) => {
-    setExportingId(report.id);
+  const confirmExport = () => {
     try {
-      await exportReport(report.format);
-      downloadReport(report);
-      notify(`"${report.title}" exported successfully.`, { type: "success", title: "Report Exported" });
+      download(exportFor, format);
+      notify(`"${exportFor.title}" downloaded as .${format}.`, { type: "success", title: "Report exported" });
+    } catch (e) {
+      notify(e.message || "Could not generate the file.", { type: "error" });
     } finally {
-      setExportingId(null);
+      setExportFor(null);
+      setViewingReport(null);
     }
   };
 
@@ -131,7 +168,7 @@ export default function AdminReports() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Automated Reporting Engine"
-        subtitle="Export platform metrics to Excel (.xlsx), PDF, and CSV for corporate stakeholders and compliance (MSH-FR-ADM-05)"
+        subtitle="Export platform metrics as CSV, PDF, or plain text for corporate stakeholders and compliance (MSH-FR-ADM-05)"
         breadcrumbs={[{ label: "Dashboard", to: "/admin/dashboard" }, { label: "Reporting Engine" }]}
       />
 
@@ -144,21 +181,20 @@ export default function AdminReports() {
                   <r.icon size={22} />
                 </div>
                 <Badge tone={r.format === "xlsx" ? "success" : r.format === "pdf" ? "primary" : "gold"}>
-                  .{r.format.toUpperCase()}
+                  {r.category}
                 </Badge>
               </div>
 
               <h3 className="font-semibold text-ink-900 text-sm">{r.title}</h3>
               <p className="text-xs text-ink-500 mt-1 leading-relaxed">{r.description}</p>
-              <p className="text-[11px] text-primary-800 font-medium mt-2">Category: {r.category}</p>
             </div>
 
             <div className="flex gap-2 justify-end mt-4 pt-3 border-t border-border">
               <Button size="sm" variant="secondary" icon={Eye} onClick={() => setViewingReport(r)}>
                 Preview Data
               </Button>
-              <Button size="sm" icon={Download} loading={exportingId === r.id} onClick={() => runExport(r)}>
-                Export File
+              <Button size="sm" icon={Download} onClick={() => openExport(r)}>
+                Export
               </Button>
             </div>
           </Card>
@@ -173,11 +209,11 @@ export default function AdminReports() {
         size="lg"
         footer={
           <div className="flex justify-between w-full items-center">
-            <span className="text-xs text-ink-400 font-mono">Format: .{viewingReport?.format.toUpperCase()}</span>
+            <span className="text-xs text-ink-400">{viewingReport?.category}</span>
             <div className="flex gap-2">
               <Button variant="secondary" onClick={() => setViewingReport(null)}>Close</Button>
-              <Button icon={Download} onClick={() => { downloadReport(viewingReport); setViewingReport(null); }}>
-                Download Full Report
+              <Button icon={Download} onClick={() => openExport(viewingReport)}>
+                Download…
               </Button>
             </div>
           </div>
@@ -215,6 +251,29 @@ export default function AdminReports() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Format picker */}
+      <Modal
+        open={!!exportFor}
+        onClose={() => setExportFor(null)}
+        title="Choose a download format"
+        description={exportFor?.title}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setExportFor(null)}>Cancel</Button>
+            <Button icon={Download} onClick={confirmExport}>Download</Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-2 text-left">
+          {FORMATS.map((f) => (
+            <label key={f.value} className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer text-sm ${format === f.value ? "border-primary-500 bg-primary-50/50" : "border-border"}`}>
+              <input type="radio" name="report-format" value={f.value} checked={format === f.value} onChange={() => setFormat(f.value)} />
+              {f.label}
+            </label>
+          ))}
+        </div>
       </Modal>
     </div>
   );

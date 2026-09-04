@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bug, Plus, Edit, Trash2, Download, FileCode2 } from "lucide-react";
+import { Bug, Plus, Edit, Trash2, Download, FileCode2, Inbox } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
 import Badge from "../../components/ui/Badge";
@@ -17,7 +17,11 @@ import {
   createChallenge,
   updateChallenge,
   deleteChallenge,
+  getChallengeSubmissions,
+  reviewChallengeSubmission,
 } from "../../services/developerService";
+
+const SUB_TONE = { Submitted: "primary", Accepted: "success", "Needs work": "warning" };
 
 const DIFFICULTIES = ["Beginner", "Intermediate", "Advanced"].map((d) => ({ value: d, label: d }));
 const emptyForm = { title: "", expectedBehaviour: "", difficulty: "" };
@@ -43,6 +47,13 @@ export default function DeveloperBugChallenges() {
   const [editingId, setEditingId] = useState(null);
   const [editValues, setEditValues] = useState(emptyForm);
   const [savingEdit, setSavingEdit] = useState(false);
+
+  // Submissions review
+  const [subsFor, setSubsFor] = useState(null); // the challenge whose submissions are open
+  const [subs, setSubs] = useState([]);
+  const [loadingSubs, setLoadingSubs] = useState(false);
+  const [reviewDraft, setReviewDraft] = useState({}); // { [submissionId]: { feedback, score } }
+  const [reviewingId, setReviewingId] = useState(null);
 
   useEffect(() => {
     getProjects()
@@ -139,6 +150,35 @@ export default function DeveloperBugChallenges() {
     }
   };
 
+  const openSubs = (c) => {
+    setSubsFor(c);
+    setSubs([]);
+    setReviewDraft({});
+    setLoadingSubs(true);
+    getChallengeSubmissions(c.id)
+      .then(setSubs)
+      .catch((err) => notify(err?.message || "Couldn't load submissions.", { type: "error" }))
+      .finally(() => setLoadingSubs(false));
+  };
+
+  const review = async (submission, status) => {
+    setReviewingId(submission.id);
+    try {
+      const draft = reviewDraft[submission.id] || {};
+      const updated = await reviewChallengeSubmission(submission.id, {
+        status,
+        feedback: draft.feedback,
+        score: draft.score,
+      });
+      setSubs((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+      notify(`Marked "${submission.challengeTitle}" ${status.toLowerCase()}.`, { type: "success" });
+    } catch (err) {
+      notify(err?.message || "Couldn't record the review.", { type: "error" });
+    } finally {
+      setReviewingId(null);
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -193,7 +233,8 @@ export default function DeveloperBugChallenges() {
                   )}
                 </div>
               </div>
-              <div className="flex gap-2 mt-4 pt-3 border-t border-border/60 justify-end">
+              <div className="flex flex-wrap gap-2 mt-4 pt-3 border-t border-border/60 justify-end">
+                <Button size="sm" variant="secondary" icon={Inbox} onClick={() => openSubs(c)}>Submissions</Button>
                 <Button size="sm" variant="secondary" icon={Edit} onClick={() => openEdit(c)}>Edit</Button>
                 <Button size="sm" variant="danger" icon={Trash2} onClick={() => remove(c)}>Delete</Button>
               </div>
@@ -221,6 +262,82 @@ export default function DeveloperBugChallenges() {
           {errors.brokenFile && <p className="text-xs text-error-600 -mt-2">{errors.brokenFile}</p>}
           <FileUpload label="Test script (optional)" hint="A script the student can run to check their fix" onChange={setTestFile} />
         </form>
+      </Modal>
+
+      {/* Submissions review */}
+      <Modal
+        open={!!subsFor}
+        onClose={() => setSubsFor(null)}
+        title={subsFor ? `Submissions — ${subsFor.title}` : ""}
+        description={subsFor?.expectedBehaviour ? `Expected: ${subsFor.expectedBehaviour}` : ""}
+        size="full"
+        footer={<Button variant="secondary" onClick={() => setSubsFor(null)}>Close</Button>}
+      >
+        {loadingSubs ? (
+          <div className="flex justify-center py-16"><LoadingSpinner label="Loading submissions…" /></div>
+        ) : subs.length === 0 ? (
+          <EmptyState icon={Inbox} title="No submissions yet" description="Student fixes for this challenge will appear here." />
+        ) : (
+          <div className="flex flex-col gap-4 text-left">
+            {subs.map((s) => {
+              const draft = reviewDraft[s.id] || {};
+              return (
+                <Card key={s.id} className="flex flex-col gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-ink-900">{s.studentName}</p>
+                      <p className="text-xs text-ink-400">
+                        Submitted {s.submittedAt ? new Date(s.submittedAt).toLocaleString("en-IN") : "—"}
+                        {s.score != null ? ` · scored ${s.score}/100` : ""}
+                      </p>
+                    </div>
+                    <Badge tone={SUB_TONE[s.statusLabel] || "neutral"}>{s.statusLabel}</Badge>
+                  </div>
+
+                  {s.notes && (
+                    <p className="text-xs text-ink-600 bg-cream-50 border border-border/60 rounded-lg p-2.5">
+                      <span className="font-semibold">Student notes: </span>{s.notes}
+                    </p>
+                  )}
+
+                  <pre className="w-full overflow-x-auto rounded-xl bg-primary-950 text-white font-mono text-xs p-4 leading-relaxed whitespace-pre">{s.solutionCode}</pre>
+
+                  {s.reviewerFeedback && (
+                    <p className="text-xs text-ink-600 bg-success-50/60 border border-success-500/20 rounded-lg p-2.5">
+                      <span className="font-semibold">Your feedback: </span>{s.reviewerFeedback}
+                    </p>
+                  )}
+
+                  <div className="grid sm:grid-cols-[1fr_auto] gap-3 items-end border-t border-border/60 pt-3">
+                    <Textarea
+                      label="Feedback (optional)"
+                      rows={2}
+                      value={draft.feedback ?? s.reviewerFeedback ?? ""}
+                      onChange={(e) => setReviewDraft((d) => ({ ...d, [s.id]: { ...d[s.id], feedback: e.target.value } }))}
+                    />
+                    <Input
+                      label="Score /100"
+                      type="number"
+                      min={0}
+                      max={100}
+                      className="w-28"
+                      value={draft.score ?? (s.score ?? "")}
+                      onChange={(e) => setReviewDraft((d) => ({ ...d, [s.id]: { ...d[s.id], score: e.target.value } }))}
+                    />
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <Button size="sm" variant="secondary" loading={reviewingId === s.id} onClick={() => review(s, "Needs work")}>
+                      Needs work
+                    </Button>
+                    <Button size="sm" loading={reviewingId === s.id} onClick={() => review(s, "Accepted")}>
+                      Accept
+                    </Button>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )}
       </Modal>
 
       {/* Edit */}

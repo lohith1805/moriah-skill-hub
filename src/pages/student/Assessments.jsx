@@ -5,7 +5,7 @@ import Card from "../../components/ui/Card";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
-import { getAssessments, startAssessmentAttempt, submitAssessmentAttempt } from "../../services/studentService";
+import { getAssessments, getMyAssessmentAttempts, startAssessmentAttempt, submitAssessmentAttempt } from "../../services/studentService";
 import { useToast } from "../../context/ToastContext";
 
 const formatTime = (seconds) => {
@@ -17,6 +17,7 @@ const formatTime = (seconds) => {
 export default function StudentAssessments() {
   const { notify } = useToast();
   const [assessments, setAssessments] = useState([]);
+  const [mineByAssessment, setMineByAssessment] = useState({}); // assessmentId -> newest attempt
   const [loading, setLoading] = useState(true);
 
   const [attempt, setAttempt] = useState(null); // { attemptId, title, durationMinutes, questions }
@@ -30,8 +31,11 @@ export default function StudentAssessments() {
 
   const load = () => {
     setLoading(true);
-    getAssessments()
-      .then(setAssessments)
+    Promise.all([getAssessments(), getMyAssessmentAttempts()])
+      .then(([list, mine]) => {
+        setAssessments(list);
+        setMineByAssessment(mine || {});
+      })
       .catch((e) => notify(e.message || "Could not load assessments.", { type: "error" }))
       .finally(() => setLoading(false));
   };
@@ -279,26 +283,70 @@ export default function StudentAssessments() {
             No assessments have been published for your batch yet.
           </div>
         ) : (
-          assessments.map((a) => (
-            <Card key={a.id}>
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="font-medium text-ink-900">{a.title}</h3>
-                  <div className="flex items-center gap-3 mt-1.5 text-xs text-ink-500">
-                    {a.duration && <span className="flex items-center gap-1"><Clock size={12} /> {a.duration}</span>}
-                    <span>Pass ≥ {a.passPercentage}%</span>
-                    {a.maxAttempts != null && <span>{a.maxAttempts} attempt{a.maxAttempts === 1 ? "" : "s"}</span>}
+          assessments.map((a) => {
+            const mine = mineByAssessment[a.id];
+            const inProgress = mine?.status === "IN_PROGRESS";
+            const pendingGrading = mine?.status === "PENDING_MANUAL_GRADING";
+            const terminal = mine && (mine.status === "SUBMITTED" || mine.status === "EXPIRED");
+            const attemptsUsed = mine?.attemptNumber || 0;
+            const attemptsLeft = a.maxAttempts != null ? Math.max(0, a.maxAttempts - attemptsUsed) : null;
+            const canRetake = terminal && !mine.passed && (attemptsLeft == null || attemptsLeft > 0);
+            const pct = mine?.percentage != null ? Math.round(mine.percentage) : null;
+
+            let badge = <Badge tone="gold">Available</Badge>;
+            if (inProgress) badge = <Badge tone="primary">In progress</Badge>;
+            else if (pendingGrading) badge = <Badge tone="gold">Awaiting grading</Badge>;
+            else if (terminal) badge = <Badge tone={mine.passed ? "success" : "error"}>{mine.passed ? "Passed" : "Not passed"}</Badge>;
+
+            return (
+              <Card key={a.id}>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="font-medium text-ink-900">{a.title}</h3>
+                    <div className="flex items-center gap-3 mt-1.5 text-xs text-ink-500">
+                      {a.duration && <span className="flex items-center gap-1"><Clock size={12} /> {a.duration}</span>}
+                      <span>Pass ≥ {a.passPercentage}%</span>
+                      {a.maxAttempts != null && <span>{a.maxAttempts} attempt{a.maxAttempts === 1 ? "" : "s"}</span>}
+                    </div>
                   </div>
+                  {badge}
                 </div>
-                <Badge tone="gold">Available</Badge>
-              </div>
-              <div className="mt-4">
-                <Button fullWidth icon={PlayCircle} loading={starting} onClick={() => start(a)}>
-                  Start Assessment
-                </Button>
-              </div>
-            </Card>
-          ))
+
+                {terminal && (
+                  <div className="mt-3 flex items-center gap-2 rounded-lg bg-cream-50 border border-border/60 px-3 py-2 text-sm">
+                    <CheckCircle2 size={15} className={mine.passed ? "text-success-600" : "text-ink-400"} />
+                    <span className="text-ink-700">
+                      Assessment Completed{pct != null ? ` — scored ${pct}%` : ""}
+                      {attemptsLeft != null && !mine.passed ? ` · ${attemptsLeft} retake${attemptsLeft === 1 ? "" : "s"} left` : ""}
+                    </span>
+                  </div>
+                )}
+                {pendingGrading && (
+                  <p className="mt-3 text-xs text-ink-500">You've submitted this — a reviewer is grading the written answers.</p>
+                )}
+
+                <div className="mt-4">
+                  {inProgress ? (
+                    <Button fullWidth icon={PlayCircle} loading={starting} onClick={() => start(a)}>
+                      Resume Assessment
+                    </Button>
+                  ) : canRetake ? (
+                    <Button fullWidth variant="secondary" icon={PlayCircle} loading={starting} onClick={() => start(a)}>
+                      Retake Assessment
+                    </Button>
+                  ) : terminal || pendingGrading ? (
+                    <Button fullWidth variant="secondary" disabled>
+                      {pendingGrading ? "Awaiting Grading" : "Assessment Completed"}
+                    </Button>
+                  ) : (
+                    <Button fullWidth icon={PlayCircle} loading={starting} onClick={() => start(a)}>
+                      Start Assessment
+                    </Button>
+                  )}
+                </div>
+              </Card>
+            );
+          })
         )}
       </div>
     </div>

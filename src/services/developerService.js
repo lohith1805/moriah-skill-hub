@@ -219,6 +219,46 @@ export async function deleteChallenge(challengeId) {
   return { id: challengeId };
 }
 
+// ---- Bug-challenge submissions (students paste their rewritten fix) --------
+const CHALLENGE_SUB_STATUS_TO_FE = { SUBMITTED: "Submitted", ACCEPTED: "Accepted", NEEDS_WORK: "Needs work" };
+const CHALLENGE_SUB_STATUS_TO_API = { Accepted: "ACCEPTED", "Needs work": "NEEDS_WORK" };
+
+function toFeChallengeSubmission(s) {
+  return {
+    id: s.id,
+    challengeId: s.challengeId,
+    challengeTitle: s.challengeTitle || "",
+    projectTitle: s.projectTitle || "",
+    studentUuid: s.studentUuid || "",
+    studentName: s.studentName || "A student",
+    solutionCode: s.solutionCode || "",
+    notes: s.notes || "",
+    status: s.status,
+    statusLabel: CHALLENGE_SUB_STATUS_TO_FE[s.status] || s.status,
+    reviewerFeedback: s.reviewerFeedback || "",
+    score: s.score ?? null,
+    submittedAt: s.submittedAt || null,
+    reviewedAt: s.reviewedAt || null,
+  };
+}
+
+// GET /api/v1/challenges/{id}/submissions — every student submission for a challenge.
+export async function getChallengeSubmissions(challengeId) {
+  const res = await apiClient.get(`/challenges/${challengeId}/submissions`, { size: 200 });
+  return (Array.isArray(res) ? res : res?.content || []).map(toFeChallengeSubmission);
+}
+
+// PUT /api/v1/challenges/submissions/{id}/review — verdict + optional feedback/score.
+// status: "Accepted" | "Needs work"
+export async function reviewChallengeSubmission(submissionId, { status, feedback, score }) {
+  const res = await apiClient.put(`/challenges/submissions/${submissionId}/review`, {
+    status: CHALLENGE_SUB_STATUS_TO_API[status] || status,
+    feedback: feedback || null,
+    score: score != null && score !== "" ? Number(score) : null,
+  });
+  return toFeChallengeSubmission(res);
+}
+
 // ---------------------------------------------------------------------------
 // Resource Library (backend gap B1.6) — GET/POST/PUT/DELETE /api/v1/resources.
 // One shared library read by developer/, trainer/ and student/ Resources pages.
@@ -256,6 +296,7 @@ function toFeResource(r) {
     type,
     category: r.category,
     track: r.track || "",
+    projectId: r.projectId ?? null,
     link: r.url,
     active: r.active !== false,
     updatedAt: (r.updatedAt || r.createdAt || "").slice(0, 10),
@@ -263,32 +304,38 @@ function toFeResource(r) {
   };
 }
 
-// `track` (optional) scopes the feed to that cohort track + the all-track rows.
-export async function getResourceLibrary(track) {
-  const res = await apiClient.get("/resources", track ? { size: 100, track } : { size: 100 });
+// `track` and `projectId` (both optional) scope the feed to that cohort track /
+// project plus the un-scoped (shown-to-everyone) rows.
+export async function getResourceLibrary(track, projectId) {
+  const params = { size: 100 };
+  if (track) params.track = track;
+  if (projectId) params.projectId = projectId;
+  const res = await apiClient.get("/resources", params);
   return (res && res.content ? res.content : []).map(toFeResource);
 }
 
-export async function createResource({ title, type, link, description, track }) {
+export async function createResource({ title, type, link, description, track, projectId }) {
   const category = RESOURCE_CATEGORY_FOR_TYPE[String(type || "").toLowerCase()] || "OTHER";
   const created = await apiClient.post("/resources", {
     title,
     description: description || undefined,
     category,
     track: track || undefined,
+    projectId: projectId ? Number(projectId) : undefined,
     url: link,
     tags: type ? [type] : undefined,
   });
   return toFeResource(created);
 }
 
-export async function updateResource(id, { title, type, link, description, active, track }) {
+export async function updateResource(id, { title, type, link, description, active, track, projectId }) {
   const category = RESOURCE_CATEGORY_FOR_TYPE[String(type || "").toLowerCase()] || "OTHER";
   const updated = await apiClient.put(`/resources/${id}`, {
     title,
     description: description || undefined,
     category,
     track: track || undefined,
+    projectId: projectId ? Number(projectId) : undefined,
     url: link,
     tags: type ? [type] : undefined,
     active: active !== false,
@@ -366,7 +413,8 @@ async function fetchBankQuestions(bankId) {
 }
 
 export async function getAssessmentBanks() {
-  const res = await apiClient.get("/assessments/banks", { size: 100 });
+  // active=true — a deactivated ("deleted") bank must not reappear in the list.
+  const res = await apiClient.get("/assessments/banks", { size: 100, active: true });
   const banks = res && res.content ? res.content : [];
   // Few banks in an authoring view — embed each bank's questions.
   return Promise.all(banks.map(async (b) => toFeBank(b, await fetchBankQuestions(b.id))));
@@ -397,22 +445,8 @@ export async function deleteAssessmentBank(bankId) {
 }
 
 // question = { type:"MCQ", text, options, correctAnswer }
-//          | { type:"CODE", text, starterCode, functionName, testCases }
+// Assessments are multiple-choice only — the live code runner was dropped.
 export async function addQuestionToBank(bankId, question) {
-  if ((question.type || "MCQ") === "CODE") {
-    const created = await apiClient.post(`/assessments/banks/${bankId}/questions`, {
-      questionText: question.text,
-      questionType: "CODE",
-      marks: 1,
-      explanation: JSON.stringify({
-        text: question.text,
-        starterCode: question.starterCode || "",
-        functionName: question.functionName || "",
-        testCases: question.testCases || [],
-      }),
-    });
-    return toFeQuestion(created);
-  }
   const created = await apiClient.post(`/assessments/banks/${bankId}/questions`, {
     questionText: question.text,
     questionType: "MCQ",

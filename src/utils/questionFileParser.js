@@ -24,6 +24,7 @@
 
 import Papa from "papaparse";
 import mammoth from "mammoth";
+import * as XLSX from "xlsx";
 
 const LETTER_INDEX = { A: 0, B: 1, C: 2, D: 3 };
 
@@ -33,21 +34,22 @@ function normalizeFromLetter(text, opts, letter) {
   return { question: text.trim(), options: opts.map((o) => o.trim()), correctAnswer: opts[idx]?.trim() };
 }
 
-// --- CSV --------------------------------------------------------------
+// --- CSV / spreadsheet rows ------------------------------------------
+// Shared by CSV (via PapaParse) and Excel (via SheetJS) — both hand us an
+// array of arrays, columns: question, optionA, optionB, optionC, optionD, correct.
 
-function parseCsvText(text) {
-  const result = Papa.parse(text.trim(), { skipEmptyLines: true });
-  const rows = result.data;
+function parseRows(rows) {
   const questions = [];
   const problems = [];
 
   rows.forEach((row, i) => {
-    if (!row.length || !row[0] || !row[0].trim()) return;
+    if (!row || !row.length || row[0] == null || !String(row[0]).trim()) return;
     // Skip an optional header row, e.g. "question,optionA,optionB,..."
-    if (i === 0 && /question/i.test(row[0])) return;
+    if (i === 0 && /question/i.test(String(row[0]))) return;
 
-    const [q, a, b, c, d, correct] = row;
-    if (![q, a, b, c, d, correct].every((v) => v && String(v).trim())) {
+    const cells = row.map((v) => (v == null ? "" : String(v)));
+    const [q, a, b, c, d, correct] = cells;
+    if (![q, a, b, c, d, correct].every((v) => v && v.trim())) {
       problems.push(`Row ${i + 1}: missing a column (need question, 4 options, and the correct letter).`);
       return;
     }
@@ -60,6 +62,11 @@ function parseCsvText(text) {
   });
 
   return { questions, problems };
+}
+
+function parseCsvText(text) {
+  const result = Papa.parse(text.trim(), { skipEmptyLines: true });
+  return parseRows(result.data);
 }
 
 // --- Word/plain text (Q:/A)/B)/C)/D)/Correct: blocks) ------------------
@@ -117,6 +124,15 @@ export async function parseQuestionFile(file) {
     return parseCsvText(text);
   }
 
+  if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array" });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    if (!sheet) return { questions: [], problems: ["The spreadsheet has no sheets."] };
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false, defval: "" });
+    return parseRows(rows);
+  }
+
   if (name.endsWith(".docx")) {
     const arrayBuffer = await file.arrayBuffer();
     const { value: rawText } = await mammoth.extractRawText({ arrayBuffer });
@@ -139,5 +155,5 @@ export async function parseQuestionFile(file) {
     return parseBlockText(text);
   }
 
-  return { questions: [], problems: [`Unsupported file type "${file.name.split(".").pop()}". Use .csv, .txt, or .docx.`] };
+  return { questions: [], problems: [`Unsupported file type "${file.name.split(".").pop()}". Use .csv, .xlsx, .xls, .txt, or .docx.`] };
 }

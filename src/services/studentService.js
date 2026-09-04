@@ -173,17 +173,9 @@ export async function getMyStandups(date) {
     .sort((a, b) => new Date(b.scheduledAt) - new Date(a.scheduledAt));
 }
 
-// POST /api/v1/standups/{id}/checkin — student self check-in. On time -> PRESENT,
-// after the late cutoff -> LATE; a repeat check-in is idempotent, not an error.
-export async function checkInToStandup(standupId, blockerNotes = "") {
-  const res = await apiClient.post(`/standups/${standupId}/checkin`, {
-    blockerNotes: blockerNotes || null,
-  });
-  return {
-    status: ATT_STATUS_TO_FE[res.status] || res.status,
-    checkedInAt: res.checkedInAt || null,
-  };
-}
+// Students no longer self check-in — the trainer records standup attendance at
+// the start of the day from the Trainer → Standups roster. Students only join
+// the meeting link and view their attendance history (getMyAttendance below).
 
 // GET /api/v1/attendance/me — the caller's attendance history, newest first.
 export async function getMyAttendance() {
@@ -274,14 +266,6 @@ export async function getMyProjects() {
     }));
 }
 
-// The caller's locally-recorded "solved" markers for bug challenges. There is
-// no backend attempt/grading endpoint for challenges yet, so this one flag is
-// kept per-student in localStorage (everything else on this screen is live).
-const solvedKey = () => `msh_bug_solved_${getPersistedUser()?.uuid || "anon"}`;
-const readSolved = () => {
-  try { return new Set(JSON.parse(localStorage.getItem(solvedKey()) || "[]")); } catch { return new Set(); }
-};
-
 function toFeBugChallenge(c, projectTitle) {
   return {
     id: c.id,
@@ -291,7 +275,25 @@ function toFeBugChallenge(c, projectTitle) {
     brokenCodeUrl: c.brokenCodeUrl || null,
     testScriptUrl: c.testScriptUrl || null,
     difficulty: DIFFICULTY_TO_FE[c.difficulty] || c.difficulty || "",
-    solved: readSolved().has(String(c.id)),
+  };
+}
+
+const SUB_STATUS_TO_FE = { SUBMITTED: "Submitted", ACCEPTED: "Accepted", NEEDS_WORK: "Needs work" };
+
+function toFeChallengeSubmission(s) {
+  return {
+    id: s.id,
+    challengeId: s.challengeId,
+    challengeTitle: s.challengeTitle || "",
+    projectTitle: s.projectTitle || "",
+    solutionCode: s.solutionCode || "",
+    notes: s.notes || "",
+    status: s.status,
+    statusLabel: SUB_STATUS_TO_FE[s.status] || s.status,
+    reviewerFeedback: s.reviewerFeedback || "",
+    score: s.score ?? null,
+    submittedAt: s.submittedAt || null,
+    reviewedAt: s.reviewedAt || null,
   };
 }
 
@@ -315,14 +317,22 @@ export async function getBugChallengeDetails(challengeId) {
   return c ? toFeBugChallenge(c, "") : null;
 }
 
-// No backend grading for challenges yet — record the student's self-reported
-// "I fixed it" locally so the UI can show progress.
-export async function attemptBugChallenge(challengeId, solved) {
-  const set = readSolved();
-  if (solved) set.add(String(challengeId));
-  else set.delete(String(challengeId));
-  try { localStorage.setItem(solvedKey(), JSON.stringify([...set])); } catch { /* ignore */ }
-  return { id: challengeId, solved: !!solved };
+// GET /api/v1/challenges/submissions/me — the caller's own bug-challenge
+// submissions, newest first. The Projects page merges these onto each challenge
+// so it can show "Submitted / Accepted / Needs work" and the reviewer's notes.
+export async function getMyBugChallengeSubmissions() {
+  const rows = await apiClient.get("/challenges/submissions/me", { size: 200 }).then(asRows).catch(() => []);
+  return rows.map(toFeChallengeSubmission);
+}
+
+// POST /api/v1/challenges/{id}/submissions — submit the rewritten fix.
+// payload: { solutionCode, notes? }
+export async function submitBugChallenge(challengeId, { solutionCode, notes }) {
+  const s = await apiClient.post(`/challenges/${challengeId}/submissions`, {
+    solutionCode,
+    notes: notes || null,
+  });
+  return toFeChallengeSubmission(s);
 }
 
 // A STUDENT can only self-assign a BACKLOG task (POST /tasks/{id}/pull ->
@@ -690,6 +700,31 @@ export async function startAssessmentAttempt(assessmentId) {
 // GET /api/v1/assessments/attempts/{id}
 export async function getAssessmentAttempt(attemptId) {
   return toFeAttempt(await apiClient.get(`/assessments/attempts/${attemptId}`));
+}
+
+// GET /api/v1/assessments/attempts/me — the caller's own attempts across every
+// assessment. Used to show each assessment's real state ("Completed — Passed
+// 82%", "Failed", "In progress") instead of always offering "Start Assessment".
+// Returns a map keyed by assessmentId -> the newest attempt for that assessment
+// (the endpoint is already ordered newest-first, so the first one wins).
+export async function getMyAssessmentAttempts() {
+  const rows = await apiClient.get("/assessments/attempts/me", { size: 200 }).then(asRows).catch(() => []);
+  const byAssessment = {};
+  for (const r of rows) {
+    const key = r.assessmentId;
+    if (byAssessment[key]) continue; // newest already taken
+    byAssessment[key] = {
+      attemptId: r.attemptId,
+      assessmentId: r.assessmentId,
+      attemptNumber: r.attemptNumber ?? null,
+      status: r.status, // IN_PROGRESS | SUBMITTED | EXPIRED | PENDING_MANUAL_GRADING
+      percentage: r.percentage != null ? Number(r.percentage) : null,
+      passed: r.passed ?? null,
+      passMark: r.passMark ?? null,
+      submittedAt: r.submittedAt || null,
+    };
+  }
+  return byAssessment;
 }
 
 // POST /api/v1/assessments/attempts/{id}/submit
