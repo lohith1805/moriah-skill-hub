@@ -22,10 +22,10 @@ export default function StudentCertificates() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    getCertificates().then((c) => {
-      setCerts(c);
-      setLoading(false);
-    });
+    getCertificates()
+      .then((c) => setCerts(c))
+      .catch((e) => notify(e?.message || "Could not load certificates.", { type: "error" }))
+      .finally(() => setLoading(false));
   }, []);
 
   // Print style injection

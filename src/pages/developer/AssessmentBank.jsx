@@ -44,7 +44,10 @@ export default function AssessmentBank() {
   const [bulkPreview, setBulkPreview] = useState(null); // { questions, problems }
   const [bulkImporting, setBulkImporting] = useState(false);
 
-  const load = () => getAssessmentBanks().then((b) => { setBanks(b); setLoading(false); });
+  const load = () => getAssessmentBanks()
+    .then((b) => setBanks(b))
+    .catch((err) => notify(err?.message || "Couldn't load question banks.", { type: "error" }))
+    .finally(() => setLoading(false));
   useEffect(() => { load(); }, []);
 
   const onChange = (e) => setValues((v) => ({ ...v, [e.target.name]: e.target.value }));

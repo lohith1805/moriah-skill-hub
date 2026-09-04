@@ -18,12 +18,17 @@ export default function HrDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([getEmployees(), getLeaveRequests(), getPayroll()]).then(([e, l, p]) => {
-      setEmployees(e);
-      setLeaves(l);
-      setPayrollRows(p);
-      setLoading(false);
-    });
+    Promise.all([
+      getEmployees().catch(() => []),
+      getLeaveRequests().catch(() => []),
+      getPayroll().catch(() => []),
+    ])
+      .then(([e, l, p]) => {
+        setEmployees(e);
+        setLeaves(l);
+        setPayrollRows(p);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <div className="flex justify-center py-24"><LoadingSpinner label="Loading HR operations dashboard…" /></div>;

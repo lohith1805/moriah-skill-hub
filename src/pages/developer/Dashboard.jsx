@@ -15,7 +15,9 @@ export default function DeveloperDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([getProjects(), getBugChallenges()]).then(([p, b]) => { setProjects(p); setBugs(b); setLoading(false); });
+    Promise.all([getProjects().catch(() => []), getBugChallenges().catch(() => [])])
+      .then(([p, b]) => { setProjects(p); setBugs(b); })
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <div className="flex justify-center py-24"><LoadingSpinner label="Loading dashboard…" /></div>;

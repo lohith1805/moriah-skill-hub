@@ -105,10 +105,10 @@ export default function TrainerBatches() {
 
   const load = () => {
     setLoading(true);
-    getBatches().then((b) => { 
-      setBatches(b); 
-      setLoading(false); 
-    });
+    getBatches()
+      .then((b) => setBatches(b))
+      .catch(() => setBatches([]))
+      .finally(() => setLoading(false));
   };
 
   const loadStudents = () => {

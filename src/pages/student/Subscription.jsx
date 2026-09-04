@@ -72,11 +72,12 @@ export default function StudentSubscription() {
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    Promise.all([getPlans(), getMySubscription().catch(() => null)]).then(([data, sub]) => {
-      setPlans(data);
-      setMySub(sub);
-      setLoading(false);
-    });
+    Promise.all([getPlans().catch(() => []), getMySubscription().catch(() => null)])
+      .then(([data, sub]) => {
+        setPlans(data);
+        setMySub(sub);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   // Reset the coupon whenever a different plan is picked (or the modal closes).

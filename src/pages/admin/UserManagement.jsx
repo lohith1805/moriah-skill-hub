@@ -125,10 +125,10 @@ export default function AdminUserManagement() {
 
   const loadUsers = () => {
     setLoading(true);
-    getAllUsers().then((merged) => {
-      setUsers(merged);
-      setLoading(false);
-    });
+    getAllUsers()
+      .then((merged) => setUsers(merged))
+      .catch((e) => notify(e?.message || "Could not load users.", { type: "error" }))
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {

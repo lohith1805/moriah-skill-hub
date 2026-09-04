@@ -43,16 +43,17 @@ export default function Sprints() {
   });
   const [taskErrors, setTaskErrors] = useState({});
 
-  const load = (selectId = null) => 
-    Promise.all([getBatches(), getSprints()]).then(([b, s]) => { 
-      setBatches(b); 
-      setSprints(s); 
-      if (s.length > 0) {
-        const active = selectId ? s.find(item => item.id === selectId) : s[0];
-        setSelectedSprint(active || s[0]);
-      }
-      setLoading(false); 
-    });
+  const load = (selectId = null) =>
+    Promise.all([getBatches().catch(() => []), getSprints().catch(() => [])])
+      .then(([b, s]) => {
+        setBatches(b);
+        setSprints(s);
+        if (s.length > 0) {
+          const active = selectId ? s.find(item => item.id === selectId) : s[0];
+          setSelectedSprint(active || s[0]);
+        }
+      })
+      .finally(() => setLoading(false));
 
   useEffect(() => { load(); }, []);
 

@@ -36,7 +36,10 @@ export default function StudentSubmissions() {
   // Play Video Modal states
   const [activeVideo, setActiveVideo] = useState(null);
 
-  const load = () => getMyTasks().then((t) => { setTasks(t); setLoading(false); });
+  const load = () => getMyTasks()
+    .then((t) => setTasks(t))
+    .catch((e) => notify(e?.message || "Could not load your submissions.", { type: "error" }))
+    .finally(() => setLoading(false));
   useEffect(() => { load(); }, []);
 
   const handleFileChange = (e) => {

@@ -53,14 +53,16 @@ export default function DeveloperClientRequirements() {
 
   const load = () => {
     setLoading(true);
-    Promise.all([getDevRequirementDocs(), getDocReviews()]).then(([d, r]) => {
-      // Developers build off signed-off requirements — surface Approved
-      // docs first, but still show ones still Under Review so nothing is
-      // a surprise once BA verifies them.
-      setDocs(d);
-      setReviews(r);
-      setLoading(false);
-    });
+    Promise.all([getDevRequirementDocs().catch(() => []), getDocReviews().catch(() => [])])
+      .then(([d, r]) => {
+        // Developers build off signed-off requirements — surface Approved
+        // docs first, but still show ones still Under Review so nothing is
+        // a surprise once BA verifies them.
+        setDocs(d);
+        setReviews(r);
+      })
+      .catch((e) => notify(e.message || "Could not load requirement documents.", { type: "error" }))
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {

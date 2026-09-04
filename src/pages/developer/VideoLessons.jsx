@@ -46,7 +46,10 @@ export default function DeveloperVideoLessons() {
 
   const load = () => {
     setLoading(true);
-    getDevVideoLessons().then((data) => { setLessons(data); setLoading(false); });
+    getDevVideoLessons()
+      .then((data) => setLessons(data))
+      .catch((e) => notify(e?.message || "Could not load video lessons.", { type: "error" }))
+      .finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
 

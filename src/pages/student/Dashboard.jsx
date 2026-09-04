@@ -86,26 +86,31 @@ export default function StudentDashboard() {
   const [recruitment, setRecruitment] = useState(null);
 
   useEffect(() => {
-    Promise.all([getPerformanceSummary(), getMyTasks(), getMyPipStatus(), getVideoLessons()]).then(([s, t, p, vl]) => {
-      setSummary(s);
-      setTasks(t);
-      setPip(p);
-      setLessons(vl);
+    Promise.all([
+      getPerformanceSummary().catch(() => null),
+      getMyTasks().catch(() => []),
+      getMyPipStatus().catch(() => null),
+      getVideoLessons().catch(() => []),
+    ])
+      .then(([s, t, p, vl]) => {
+        setSummary(s);
+        setTasks(t);
+        setPip(p);
+        setLessons(vl);
 
-      // Surface the most advanced non-rejected client recruitment record so
-      // the student can see e.g. "Shortlisted" status right on their
-      // dashboard, not just on the dedicated Interviews page.
-      if (user) {
-        try {
-          const mine = loadRecruitments().filter((r) => r.candidateName === user.name && r.stage !== REJECTED);
-          setRecruitment(mine[0] || null);
-        } catch (e) {
-          setRecruitment(null);
+        // Surface the most advanced non-rejected client recruitment record so
+        // the student can see e.g. "Shortlisted" status right on their
+        // dashboard, not just on the dedicated Interviews page.
+        if (user) {
+          try {
+            const mine = loadRecruitments().filter((r) => r.candidateName === user.name && r.stage !== REJECTED);
+            setRecruitment(mine[0] || null);
+          } catch (e) {
+            setRecruitment(null);
+          }
         }
-      }
-
-      setLoading(false);
-    });
+      })
+      .finally(() => setLoading(false));
   }, [user]);
 
   const openResumeModal = () => {

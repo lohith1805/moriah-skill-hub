@@ -14,7 +14,10 @@ export default function StudentPipStatus() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getMyPipStatus().then((p) => { setPip(p); setLoading(false); });
+    getMyPipStatus()
+      .then((p) => setPip(p))
+      .catch(() => setPip(null))
+      .finally(() => setLoading(false));
   }, []);
 
   return (

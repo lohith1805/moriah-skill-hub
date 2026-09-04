@@ -31,7 +31,14 @@ export default function TrainerSprintPlanning() {
   const [taskErrors, setTaskErrors] = useState({});
   const [taskSubmitting, setTaskSubmitting] = useState(false);
 
-  const load = () => Promise.all([getBatches(), getSprints(), getStaffableClientProjects(), getSprintTasks()]).then(([b, s, p, t]) => { setBatches(b); setSprints(s); setStaffableProjects(p); setTasks(t); setLoading(false); });
+  const load = () => Promise.all([
+    getBatches().catch(() => []),
+    getSprints().catch(() => []),
+    getStaffableClientProjects().catch(() => []),
+    getSprintTasks().catch(() => []),
+  ])
+    .then(([b, s, p, t]) => { setBatches(b); setSprints(s); setStaffableProjects(p); setTasks(t); })
+    .finally(() => setLoading(false));
   useEffect(() => { load(); }, []);
 
   const openModal = () => {

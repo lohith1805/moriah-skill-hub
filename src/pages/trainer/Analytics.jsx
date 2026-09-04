@@ -17,12 +17,17 @@ export default function TrainerAnalytics() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getBatches().then((b) => { setBatches(b); if (b.length) setBatchId(b[0].id); });
+    getBatches()
+      .then((b) => { setBatches(b); if (b.length) setBatchId(b[0].id); })
+      .catch(() => setBatches([]));
   }, []);
 
   useEffect(() => {
     setLoading(true);
-    getAnalytics(batchId || undefined).then((d) => { setData(d); setLoading(false); });
+    getAnalytics(batchId || undefined)
+      .then((d) => setData(d))
+      .catch(() => setData({ velocity: [], quizTrend: [], studentRows: [] }))
+      .finally(() => setLoading(false));
   }, [batchId]);
 
   const activeBatchName = batches.find((b) => b.id === batchId)?.name;

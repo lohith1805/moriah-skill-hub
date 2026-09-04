@@ -20,11 +20,13 @@ export default function StudentTasks() {
   const { notify } = useToast();
 
   const load = () => {
-    Promise.all([getMyTasks(), getMySprints()]).then(([t, s]) => {
-      setTasks(t);
-      setSprints(s);
-      setLoading(false);
-    });
+    Promise.all([getMyTasks(), getMySprints()])
+      .then(([t, s]) => {
+        setTasks(t);
+        setSprints(s);
+      })
+      .catch((e) => notify(e.message || "Could not load your tasks.", { type: "error" }))
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {

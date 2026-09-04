@@ -27,11 +27,12 @@ export default function LeadGenDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([getLeads(), getTargets()]).then(([l, t]) => {
-      setLeads(l);
-      setTargets(t);
-      setLoading(false);
-    });
+    Promise.all([getLeads().catch(() => []), getTargets().catch(() => [])])
+      .then(([l, t]) => {
+        setLeads(l);
+        setTargets(t);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <div className="flex justify-center py-24"><LoadingSpinner label="Loading CRM dashboard…" /></div>;

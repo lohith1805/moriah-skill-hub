@@ -18,11 +18,12 @@ export default function TrainerDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([getBatches(), getPipCases()]).then(([b, p]) => {
-      setBatches(b);
-      setPipCases(p);
-      setLoading(false);
-    });
+    Promise.all([getBatches().catch(() => []), getPipCases().catch(() => [])])
+      .then(([b, p]) => {
+        setBatches(b);
+        setPipCases(p);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <div className="flex justify-center py-24"><LoadingSpinner label="Loading trainer dashboard…" /></div>;

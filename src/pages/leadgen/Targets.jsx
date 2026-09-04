@@ -14,10 +14,10 @@ export default function LeadTargets() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getTargets().then((t) => {
-      setTargets(t);
-      setLoading(false);
-    });
+    getTargets()
+      .then((t) => setTargets(t))
+      .catch(() => setTargets([]))
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) {

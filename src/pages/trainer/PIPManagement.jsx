@@ -72,11 +72,12 @@ export default function PIPManagement() {
     return { attendance, backlogTasks, quizAverage };
   };
 
-  const load = () => Promise.all([getPipCases(), getBatches()]).then(([data, bList]) => {
-    setCases(data);
-    setBatches(bList);
-    setLoading(false);
-  });
+  const load = () => Promise.all([getPipCases().catch(() => []), getBatches().catch(() => [])])
+    .then(([data, bList]) => {
+      setCases(data);
+      setBatches(bList);
+    })
+    .finally(() => setLoading(false));
 
   useEffect(() => { load(); }, []);
 
