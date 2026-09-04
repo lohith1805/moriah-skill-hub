@@ -17,6 +17,8 @@ import com.moriah.skillhub.payment.gateway.RazorpayService;
 import com.moriah.skillhub.payment.gateway.StripeService;
 import com.moriah.skillhub.payment.repository.InvoiceRepository;
 import com.moriah.skillhub.payment.repository.PaymentRepository;
+import com.moriah.skillhub.subscription.entity.SubscriptionPlan;
+import com.moriah.skillhub.subscription.repository.SubscriptionPlanRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
@@ -52,6 +54,7 @@ public class AdminPaymentService {
 
     private final PaymentRepository paymentRepository;
     private final InvoiceRepository invoiceRepository;
+    private final SubscriptionPlanRepository subscriptionPlanRepository;
     private final StorageService storageService;
     private final RazorpayService razorpayService;
     private final StripeService stripeService;
@@ -64,13 +67,21 @@ public class AdminPaymentService {
         Map<Long, Invoice> invoices = invoiceRepository
                 .findByPaymentIdIn(page.map(Payment::getId).toList())
                 .stream().collect(Collectors.toMap(i -> i.getPayment().getId(), Function.identity()));
-        return PageResponse.from(page.map(p -> toResponse(p, invoices.get(p.getId()))));
+        Map<Long, SubscriptionPlan> plans = subscriptionPlanRepository
+                .findAllById(page.stream().map(Payment::getPlanId).filter(java.util.Objects::nonNull).distinct().toList())
+                .stream().collect(Collectors.toMap(SubscriptionPlan::getId, Function.identity()));
+        return PageResponse.from(page.map(p -> toResponse(p, invoices.get(p.getId()), plans.get(p.getPlanId()))));
     }
 
     @Transactional(readOnly = true)
     public AdminPaymentResponse get(String gatewayOrderId) {
         Payment payment = requirePayment(gatewayOrderId);
-        return toResponse(payment, invoiceRepository.findByPaymentId(payment.getId()).orElse(null));
+        return toResponse(payment, invoiceRepository.findByPaymentId(payment.getId()).orElse(null), planOf(payment));
+    }
+
+    private SubscriptionPlan planOf(Payment payment) {
+        return payment.getPlanId() == null ? null
+                : subscriptionPlanRepository.findById(payment.getPlanId()).orElse(null);
     }
 
     /** Presigned GET for one payment's invoice PDF — {@code ADMIN} only (route-gated), and the
@@ -123,7 +134,7 @@ public class AdminPaymentService {
                 PaymentStatus.CAPTURED, reason);
         log.info("[admin/payments] refund issued for {} ({})", gatewayOrderId, payment.getGateway());
 
-        return toResponse(payment, invoiceRepository.findByPaymentId(payment.getId()).orElse(null));
+        return toResponse(payment, invoiceRepository.findByPaymentId(payment.getId()).orElse(null), planOf(payment));
     }
 
     private Payment requirePayment(String gatewayOrderId) {
@@ -131,7 +142,7 @@ public class AdminPaymentService {
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.PAYMENT_NOT_FOUND, gatewayOrderId));
     }
 
-    private static AdminPaymentResponse toResponse(Payment p, Invoice invoice) {
+    private static AdminPaymentResponse toResponse(Payment p, Invoice invoice, SubscriptionPlan plan) {
         String invoiceStatus = invoice != null ? invoice.getStatus().name()
                 : (p.getStatus() == PaymentStatus.CAPTURED ? "PROCESSING" : null);
         return new AdminPaymentResponse(
@@ -140,6 +151,8 @@ public class AdminPaymentService {
                 p.getUser().getUuid(),
                 p.getUser().getFullName(),
                 p.getPlanId(),
+                plan != null ? plan.getCode() : null,
+                plan != null ? plan.getName() : null,
                 p.getTrackCode(),
                 p.getGateway(),
                 p.getAmount(),

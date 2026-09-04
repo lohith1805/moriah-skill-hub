@@ -46,9 +46,45 @@ moriah:
       allowed-origins:
         - http://localhost:3000
         - http://localhost:5173
+        # Vite hops to the next free port when 5173 is taken (5174, 5175, ...).
+        # Allow the usual spillover range so a bounced dev server doesn't 403.
+        - http://localhost:5174
+        - http://localhost:5175
 
 logging:
+  # ---- Where logs go ----------------------------------------------------------------------
+  # Console: kept on — the container / systemd / platform collector reads stdout.
+  # File:    rotating file on disk, for local retention and grep-on-the-box debugging.
+  #          Default path is ./logs/skillhub.log (Spring Boot creates the dir). On a real
+  #          server set  LOG_FILE=/var/log/skillhub/application.log  in the environment.
+  file:
+    name: ${LOG_FILE:logs/skillhub.log}
+  logback:
+    rollingpolicy:
+      # Rolled files land next to the active one, e.g.
+      #   logs/skillhub.log.2026-09-02.0.gz , .1.gz , ...   (daily + when size cap is hit)
+      file-name-pattern: "${LOG_FILE:logs/skillhub.log}.%d{yyyy-MM-dd}.%i.gz"
+      max-file-size: 50MB           # start a new file once the active one reaches this
+      max-history: 30              # keep 30 days of rolled archives
+      total-size-cap: 3GB          # ...but never more than this in total — delete the oldest
+      clean-history-on-start: true
+
+  # ---- How each line looks ---------------------------------------------------------------
+  # Console stays ECS JSON (one object per line) for the platform collector.
+  # File is human-readable with a full timestamp + the MDC correlation ids
+  # (requestId from MdcLoggingFilter, userId from JwtAuthFilter).
+  # To make the FILE JSON too, delete the `pattern.file` line and add:  structured.format.file: ecs
+  structured:
+    format:
+      console: ecs
+  pattern:
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{40} [req=%X{requestId:-},user=%X{userId:-}] - %msg%n"
+
+  # ---- Levels --------------------------------------------------------------------------------
   level:
-    com.moriah.skillhub: DEBUG
-    org.hibernate.SQL: DEBUG
-    org.hibernate.orm.jdbc.bind: TRACE   # the "?" placeholder values for each statement above
+    root: WARN
+    "com.moriah.skillhub": INFO
+    # Kept at INFO through root=WARN — startup forensics an operator actually needs:
+    #   which schema version this instance is on, and connection-pool health.
+    org.flywaydb: INFO
+    com.zaxxer.hikari: INFO

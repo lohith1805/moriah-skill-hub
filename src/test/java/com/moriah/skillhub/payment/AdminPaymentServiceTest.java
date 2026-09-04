@@ -15,6 +15,7 @@ import com.moriah.skillhub.payment.gateway.StripeService;
 import com.moriah.skillhub.common.storage.StorageService;
 import com.moriah.skillhub.payment.repository.InvoiceRepository;
 import com.moriah.skillhub.payment.repository.PaymentRepository;
+import com.moriah.skillhub.subscription.repository.SubscriptionPlanRepository;
 import com.moriah.skillhub.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -41,6 +42,8 @@ class AdminPaymentServiceTest {
     private PaymentRepository paymentRepository;
     @Mock
     private InvoiceRepository invoiceRepository;
+    @Mock
+    private SubscriptionPlanRepository subscriptionPlanRepository;
     @Mock
     private StorageService storageService;
     @Mock

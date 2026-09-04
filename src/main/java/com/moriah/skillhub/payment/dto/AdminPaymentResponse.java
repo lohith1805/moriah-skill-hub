@@ -20,6 +20,8 @@ public record AdminPaymentResponse(
         String userUuid,
         String userFullName,
         Long planId,
+        String planCode,
+        String planName,
         String trackCode,
         PaymentGateway gateway,
         BigDecimal amount,

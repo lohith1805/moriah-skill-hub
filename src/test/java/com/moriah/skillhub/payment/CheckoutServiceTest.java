@@ -11,7 +11,10 @@ import com.moriah.skillhub.payment.gateway.RazorpayService;
 import com.moriah.skillhub.payment.gateway.StripeService;
 import com.moriah.skillhub.payment.repository.PaymentRepository;
 import com.moriah.skillhub.subscription.entity.SubscriptionPlan;
+import com.moriah.skillhub.subscription.entity.SubscriptionStatus;
+import com.moriah.skillhub.subscription.entity.UserSubscription;
 import com.moriah.skillhub.subscription.repository.SubscriptionPlanRepository;
+import com.moriah.skillhub.subscription.repository.UserSubscriptionRepository;
 import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.repository.UserRepository;
 import com.razorpay.Order;
@@ -50,6 +53,8 @@ class CheckoutServiceTest {
     @Mock
     private SubscriptionPlanRepository subscriptionPlanRepository;
     @Mock
+    private UserSubscriptionRepository userSubscriptionRepository;
+    @Mock
     private UserRepository userRepository;
     @Mock
     private PaymentRepository paymentRepository;
@@ -72,7 +77,7 @@ class CheckoutServiceTest {
     void setUp() {
         RazorpayProperties razorpayProperties = new RazorpayProperties("test-key-id", "test-key-secret", "test-webhook-secret");
         checkoutService = new CheckoutService(
-                subscriptionPlanRepository, userRepository, paymentRepository,
+                subscriptionPlanRepository, userSubscriptionRepository, userRepository, paymentRepository,
                 couponService, razorpayService, razorpayProperties, stripeService);
 
         user = new User();
@@ -188,5 +193,40 @@ class CheckoutServiceTest {
                 new CheckoutRequest("PROJECT_BASED", PaymentGateway.RAZORPAY, null, "FULL_STACK")))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.PLAN_NOT_FOUND));
+    }
+
+    @Test
+    void alreadyHasActiveSubscription_throwsConflict_andNeverTouchesGateway() {
+        stubValidPlan();
+        when(userSubscriptionRepository.findByUserIdAndStatus(1L, SubscriptionStatus.ACTIVE))
+                .thenReturn(Optional.of(new UserSubscription()));
+
+        assertThatThrownBy(() -> checkoutService.checkout(1L,
+                new CheckoutRequest("PROJECT_BASED", PaymentGateway.RAZORPAY, null, "FULL_STACK")))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.SUBSCRIPTION_ALREADY_ACTIVE));
+
+        verify(razorpayService, never()).createOrder(any(), anyString());
+        verify(paymentRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void rapidResubmit_reusesOpenRazorpayOrder_withoutCreatingAnother() {
+        stubValidPlan();
+        Payment open = new Payment();
+        open.setId(100L);
+        open.setAmount(new BigDecimal("14999.00"));
+        open.setGatewayOrderId("order_open123");
+        when(paymentRepository.findReusableCreated(eq(1L), eq(10L), eq(PaymentGateway.RAZORPAY), any()))
+                .thenReturn(java.util.List.of(open));
+
+        CheckoutResponse response = checkoutService.checkout(1L,
+                new CheckoutRequest("PROJECT_BASED", PaymentGateway.RAZORPAY, null, "FULL_STACK"));
+
+        assertThat(response.razorpayOrderId()).isEqualTo("order_open123");
+        assertThat(response.paymentId()).isEqualTo(100L);
+        verify(razorpayService, never()).createOrder(any(), anyString());
+        verify(paymentRepository, never()).saveAndFlush(any());
     }
 }

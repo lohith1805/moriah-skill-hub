@@ -73,7 +73,9 @@ public class InvoiceService {
             return;
         }
 
-        Payment payment = paymentRepository.findById(paymentId).orElseThrow();
+        // findWithUserById, not findById — this method has no ambient session, and
+        // sendConfirmationEmail() below reads payment.getUser().getEmail()/getId().
+        Payment payment = paymentRepository.findWithUserById(paymentId).orElseThrow();
         String planName = subscriptionPlanRepository.findById(payment.getPlanId())
                 .map(SubscriptionPlan::getName)
                 .orElse("Subscription");

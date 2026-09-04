@@ -13,7 +13,9 @@ import com.moriah.skillhub.payment.gateway.RazorpayService;
 import com.moriah.skillhub.payment.gateway.StripeService;
 import com.moriah.skillhub.payment.repository.PaymentRepository;
 import com.moriah.skillhub.subscription.entity.SubscriptionPlan;
+import com.moriah.skillhub.subscription.entity.SubscriptionStatus;
 import com.moriah.skillhub.subscription.repository.SubscriptionPlanRepository;
+import com.moriah.skillhub.subscription.repository.UserSubscriptionRepository;
 import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.repository.UserRepository;
 import com.razorpay.Order;
@@ -23,6 +25,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -36,7 +41,12 @@ public class CheckoutService {
 
     private static final String CURRENCY = "INR";
 
+    /** Layer-1 double-charge guard: a second {@code /checkout} for the same plan within this
+     * window reuses the first still-open Razorpay order instead of creating another. */
+    private static final Duration CHECKOUT_DEDUPE_WINDOW = Duration.ofMinutes(15);
+
     private final SubscriptionPlanRepository subscriptionPlanRepository;
+    private final UserSubscriptionRepository userSubscriptionRepository;
     private final UserRepository userRepository;
     private final PaymentRepository paymentRepository;
     private final CouponService couponService;
@@ -76,6 +86,31 @@ public class CheckoutService {
         SubscriptionPlan plan = subscriptionPlanRepository.findByCode(request.planCode())
                 .filter(SubscriptionPlan::isActive)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PLAN_NOT_FOUND));
+
+        // Layer-1 guard A — the user already has an ACTIVE subscription. Reject before any money
+        // moves; a second capture could never create a second subscription anyway (V3's
+        // uq_one_active_subscription), so this only ever leads to a "captured, nothing delivered"
+        // row that needs a manual refund. Renewals/upgrades are a separate flow.
+        if (userSubscriptionRepository.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE).isPresent()) {
+            throw new BusinessException(ErrorCode.SUBSCRIPTION_ALREADY_ACTIVE);
+        }
+
+        // Layer-1 guard B — a rapid re-submit (double-click, back-then-retry) of the same plan.
+        // Reuse the first still-open Razorpay order rather than minting another gateway order the
+        // user could also pay. Razorpay only: Stripe's hosted-checkout URL isn't persisted, so a
+        // reused Stripe session can't be reconstructed — a fresh session there is harmless (the
+        // stale one just expires unpaid).
+        if (request.gateway() == PaymentGateway.RAZORPAY) {
+            List<Payment> reusable = paymentRepository.findReusableCreated(
+                    user.getId(), plan.getId(), PaymentGateway.RAZORPAY,
+                    Instant.now().minus(CHECKOUT_DEDUPE_WINDOW));
+            if (!reusable.isEmpty()) {
+                Payment open = reusable.get(0);
+                return new CheckoutResponse(
+                        PaymentGateway.RAZORPAY, open.getId(), open.getAmount(), CURRENCY,
+                        open.getGatewayOrderId(), razorpayProperties.keyId(), null);
+            }
+        }
 
         BigDecimal amount = plan.getPriceInr();
         if (request.couponCode() != null && !request.couponCode().isBlank()) {

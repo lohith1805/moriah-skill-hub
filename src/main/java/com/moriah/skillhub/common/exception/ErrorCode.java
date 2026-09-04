@@ -53,6 +53,7 @@ public enum ErrorCode {
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "User not found."),
     PLAN_NOT_FOUND(HttpStatus.NOT_FOUND, "This subscription plan does not exist or is no longer active."),
     SUBSCRIPTION_NOT_FOUND(HttpStatus.NOT_FOUND, "No active subscription was found for this account."),
+    SUBSCRIPTION_ALREADY_ACTIVE(HttpStatus.CONFLICT, "You already have an active subscription — manage it from your account instead of purchasing again."),
     PAYMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "This payment could not be found."),
     INVOICE_NOT_FOUND(HttpStatus.NOT_FOUND, "No invoice PDF is available for this payment yet."),
     COUPON_NOT_FOUND(HttpStatus.NOT_FOUND, "This coupon code does not exist."),
