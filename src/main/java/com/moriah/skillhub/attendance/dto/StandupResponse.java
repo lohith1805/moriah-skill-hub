@@ -18,6 +18,7 @@ public record StandupResponse(
         Integer lateCutoffMinutes,
         String notes,
         StandupStatus status,
-        Instant finalisedAt
+        Instant finalisedAt,
+        String meetingLink
 ) {
 }

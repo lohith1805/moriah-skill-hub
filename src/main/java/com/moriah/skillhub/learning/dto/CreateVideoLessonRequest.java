@@ -14,6 +14,7 @@ public record CreateVideoLessonRequest(
         @NotBlank @Size(max = 1000) String videoUrl,
         @Positive Integer durationSeconds,
         @PositiveOrZero int sortOrder,
-        boolean published
+        boolean published,
+        @Size(max = 30) String track
 ) {
 }

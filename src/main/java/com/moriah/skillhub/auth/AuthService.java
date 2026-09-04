@@ -89,6 +89,10 @@ public class AuthService {
         if (userRepository.existsByEmail(request.email())) {
             throw new BusinessException(ErrorCode.EMAIL_ALREADY_REGISTERED);
         }
+        if (request.phone() != null && !request.phone().isBlank()
+                && userRepository.existsByPhone(request.phone())) {
+            throw new BusinessException(ErrorCode.PHONE_ALREADY_REGISTERED);
+        }
 
         User user = new User();
         user.setFullName(request.fullName());

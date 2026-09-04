@@ -21,9 +21,11 @@ public interface VideoLessonRepository extends JpaRepository<VideoLesson, Long> 
             SELECT l FROM VideoLesson l
              WHERE (:publishedOnly = false OR l.published = true)
                AND (:module IS NULL OR l.moduleName = :module)
+               AND (:track IS NULL OR l.track IS NULL OR l.track = :track)
             """)
     Page<VideoLesson> search(@Param("publishedOnly") boolean publishedOnly,
                              @Param("module") String module,
+                             @Param("track") String track,
                              Pageable pageable);
 
     /** {@code GET /api/v1/lessons/modules} — distinct published module names with a lesson count. */

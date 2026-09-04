@@ -23,6 +23,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     boolean existsByEmail(String email);
 
+    /** {@code users.phone} is {@code UNIQUE} (V1) — self-register flows pre-check it so a
+     * duplicate surfaces as a clean {@code PHONE_ALREADY_REGISTERED}, not a raw constraint 409. */
+    boolean existsByPhone(String phone);
+
     /** feature 22: {@code GET /admin/users?role=&status=} — both filters optional. An {@code
      * EXISTS} subquery against {@code UserRole}/{@code Role} rather than a {@code JOIN}, so a
      * multi-role user contributes exactly one row regardless of {@code role} being supplied

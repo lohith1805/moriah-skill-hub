@@ -86,6 +86,7 @@ public enum ErrorCode {
     QUESTION_BANK_NOT_FOUND(HttpStatus.NOT_FOUND, "This question bank does not exist."),
     HR_DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "This document does not exist."),
     LEAVE_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "This leave request does not exist."),
+    STAFF_ATTENDANCE_NOT_FOUND(HttpStatus.NOT_FOUND, "No attendance record for this staff member on this date."),
     CERTIFICATE_NOT_FOUND(HttpStatus.NOT_FOUND, "This certificate does not exist."),
     CLIENT_NOT_FOUND(HttpStatus.NOT_FOUND, "No client record is linked to your account."),
     CLIENT_PROJECT_NOT_FOUND(HttpStatus.NOT_FOUND, "This client project does not exist."),
@@ -94,6 +95,7 @@ public enum ErrorCode {
     // 409 — a business rule was violated
     BUSINESS_RULE_VIOLATION(HttpStatus.CONFLICT, "The request could not be completed."),
     EMAIL_ALREADY_REGISTERED(HttpStatus.CONFLICT, "An account with this email already exists."),
+    PHONE_ALREADY_REGISTERED(HttpStatus.CONFLICT, "An account with this phone number already exists."),
     PLAN_CODE_TAKEN(HttpStatus.CONFLICT, "A subscription plan with this code already exists."),
     INVALID_OR_EXPIRED_VERIFICATION_TOKEN(HttpStatus.CONFLICT, "This verification link is invalid or has expired."),
     INVALID_OR_EXPIRED_RESET_TOKEN(HttpStatus.CONFLICT, "This password reset link is invalid or has expired."),
@@ -121,6 +123,7 @@ public enum ErrorCode {
     STANDUP_INVALID_TRANSITION(HttpStatus.CONFLICT, "This standup status transition is not allowed."),
     STANDUP_CANCELLED(HttpStatus.CONFLICT, "This standup was cancelled."),
     STANDUP_ALREADY_FINALISED(HttpStatus.CONFLICT, "This standup has already been finalised for attendance."),
+    QUESTION_BANK_EMPTY(HttpStatus.CONFLICT, "This question bank has no questions to publish."),
     QUIZ_INACTIVE(HttpStatus.CONFLICT, "This assessment is not currently active."),
     QUIZ_MAX_ATTEMPTS_EXCEEDED(HttpStatus.CONFLICT, "You have already used every attempt allowed for this assessment."),
     QUIZ_ATTEMPT_NOT_IN_PROGRESS(HttpStatus.CONFLICT, "This attempt has already been submitted or has expired."),

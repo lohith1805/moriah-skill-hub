@@ -76,10 +76,12 @@ class StandupServiceTest {
         when(batchRepository.findById(100L)).thenReturn(Optional.of(batch));
 
         StandupResponse response = standupService.create(1L,
-                new CreateStandupRequest(100L, null, Instant.parse("2026-08-27T04:00:00Z"), null, "Daily sync"));
+                new CreateStandupRequest(100L, null, Instant.parse("2026-08-27T04:00:00Z"), null, "Daily sync",
+                        "https://meet.example.com/daily-100"));
 
         assertThat(response.status()).isEqualTo(StandupStatus.SCHEDULED);
         assertThat(response.lateCutoffMinutes()).isEqualTo(15);
+        assertThat(response.meetingLink()).isEqualTo("https://meet.example.com/daily-100");
         verify(batchService).requireOwnerOrAdmin(1L, batch);
         verify(standupRepository).save(any(Standup.class));
     }
@@ -89,7 +91,7 @@ class StandupServiceTest {
         when(batchRepository.findById(100L)).thenReturn(Optional.of(batch));
 
         StandupResponse response = standupService.create(1L,
-                new CreateStandupRequest(100L, 5L, Instant.now(), 30, null));
+                new CreateStandupRequest(100L, 5L, Instant.now(), 30, null, null));
 
         assertThat(response.lateCutoffMinutes()).isEqualTo(30);
         assertThat(response.sprintId()).isEqualTo(5L);
@@ -100,7 +102,7 @@ class StandupServiceTest {
         when(batchRepository.findById(100L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> standupService.create(1L,
-                new CreateStandupRequest(100L, null, Instant.now(), null, null)))
+                new CreateStandupRequest(100L, null, Instant.now(), null, null, null)))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -133,7 +135,7 @@ class StandupServiceTest {
         when(standupRepository.findById(1L)).thenReturn(Optional.of(standup));
 
         StandupResponse response = standupService.update(1L, 1L,
-                new UpdateStandupRequest("Holiday", 15, StandupStatus.CANCELLED));
+                new UpdateStandupRequest("Holiday", 15, StandupStatus.CANCELLED, null));
 
         assertThat(response.status()).isEqualTo(StandupStatus.CANCELLED);
         verify(batchService).requireOwnerOrAdmin(1L, batch);
@@ -145,7 +147,7 @@ class StandupServiceTest {
         when(standupRepository.findById(1L)).thenReturn(Optional.of(standup));
 
         StandupResponse response = standupService.update(1L, 1L,
-                new UpdateStandupRequest("Updated notes", 20, StandupStatus.SCHEDULED));
+                new UpdateStandupRequest("Updated notes", 20, StandupStatus.SCHEDULED, null));
 
         assertThat(response.status()).isEqualTo(StandupStatus.SCHEDULED);
         assertThat(response.notes()).isEqualTo("Updated notes");
@@ -163,7 +165,7 @@ class StandupServiceTest {
         when(standupRepository.findById(1L)).thenReturn(Optional.of(standup));
 
         StandupResponse response = standupService.update(1L, 1L,
-                new UpdateStandupRequest(null, null, StandupStatus.CANCELLED));
+                new UpdateStandupRequest(null, null, StandupStatus.CANCELLED, null));
 
         assertThat(response.notes()).isEqualTo("Moved to conference room B");
         assertThat(response.status()).isEqualTo(StandupStatus.CANCELLED);
@@ -175,7 +177,7 @@ class StandupServiceTest {
         when(standupRepository.findById(1L)).thenReturn(Optional.of(standup));
 
         assertThatThrownBy(() -> standupService.update(1L, 1L,
-                new UpdateStandupRequest(null, null, StandupStatus.CONDUCTED)))
+                new UpdateStandupRequest(null, null, StandupStatus.CONDUCTED, null)))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.STANDUP_INVALID_TRANSITION);
     }
@@ -186,7 +188,7 @@ class StandupServiceTest {
         when(standupRepository.findById(1L)).thenReturn(Optional.of(standup));
 
         assertThatThrownBy(() -> standupService.update(1L, 1L,
-                new UpdateStandupRequest(null, null, StandupStatus.CANCELLED)))
+                new UpdateStandupRequest(null, null, StandupStatus.CANCELLED, null)))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.STANDUP_INVALID_TRANSITION);
     }
@@ -196,7 +198,7 @@ class StandupServiceTest {
         when(standupRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> standupService.update(1L, 99L,
-                new UpdateStandupRequest(null, null, StandupStatus.CANCELLED)))
+                new UpdateStandupRequest(null, null, StandupStatus.CANCELLED, null)))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 

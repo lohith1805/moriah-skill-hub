@@ -5,12 +5,16 @@ import com.moriah.skillhub.client.dto.ClientProjectResponse;
 import com.moriah.skillhub.client.dto.ClientResponse;
 import com.moriah.skillhub.client.dto.CreateClientProjectRequest;
 import com.moriah.skillhub.client.dto.CreateClientRequest;
+import com.moriah.skillhub.client.entity.ClientProjectStatus;
 import com.moriah.skillhub.common.dto.ApiResponse;
+import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.common.security.CurrentUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -19,6 +23,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** {@code POST /clients} is ADMIN-only (client companies are provisioned, never self-registered
@@ -55,6 +60,18 @@ public class ClientController {
             @Valid @RequestBody CreateClientProjectRequest request, @CurrentUser Long callerUserId) {
         ClientProjectResponse response = clientProjectService.create(request, callerUserId);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
+    }
+
+    @GetMapping("/projects")
+    @PreAuthorize("hasAnyRole('CLIENT','BUSINESS_ANALYST','ADMIN')")
+    @Operation(summary = "List client project submissions — a CLIENT sees only their own company's; "
+            + "a BUSINESS_ANALYST / ADMIN sees every client's")
+    public ResponseEntity<ApiResponse<PageResponse<ClientProjectResponse>>> listProjects(
+            @RequestParam(required = false) ClientProjectStatus status,
+            @CurrentUser Long callerUserId,
+            @PageableDefault(size = 50) Pageable pageable) {
+        return ResponseEntity.ok(ApiResponse.success(
+                clientProjectService.list(callerUserId, status, pageable)));
     }
 
     @GetMapping("/projects/{id}/progress")

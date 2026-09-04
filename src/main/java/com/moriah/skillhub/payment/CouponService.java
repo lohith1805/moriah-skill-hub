@@ -33,8 +33,17 @@ public class CouponService {
 
     /** Read-only preview at checkout time — does not reserve capacity or record a redemption.
      * {@code CheckoutService} calls {@link #redeem} separately, only after the {@code payments}
-     * row this redemption will reference actually exists. */
-    @Transactional(readOnly = true)
+     * row this redemption will reference actually exists.
+     *
+     * <p>Deliberately NOT {@code @Transactional}: it only reads a couple of non-lazy columns off
+     * {@code coupons}, and an invalid/expired coupon throws {@link BusinessException}. When this
+     * ran inside the caller's transaction ({@code CheckoutService.previewCheckout}, which is
+     * {@code readOnly}), that throw marked the shared transaction rollback-only — so even though
+     * {@code previewCheckout} catches it and returns a clean {@code couponApplied=false} body, the
+     * commit afterward failed with {@code UnexpectedRollbackException} and the client saw a
+     * generic 500 instead of "coupon not valid". Running outside a transaction lets the exception
+     * propagate to the caller's {@code catch} with nothing to roll back. {@link #redeem} stays
+     * transactional — there a bad coupon MUST roll the redemption insert back. */
     public CouponPreview preview(String code, BigDecimal originalAmount) {
         Coupon coupon = requireValidCoupon(code);
         return new CouponPreview(coupon, applyDiscount(coupon, originalAmount));

@@ -2,6 +2,8 @@ package com.moriah.skillhub.assessment;
 
 import com.moriah.skillhub.assessment.dto.AnswerResultView;
 import com.moriah.skillhub.assessment.dto.AssessmentResponse;
+import com.moriah.skillhub.assessment.dto.AssessmentResultRow;
+import com.moriah.skillhub.assessment.dto.CreateAssessmentFromBankRequest;
 import com.moriah.skillhub.assessment.dto.CreateAssessmentRequest;
 import com.moriah.skillhub.assessment.dto.CreateQuestionRequest;
 import com.moriah.skillhub.assessment.dto.QuizAttemptResponse;
@@ -12,7 +14,11 @@ import com.moriah.skillhub.assessment.entity.QuestionType;
 import com.moriah.skillhub.assessment.entity.Quiz;
 import com.moriah.skillhub.assessment.entity.QuizAnswer;
 import com.moriah.skillhub.assessment.entity.QuizAttempt;
+import com.moriah.skillhub.assessment.entity.QuestionBank;
+import com.moriah.skillhub.assessment.entity.QuestionBankItem;
 import com.moriah.skillhub.assessment.entity.QuizQuestion;
+import com.moriah.skillhub.assessment.repository.QuestionBankItemRepository;
+import com.moriah.skillhub.assessment.repository.QuestionBankRepository;
 import com.moriah.skillhub.assessment.repository.QuizAnswerRepository;
 import com.moriah.skillhub.assessment.repository.QuizAttemptRepository;
 import com.moriah.skillhub.assessment.repository.QuizQuestionRepository;
@@ -59,6 +65,8 @@ public class QuizService {
 
     private final QuizRepository quizRepository;
     private final QuizQuestionRepository quizQuestionRepository;
+    private final QuestionBankRepository questionBankRepository;
+    private final QuestionBankItemRepository questionBankItemRepository;
     private final QuizAttemptRepository quizAttemptRepository;
     private final QuizAnswerRepository quizAnswerRepository;
     private final QuizAttemptWriter quizAttemptWriter;
@@ -107,8 +115,117 @@ public class QuizService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<AssessmentResponse> list(Long batchId, Pageable pageable) {
-        return PageResponse.from(quizRepository.findByBatchId(batchId, pageable).map(this::toResponse));
+    public PageResponse<AssessmentResponse> list(Long callerUserId, Long batchId, Pageable pageable) {
+        if (batchId != null) {
+            return PageResponse.from(quizRepository.findByBatchId(batchId, pageable).map(this::toResponse));
+        }
+        // batchId omitted — only TRAINER_PM / ADMIN may enumerate everything (the trainer's
+        // publish / results screen); a student must always scope to a batch.
+        List<String> roles = SecurityUtils.currentUserRoles();
+        boolean author = roles.contains(RoleCode.ADMIN.name()) || roles.contains(RoleCode.TRAINER_PM.name());
+        if (!author) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "batchId is required.");
+        }
+        return PageResponse.from(quizRepository.findAll(pageable).map(this::toResponse));
+    }
+
+    /**
+     * Author-facing results feed ({@code GET /api/v1/assessments/results}) — one row per student
+     * attempt, filterable by assessment, batch and cohort track. Read-only; no ownership narrowing
+     * beyond the role gate, matching the developer→student publish flow (a DEVELOPER/TRAINER_PM/
+     * ADMIN who can publish an assessment can see how it went).
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<AssessmentResultRow> results(Long assessmentId, Long batchId, String track,
+                                                     boolean onlyFinished, Pageable pageable) {
+        String trackFilter = (track == null || track.isBlank()) ? null : track;
+        return PageResponse.from(quizAttemptRepository
+                .searchResults(assessmentId, batchId, trackFilter, onlyFinished, pageable)
+                .map(a -> {
+                    Quiz q = a.getQuiz();
+                    return new AssessmentResultRow(
+                            a.getId(),
+                            q.getId(),
+                            q.getTitle(),
+                            q.getBatch() == null ? null : q.getBatch().getId(),
+                            q.getBatch() == null ? null : q.getBatch().getName(),
+                            q.getBatch() == null ? null : q.getBatch().getTrackCode(),
+                            a.getUser().getUuid(),
+                            a.getUser().getFullName(),
+                            a.getAttemptNumber(),
+                            a.getStatus(),
+                            a.getPercentage(),
+                            a.getPassed(),
+                            q.getPassPercentage(),
+                            a.getSubmittedAt());
+                }));
+    }
+
+    /**
+     * Publish a question bank as a live, batch-scoped assessment. The bank's items — including
+     * their {@code correctAnswer} keys — are snapshotted into fresh {@link QuizQuestion}s, so
+     * editing the bank later leaves this assessment untouched. ADMIN may target any batch; a
+     * TRAINER_PM is held to a batch they own, exactly as {@link #create}.
+     */
+    @Transactional
+    public AssessmentResponse createFromBank(Long callerUserId, CreateAssessmentFromBankRequest request) {
+        QuestionBank bank = questionBankRepository.findById(request.bankId())
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.QUESTION_BANK_NOT_FOUND, request.bankId()));
+
+        List<QuestionBankItem> items = questionBankItemRepository
+                .findByBankId(bank.getId(), Pageable.unpaged()).getContent();
+        if (items.isEmpty()) {
+            throw new BusinessException(ErrorCode.QUESTION_BANK_EMPTY);
+        }
+
+        Batch batch = requireBatch(request.batchId());
+        if (!SecurityUtils.currentUserRoles().contains(RoleCode.ADMIN.name())) {
+            batchService.requireOwnerOrAdmin(callerUserId, batch);
+        }
+        if (request.projectId() != null) {
+            projectService.requirePublished(request.projectId());
+        }
+        User creator = requireUser(callerUserId);
+
+        Quiz quiz = new Quiz();
+        quiz.setProjectId(request.projectId());
+        quiz.setBatch(batch);
+        quiz.setTitle(request.title() != null && !request.title().isBlank() ? request.title() : bank.getName());
+        quiz.setDurationMinutes(request.durationMinutes());
+        quiz.setPassPercentage(request.passPercentage() != null
+                ? request.passPercentage() : Constants.QUIZ_PASS_PERCENTAGE);
+        quiz.setMaxAttempts(request.maxAttempts() != null
+                ? request.maxAttempts() : Constants.QUIZ_DEFAULT_MAX_ATTEMPTS);
+        quiz.setCreatedBy(creator);
+        quiz.setActive(true);
+        quizRepository.save(quiz);
+
+        List<QuizQuestion> questions = items.stream().map(item -> {
+            QuizQuestion q = new QuizQuestion();
+            q.setQuiz(quiz);
+            q.setQuestionText(item.getQuestionText());
+            q.setQuestionType(item.getQuestionType());
+            q.setOptions(item.getOptions());               // already a JSON string
+            q.setCorrectAnswer(item.getCorrectAnswer());   // already a JSON string
+            q.setMarks(item.getMarks());
+            q.setExplanation(item.getExplanation());
+            return q;
+        }).toList();
+        quizQuestionRepository.saveAll(questions);
+
+        return toResponse(quiz);
+    }
+
+    /** Deactivate (never row-delete — attempt history must survive). ADMIN may deactivate any
+     * assessment; a TRAINER_PM only one whose batch they own. Idempotent. */
+    @Transactional
+    public void deactivate(Long callerUserId, Long quizId) {
+        Quiz quiz = requireQuiz(quizId);
+        if (!SecurityUtils.currentUserRoles().contains(RoleCode.ADMIN.name()) && quiz.getBatch() != null) {
+            batchService.requireOwnerOrAdmin(callerUserId, quiz.getBatch());
+        }
+        quiz.setActive(false);
+        quizRepository.save(quiz);
     }
 
     /** build-plan.md feature 14 "Sensible defaults" (implied by {@code max_attempts}): a student

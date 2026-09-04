@@ -1,7 +1,8 @@
 # Memory — Moriah Skill Hub (backend + frontend integration)
 
-Last updated: **2026-09-03**. This file is the authoritative handoff — earlier prose was
-consolidated here.
+Last updated: **2026-09-04** (part-2 session — dashboard bug-fix sweep across every role portal;
+see the section at the very end of this file). This file is the authoritative handoff — earlier
+prose was consolidated here.
 
 ---
 
@@ -13,14 +14,21 @@ consolidated here.
 | `C:\Users\ADMIN\Desktop\Moraih Backend\moriah-skill-hub-updated` | React 19 + Vite 8 + Redux Toolkit + react-router 7 frontend | **own repo** (`git init`'d this session), no remote, branch `main` |
 | `C:\Users\ADMIN\Desktop\Moraih Backend\frontend-backend-gap-report.md` | the integration plan (Part A frontend / Part B backend) | untracked, workspace parent |
 
-Backend HEAD: `6e481c8` (`22caf12` question-bank finish · `60741b3` per-lesson quiz · `1761ae9`
-batches widened to STUDENT · `6e481c8` docs). Frontend HEAD: developerService migration commit
-(after `c80e0e0`).
-Backend working tree: only `README.md` modified — **NOT mine**: someone pasted Razorpay TEST api
-keys + seeded-user rows into it. Left untouched; should be moved out of the tracked file. Never
-`git add -A` in the backend repo without checking — scope the add.
-**Migrations now V20–V32, next = V33.** Unit tests: **522, 0 failures** (last full `mvn clean
-verify` green, 1 proven-environmental IT flake).
+HEADs (authoritative copy near end of file, plus the dated session log below it):
+Backend `26c96d7` (branch `main`). Frontend `084dbcc` (branch `master`).
+**part-2 2026-09-04 session made a LARGE number of changes in BOTH working trees and committed
+NOTHING** — everything is uncommitted in the working tree. Do NOT `git add -A`; the backend
+`README.md` still carries the user's Razorpay-test-key edit (not ours). See the final section for
+the full file list. The user runs the backend on 8080 themselves and MUST restart it to load any
+of it.
+**Migrations now V20–V37 (V35 standup meeting_link, V36 staff_attendance, V37 lesson/resource
+track — added part-2 2026-09-04, Flyway auto-applies on restart). Next = V38.**
+Unit tests: full `mvn verify` NOT re-run this session (Docker/slow); targeted `surefire:test`
+slices green every pass — QuizServiceTest 17, QuestionBankServiceTest 10, LessonServiceTest 13,
+ResourceServiceTest 7, ProjectServiceTest 30, BatchServiceTest 18, StaffAttendanceServiceTest 6,
+EntitlementServiceTest 6, StandupServiceTest, CouponServiceTest, ClientProjectServiceTest 8,
+ClientRegistrationServiceTest 2, ClientServiceTest 3, AuthServiceTest, LessonQuizServiceTest 7.
+Frontend `npm run build` green every pass (~3002 modules).
 
 ---
 
@@ -299,6 +307,18 @@ drop the dead Register plan/payment handlers.
 ---
 
 ## Next session starts with
+- **User must restart their backend** (they run it themselves on 8080) to load `26c96d7` — the
+  checkout guards + `InvoiceService.findWithUserById` email fix aren't live until then. Confirm no
+  bean cycle on start (new deps added to CheckoutService/AdminPaymentService/DevJobController).
+- Then re-send Man1's confirmation email: `POST /api/v1/dev/jobs/invoice-generation/run?paymentId=6`.
+- Regenerate the 4 API docs for `26c96d7` (see doc-regen procedure): new `invoice-generation` job
+  arg on `POST /dev/jobs/{job}/run`, `AdminPaymentResponse` +`planCode`/`planName`.
+- Still open (not blocking): Google OAuth `redirect_uri_mismatch` — user must set the Console
+  redirect URI to exactly `http://localhost:8080/api/v1/auth/oauth2/callback/{google,github}`.
+- Layers 2–4 of the double-charge plan (auto-refund duplicate, reconciliation sweep, FE button
+  disable) not started.
+
+### Older "next session" note (pre-2026-09-04, kept for context)
 Frontend integration is essentially complete. Backend this session added
 `GET /batches/{id}/students`, `GET /hr/leaves`, `GET /hr/documents`, `POST` was already there for
 `/subscriptions/checkout`, and a full `placement/` module (`GET /placements`, `GET`/`PUT
@@ -518,12 +538,64 @@ server PDF (falls back to the client jsPDF for rows without one).
   delivery succeed (tunnel up, MinIO up, `RAZORPAY_WEBHOOK_SECRET` set). `WebhookReconciliationJob`
   (every 10 min) is the backstop.
 
-**HEADs:** Frontend `b7aff9e` (branch `master`). Backend `ff95117` on top of `035dc3b` / `a36f9f5`
-/ `70645f1`. openapi/postman: 157 paths / 206 ops. Targeted unit slices green each pass
-(invoice/payment/notification/batch/adminpayment); full
-surefire (547) not re-run since the seed/spec work. `*IT` need Docker — a bean-wiring change once
-showed up only as a `BatchFlowIT` context-load failure, so run one IT (or restart the app, which
-also fails fast on a cycle) after touching bean graphs.
+**HEADs:** Frontend `2f6f637` (branch `master`). Backend `26c96d7` (branch `main`) on top of
+`ff95117` / `035dc3b` / `a36f9f5` / `70645f1`. openapi/postman NOT regenerated for `26c96d7`
+(new op `POST /dev/jobs/invoice-generation/run?paymentId=` via the existing `/{job}/run` route;
+`AdminPaymentResponse` gained `planCode`/`planName`) — regen next pass → will bump ~1 op.
+Targeted unit slices green each pass (checkout/adminpayment/invoice/webhook/batch); full surefire
+not re-run. `*IT` need Docker — a bean-wiring change once showed up only as a `BatchFlowIT`
+context-load failure, so run one IT (or restart the app) after touching bean graphs. `26c96d7`
+added `UserSubscriptionRepository` + `SubscriptionPlanRepository` deps to `CheckoutService`,
+`SubscriptionPlanRepository` to `AdminPaymentService`, `InvoiceService`+`InvoiceRepository` to
+`DevJobController` — restart the app to confirm no cycle.
+
+### Session 2026-09-04 — checkout double-charge guard, invoice-email fix, plan column, webhook debugging
+- **403 on `POST /api/v1/auth/login` (5174)** — root cause: Spring CORS rejects `Origin:
+  http://localhost:5174` ("Invalid CORS request" → 403) because `application-dev.yml`
+  `allowed-origins` only had 3000/5173 and Vite hopped to 5174 (5173 was occupied). Fixed by
+  adding 5174 + 5175 to the dev list (committed in `26c96d7`).
+- **Google OAuth `redirect_uri_mismatch`** — user kept registering a wrong path in Google Console.
+  The ONLY correct value is what Spring sends, verified: `http://localhost:8080/api/v1/auth/oauth2/callback/google`
+  (and `.../github`). NOT a frontend URL, no `/login`, no trailing slash. Vite base URL / `.env`
+  are irrelevant to this error. Still unresolved on the user's side (they need to fix the Console).
+- **Payment stuck at CREATED** — all 6 `payments` rows were `CREATED`; no webhook had ever been
+  processed on this DB. Razorpay can't reach localhost. User fumbled the manual `openssl` webhook
+  3× (used `order_TEST1`; then renamed the JSON *key* `order_id`→`pay_manual6` leaving
+  `id:pay_TEST1` → dedup-ignored). I fired the correct one for payment 6 →
+  `CAPTURED` + `user_subscriptions` id 11 ACTIVE (user 55 "Man1", plan 3 PROJECT_BASED, track
+  PRODUCT_DESIGN → parked pending, no batch) + invoice `MSH-INV-000006` ISSUED. Payments 4,5 left
+  CREATED (dup retries by same user).
+- **Confirmation email never sent** — `InvoiceGenerationJob` failed for payment 6 with
+  `LazyInitializationException` at `InvoiceService.sendConfirmationEmail` →
+  `payment.getUser().getEmail()` (renderAndUpload has no session). Fixed with
+  `PaymentRepository.findWithUserById` (`@EntityGraph "user"`). Invoice 6 is already ISSUED so a
+  retrigger short-circuits — use the new `POST /api/v1/dev/jobs/invoice-generation/run?paymentId=6`
+  (dev, ADMIN) to reset it to PENDING and re-render + re-send. Needs the backend restarted first.
+  NOTE: recurring `NotificationWorker.drainBatch` "Redis command timed out" ERROR in logs — looks
+  like empty-queue blocking-pop noise (real dispatches DID send: notif rows 12/15 SENT); not fixed.
+- **Layer 1 (double-charge prevention)** implemented in `CheckoutService.checkout` — see `26c96d7`
+  commit body. Guard A: 409 `SUBSCRIPTION_ALREADY_ACTIVE` if an ACTIVE sub exists. Guard B:
+  reuse a <15-min-old open Razorpay `CREATED` payment for same user+plan instead of a new order.
+  Layers 2 (auto-refund duplicate in the webhook "already active" branch), 3 (reconciliation
+  sweep for CAPTURED-with-no-subscription), 4 (FE button disable + idempotency key) NOT done.
+- **Blank Plan column** (admin Transactions + student dashboard) — `AdminPaymentResponse` only had
+  `planId`. Added `planCode`/`planName`; FE `toFeTransaction` now sets `plan`; student
+  `Dashboard.jsx` shows `subscription.planName` in the header.
+- **Student dashboard stuck on "Cohort Allocation Pending" even after batch allocation** — root
+  cause: `DashboardLayout.jsx` gated on `user?.batch`, which is ALWAYS undefined (`/users/me`
+  carries no batch). Man1 (user 55) WAS enrolled: `batch_students` id 9 → batch 5 `PD-Batch-01`
+  PRODUCT_DESIGN status `PLANNED` (a TRAINER_PM created it → `PendingAllocationDrainer` resolved
+  `pending_batch_allocations` id 1 at 03:17). Fixed FE `084dbcc`: `DashboardLayout` now calls
+  `getMyBatch()` (`GET /api/v1/batches` student-scoped → `findEnrolledByUserId`, returns PLANNED
+  or ACTIVE) and gates on that, with a "Loading your dashboard…" state during the fetch.
+  `getMyBatch()` already falls back to `rows[0]` when no ACTIVE batch, so a PLANNED batch unblocks.
+- Frontend HEAD now `084dbcc` (was `2f6f637`).
+- Backend is run by the USER in their own terminal on 8080 — do NOT kill/restart it or start one
+  on 8080. Use `SERVER_PORT=8081` if I need my own instance. User must restart to load `26c96d7`.
+- All seeded accounts password = `Password123!`. `admin@moriah.test` has `two_factor_enabled=1`
+  (not from seed — set later); disable with
+  `UPDATE users SET two_factor_enabled=0, two_factor_secret=NULL WHERE email='admin@moriah.test';`
+  The TOTP secret column is AES-encrypted at rest — not usable as a plain authenticator secret.
 
 **Local run state right now:** Docker `skillhub-mysql` (**3306:3306** — reverted 2026-09-03 at the
 user's request via `docker compose up -d --force-recreate --no-deps mysql`; the compose file was
@@ -536,3 +608,292 @@ Just Works. **Do not pass `DB_PORT=3316` anymore** and do not re-remap the conta
 
 `README.md` still has the user's uncommitted Razorpay-test-key edit — never `git add -A`; scope
 every `git add`. Untracked `*_Integration*.zip` / `bun.lock` in both repos are the user's — leave them.
+
+---
+
+# Session 2026-09-04 (part 2) — dashboard bug-fix sweep, every role portal
+
+Goal: the user walked every dashboard and listed bugs / mock-data / broken flows. Worked through
+admin -> student -> trainer -> HR -> developer -> client -> BA. **Nothing committed** — all changes
+uncommitted in both working trees. Backend must be **restarted** (user runs it on 8080) to load:
+the `CouponService` fix, V35/V36/V37 (Flyway auto), every `@PreAuthorize` change, and the new
+endpoints below.
+
+## Admin dashboard + coupons
+
+- **FE `admin/Transactions.jsx`** — removed **Record / Edit / Delete** (fake localStorage CRUD on
+  top of the real `/admin/payments` ledger). **Refund** now calls real
+  `POST /admin/payments/{gatewayOrderId}/refund` via `adminService.refundTransaction`. Status
+  vocabulary fixed to the real enum `CREATED/PENDING/CAPTURED/FAILED/REFUNDED` (badges, filters,
+  refund/invoice buttons were all keyed to invented "Success" labels -> never matched live data).
+  `utils/invoiceTemplate.js` updated to recognise `REFUNDED`/`CAPTURED`.
+- **FE `admin/UserManagement.jsx`** — removed **granular permissions** entirely (`GRANULAR_PERMISSIONS`
+  const, `permOpen`/`permUserId`/`editPermValues` state, `openPerm`/`handlePermSave`, the "Assigned
+  Permissions" column, the perm modal, `permissions` from `persistUsers`). No backend for it; it
+  vanished on refresh. Page title de-permissioned.
+- **FE `admin/Dashboard.jsx` + `adminService.js`** — CRM funnel + revenue chart now from real
+  `GET /admin/metrics/overview`. REAL BUG fixed: `getExecutiveMetrics` read `recentRevenue` items
+  as `.total`/`.amount` but the API field is `totalCaptured`, and `leadFunnel` as `.count`/`.stage`
+  vs the real `leadCount`/`status` -> **MRR/ARR were always Rs 0**. Fixed key names; normalised
+  `recentRevenue`->[{month,total}] (sorted asc), `leadFunnel`->[{stage,count}]. Dropped invented
+  numbers (p95 latency, "3.5-day cycle", fake StatCard trend deltas, "+18% QoQ"); replaced the
+  invented "System & Infrastructure SLA" card with a real "Cohort Health" card (avg attendance /
+  task completion / quiz score / sprint velocity — all from the overview endpoint).
+- **BACKEND `payment/CouponService.java`** — removed `@Transactional(readOnly = true)` from
+  `preview()`. **Root cause of the "unexpected error" popup on a wrong coupon**: `preview()` shared
+  the read-only txn opened by `CheckoutService.previewCheckout`; an invalid coupon throws
+  `BusinessException` -> marked that shared txn rollback-only -> `previewCheckout` catches it and
+  returns a clean `couponApplied:false` body, but the commit afterwards throws
+  `UnexpectedRollbackException` -> generic 500. `preview()` only reads a couple of non-lazy
+  columns, so it needs no txn. Fixes BOTH the wrong-coupon message AND valid coupons "not applying"
+  (every code the user tried hit the invalid path -> 500). `redeem()` stays `@Transactional`.
+- The user's "mock data in the active open section" was the coupons "42/100" figure (fixed below),
+  not a separate screen.
+
+## Admin — Subscription Tiers + Coupons tab (`admin/Plans.jsx`, full rewrite)
+
+Whole page was localStorage mock (`msh_subscription_plans`, `msh_coupons` — hardcoded
+`EARLYBIRD25 42/100`, `COLLEGE15 18/50`, ...). Now:
+- **Coupons tab -> real** `GET/POST/DELETE /api/v1/admin/coupons`. "Redeemed / Limit" column =
+  real `timesRedeemed / maxRedemptions` (infinity when null). New Coupon modal: code / discount
+  type PERCENTAGE|FLAT / value / valid-from / valid-until / max redemptions (blank = unlimited).
+  Delete = deactivate.
+- **Tiers tab -> real**, which needed a NEW backend endpoint:
+  **BACKEND NEW `GET /api/v1/admin/plans`** (ADMIN) — every plan, active AND deactivated, each
+  carrying the numeric `id` (the `PUT`/`DELETE /admin/plans/{id}` routes need it; the public
+  `GET /plans` `PlanResponse` has no id — that is why FE edit/delete never worked). New
+  `AdminPlanResponse` DTO, `PlanMapper.toAdminResponse` (MapStruct),
+  `SubscriptionPlanRepository.findAllByOrderByTierRankAsc()`,
+  `EntitlementService.listAllPlansForAdmin()` (uncached). FE: `adminService.getAdminPlans()` +
+  `toFeAdminPlan`; Edit Pricing sends a full-field-replace body built from the loaded row;
+  Deactivate = `DELETE`; inactive plans keep a **Reactivate** action; Add Tier modal rebuilt to
+  the real `CreatePlanRequest` shape.
+
+## Trainer standup meeting-link flow + student attendance section
+
+**BACKEND V35** `standups.meeting_link VARCHAR(500) NULL`. Threaded through `Standup` entity +
+`CreateStandupRequest` + `UpdateStandupRequest` + `StandupResponse` + `StandupService`. 9
+positional ctor call sites in `StandupServiceTest` updated. All attendance plumbing already
+existed: `GET /standups?batchId=&date=` (STUDENT-visible), `POST /standups/{id}/checkin` (student
+self check-in), `POST /standups/{id}/attendance` (PM override), `GET /attendance/me`,
+`GET /attendance/batch/{id}`.
+
+- **FE `trainer/Standups.jsx`** rewritten. "Schedule standup" opens a MODAL (datetime-local +
+  **meeting link, required, manual paste** + late-cutoff + notes) instead of one-click ->
+  present/absent roster. After scheduling: time/cutoff/link + a **Join meet** button + a
+  **Cancel** action (`PUT /standups/{id}` -> CANCELLED). Roster **pre-loads existing check-ins**
+  from `getStandupAttendance` (= `GET /attendance/batch/{id}` filtered to this standup).
+- **FE `trainerService.js`** — `scheduleStandup` gains `meetingLink`; added `cancelStandup`,
+  `getStandupAttendance`. `STANDUP_STATUS_TO_FE` fixed (`CONDUCTED`, was stale `FINALISED`).
+- **FE NEW `student/Attendance.jsx`** + nav "Standups & Attendance" + route `/student/attendance`.
+  Today's standup with Join meet + "I've joined — check in" + attendance history
+  (`GET /attendance/me`). `studentService`: `getMyStandups(date)`, `checkInToStandup(id, notes)`,
+  `getMyAttendance()`.
+- **FE `student/Dashboard.jsx`** — the "Daily Standup Check-in" card was a PURE localStorage mock
+  (fake 09:00-10:00 window, `msh_attendance_logs`). Replaced with a real "Today's Standup" card.
+  ~180 lines of mock deleted.
+- Caveat: meeting link is manual paste (no Meet/Zoom integration).
+
+## HR staff attendance module (NEW — user asked for the backend)
+
+**BACKEND V36** `staff_attendance` — one row per staff user per calendar day
+(`uq_staff_attendance_user_date`), `checked_in_at` / `checked_out_at` / `status` / `device` /
+`marked_by` / `notes`. Students are NOT tracked here (that is the standup `attendance` table).
+
+New: `StaffAttendance` entity + `StaffAttendanceStatus` enum (PRESENT/LATE/ABSENT/HALF_DAY/
+ON_LEAVE), `StaffAttendanceRepository` (JPQL GROUP-BY summary query), `StaffAttendanceService`,
+`StaffAttendanceController` (`/api/v1/hr/attendance`), DTOs (`StaffAttendanceResponse`,
+`StaffCheckinRequest`, `MarkStaffAttendanceRequest`, `StaffAttendanceSummaryRow`,
+`StaffAttendanceSummaryProjection`), `ErrorCode.STAFF_ATTENDANCE_NOT_FOUND`,
+`StaffAttendanceServiceTest` (6 green). Modelled on `LeaveService`'s "own data unless you are HR"
+scoping.
+
+Endpoints:
+- `GET /api/v1/hr/attendance` — `isAuthenticated()`; non-HR auto-scoped to self; HR/ADMIN see all,
+  filters `userUuid` / `from` / `to`.
+- `POST /api/v1/hr/attendance/checkin` — `isAuthenticated()`. Own, or (HR/ADMIN + `userUuid`)
+  another staff member's. Idempotent per day. PRESENT before **10:00 Asia/Kolkata**, else LATE
+  (hardcoded `LATE_AFTER = LocalTime.of(10,0)`). Requires the target to have an `employees` row.
+- `POST /api/v1/hr/attendance/checkout` — own, or `?userUuid=` for HR.
+- `PUT /api/v1/hr/attendance/mark` — HR_MANAGER/ADMIN. Upsert status override, audited
+  `STAFF_ATTENDANCE_OVERRIDE`.
+- `GET /api/v1/hr/attendance/summary?month=YYYY-MM` — HR_MANAGER/ADMIN. Per-employee monthly
+  roll-up (`attendancePct` = (present+late)/(present+late+absent+half)*100; ON_LEAVE excluded).
+
+FE:
+- `hrService.js` — `getClockinLogs`/`logCheckin` now real; added `clockOut`, `markStaffAttendance`,
+  `getStaffAttendanceSummary`, `getMyStaffAttendanceToday`. Removed dead `DEFAULT_CHECKINS` +
+  `mockRequest` import.
+- `hr/AttendanceLeave.jsx` — "Live Biometric / Web Check-ins" tab -> real `GET /hr/attendance`
+  (last 14 days, role enriched from the employee directory); "Mark attendance" -> real `PUT /mark`.
+  "Staff Attendance Ledger" tab -> real `GET /summary` for the current month. Check-in modal
+  targets an employee by `userUuid`.
+- **`components/widgets/AttendanceCheckinWidget.jsx`** (the shared "Today's Attendance" card on
+  ALL 5 staff dashboards — trainer/developer/BA/HR/leadgen) — was localStorage mock; wired to
+  `POST /hr/attendance/checkin` (self) + `/checkout` + reads today from `GET /hr/attendance`. Shows
+  a quiet "no employee record — ask HR" note on 404. **This IS the staff self check-in — one
+  component covers all portals.**
+
+## Developer dashboard — assessments, track scoping, bug challenges
+
+### Assessment pipeline -> trainer-owned (user redesigned it mid-session)
+
+First pass opened it to DEVELOPER; then the user decided **developers author question banks only;
+the TRAINER decides when to publish a bank to a batch and sees the results**. Final state:
+
+- **BACKEND `QuestionBankController`** — `CURATOR_ROLES = hasAnyRole('DEVELOPER','TRAINER_PM','ADMIN')`
+  on all 7 mappings (was TRAINER_PM/ADMIN only -> **403 on every dev call — that is why "can't
+  create an assessment bank"**). DEVELOPER keeps this.
+- **BACKEND NEW `POST /api/v1/assessments/from-bank`** — `hasAnyRole('TRAINER_PM','ADMIN')`.
+  `CreateAssessmentFromBankRequest` {bankId, batchId, projectId?, title?, durationMinutes,
+  passPercentage?, maxAttempts?}. `QuizService.createFromBank` snapshots the bank's
+  `QuestionBankItem`s (INCLUDING `correctAnswer` JSON) field-by-field into fresh `QuizQuestion`s on
+  a new batch-scoped `Quiz`. ADMIN may target any batch; a TRAINER_PM is held to an owned batch
+  (`batchService.requireOwnerOrAdmin`). `ErrorCode.QUESTION_BANK_EMPTY`.
+- **BACKEND NEW `DELETE /api/v1/assessments/{id}`** — `hasAnyRole('TRAINER_PM','ADMIN')`.
+  `QuizService.deactivate` (`active=false`; never row-deletes).
+- **BACKEND `GET /api/v1/assessments`** — `batchId` now optional; TRAINER_PM/ADMIN may omit it to
+  list every assessment. `QuizService.list(callerUserId, batchId, pageable)` (student without
+  batchId -> 400).
+- **BACKEND NEW `GET /api/v1/assessments/results`** — `hasAnyRole('TRAINER_PM','ADMIN')`. One row
+  per student attempt, filters `assessmentId` / `batchId` / `track` / `onlyFinished`.
+  `AssessmentResultRow` DTO, `QuizAttemptRepository.searchResults` (fetch-joins quiz/batch/user,
+  filters by `quiz.batch.trackCode`), `QuizService.results`.
+- **BACKEND `POST /api/v1/assessments`** reverted to TRAINER_PM/ADMIN; `GET /api/v1/batches` list
+  reverted to TRAINER_PM/ADMIN/STUDENT (the brief DEVELOPER grant is gone).
+- **FE** — DELETED `developer/Assessments.jsx` + `developer/AssessmentResults.jsx`. **NEW
+  `trainer/Assessments.jsx`** — tabbed: "Question Banks" (browse dev banks -> "Publish to batch"
+  you own, with duration + pass mark; unpublish live) + "Results" (attempt table with **Batch +
+  Track + Assessment filters** and pass-rate / avg / awaiting-manual-grading stat cards).
+  `trainerService.js` gained `getQuestionBanks`, `getPublishedAssessments`,
+  `publishAssessmentFromBank`, `unpublishAssessment`, `getAssessmentResults`. Nav: developer
+  "Assessments"/"Assessment Results" removed + `/developer/assessments` route removed; trainer
+  "Assessments" added at `/trainer/assessments`. Dead dev publish/results fns removed from
+  `developerService.js` (bank CRUD stays).
+- **How results reach people**: student -> `student/Assessments.jsx` fans out
+  `GET /assessments?batchId=` over enrolled batches (a trainer-published from-bank assessment shows
+  up automatically, server-graded on submit). Trainer -> the new Results tab. Admin -> nightly
+  `student_metrics.quiz_average_percent` -> "Avg Quiz Score" + the PIP `QUIZ_FAILURE` rule.
+  **Bug challenges have NO server-side grading at all** (self-report only).
+
+### Track / cohort scoping — video lessons + resources (V37)
+
+**BACKEND V37** `track VARCHAR(30) NULL` on `video_lessons` AND `learning_resources` (free string
+matching `batches.track_code` — FULL_STACK / DATA_ANALYTICS / PRODUCT_DESIGN / BACKEND_ENGINEERING;
+NULL = all tracks). Threaded through both entities, all Create/Update/Response DTOs,
+LessonService/ResourceService, both repo `search` queries
+(`AND (:track IS NULL OR l.track IS NULL OR l.track = :track)`), both `GET` controllers gained an
+optional `?track=`. **UX filter, not an access boundary.** `LessonServiceTest` / `ResourceServiceTest`
+ctor + `search` mock call sites updated.
+
+FE: `developer/VideoLessons.jsx` + `developer/Resources.jsx` — Track `<Select>` on the create forms
++ a track badge in tables. `student/Learning.jsx` + `student/Resources.jsx` resolve
+`getMyBatch().trackCode` and pass `?track=`. `studentService.getVideoLessons(track)`,
+`developerService.getResourceLibrary(track)`, plus lesson/resource create+update send `track`.
+New `TRACKS` / `TRACK_LABELS` in `utils/constants.js`.
+
+### Bug challenges -> real project-scoped challenges
+
+**BACKEND** — added `STUDENT` + `TRAINER_PM` to `GET /api/v1/projects/{id}/challenges` and
+`GET /api/v1/challenges/{challengeId}` (were DEVELOPER/ADMIN only). Create/edit/delete stay
+DEVELOPER/ADMIN. `ChallengeResponse.brokenCodeUrl`/`testScriptUrl` are presigned GET URLs.
+
+FE:
+- **`developer/BugChallenges.jsx` fully rewritten** — pick a REAL project -> list/add/edit/delete
+  its challenges via `POST /projects/{id}/challenges` (multipart: title, expectedBehaviour,
+  difficulty, `brokenCode` file (required), `testScript` file (optional)), `PUT`/`DELETE
+  /challenges/{id}`. GONE: `msh_bug_challenges` localStorage, `functionName`/`starterCode`/
+  `testCases`, the in-browser runner.
+- `developerService.js` — replaced the 4 localStorage bug-challenge fns with `getBugChallenges`
+  (real aggregate), `createChallenge`, `updateChallenge`, `deleteChallenge`.
+- **`student/Projects.jsx` rewritten** — real published projects (`GET /projects`) + their
+  challenges; download broken-code/test-script links; **"Mark as fixed"** toggle. In-browser editor
+  gone. `studentService.getMyProjects` -> `GET /projects` (published); `getMyBugChallenges` fans
+  out over projects; `getBugChallengeDetails` -> `GET /challenges/{id}`. `attemptBugChallenge` = a
+  local-only "solved" set at `localStorage['msh_bug_solved_<uuid>']` — **THE ONE REMAINING LOCAL
+  BIT** (no backend attempt/grading endpoint for challenges). Unifies Projects & Bug Challenges
+  (both read `/api/v1/projects`).
+
+## Client + BA dashboards
+
+- **Client registration "something unexpected happened"** — `users.phone` is `UNIQUE` (V1) but both
+  self-register flows only pre-checked email. A duplicate phone -> raw
+  `DataIntegrityViolationException` -> generic 409 "The request could not be completed." Fix:
+  `UserRepository.existsByPhone` + `ErrorCode.PHONE_ALREADY_REGISTERED` + a pre-check in
+  **`ClientRegistrationService.register` AND `AuthService.register`** (students had the same latent
+  bug).
+- **Client project submissions invisible / BA can't see them** — the whole client-project flow was
+  localStorage mock AND there was **no `GET /api/v1/clients/projects` list endpoint** (only `POST`
+  + `GET /{id}/progress`). Fix: **BACKEND NEW `GET /api/v1/clients/projects`** —
+  `hasAnyRole('CLIENT','BUSINESS_ANALYST','ADMIN')`; a CLIENT sees only their own company's,
+  BA/ADMIN see all; `?status` filter. `ClientController.listProjects`, `ClientProjectService.list`,
+  `ClientProjectRepository.search`. `ClientProjectResponse` gained `clientName`.
+- **FE `clientService.js` rewritten** onto the real endpoints: `getClientProjects` /
+  `getMyRequirements` (alias) / `submitProjectRequirement` (-> `POST /clients/projects`, **text
+  only**: title + scopeDescription + budgetRange — the backend record has no file field) /
+  `getClientProjectProgress`. Removed `updateMyRequirement`/`deleteMyRequirement` (no backend — a
+  submitted client project has no edit/delete route), file upload, `mockData` imports.
+- **FE `client/Projects.jsx` rewritten** — submit a scope, list submissions with status ("Awaiting
+  batch" until staff allocate one), Progress modal with the real sprint burndown.
+  `client/Dashboard.jsx` + `client/Demos.jsx` wired + `.catch()`-guarded.
+- **BA dashboard stuck on "Loading data..."** — `ba/Documents.jsx` `load()` did
+  `Promise.all([getDocuments(), getDocReviews()])` with **no `.catch()`**, and `getDocReviews()`
+  hits `GET /api/v1/dev/requirement-documents` which is **DEVELOPER/ADMIN-only** -> a BA gets 403
+  -> the promise never resolves -> infinite spinner. Removed the `getDocReviews()` call + added
+  `.catch().finally()`. Same missing-catch pattern fixed in `ba/Dashboard.jsx`,
+  `ba/ResourcePlanning.jsx`.
+- **FE `ba/ClientReview.jsx` rewritten** as the **client-submission inbox** — `GET /clients/projects`
+  (BA sees all): project / client company / scope brief / budget / status / date + a drill-in with
+  the full brief and (once a batch is allocated) the sprint burndown.
+
+## Still mock / NOT done — next pass
+
+- `ba/Documents.jsx` "Requirements Authoring" — the real `POST /api/v1/ba/documents` API is
+  plain-text `content` only (no file attachments); the page is built entirely around file uploads
+  (`msh_ba_documents` localStorage). `PUT /ba/documents/{id}/approve` also exists and is unused.
+- `ba/ResourcePlanning.jsx` — no resource-plan endpoint exists (`msh_ba_resource_plans`).
+- **Bug-challenge student grading** — no backend. "solved" is `localStorage['msh_bug_solved_<uuid>']`.
+- `trainerService` project<->batch assignment (`setProjectBatches` / `getAssignableProjects` reads
+  `msh_developer_projects`), cross-batch student management, `pipEngine` auto-PIP — all still
+  localStorage. `mockData.js` / `pipEngine.js` still cannot be deleted.
+- `docs/*` NOT regenerated for any of this session's new endpoints (see table below).
+
+## New endpoints this session (for the doc regen + a quick mental map)
+
+| Method | Path | Roles | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/admin/plans` | ADMIN | plan list WITH numeric id + inactive |
+| POST | `/api/v1/assessments/from-bank` | TRAINER_PM, ADMIN | publish a bank as a batch assessment |
+| DELETE | `/api/v1/assessments/{id}` | TRAINER_PM, ADMIN | deactivate an assessment |
+| GET | `/api/v1/assessments/results` | TRAINER_PM, ADMIN | per-attempt results, batch/track filters |
+| GET | `/api/v1/hr/attendance` | authenticated (self-scoped) | staff attendance list |
+| POST | `/api/v1/hr/attendance/checkin` | authenticated | staff self / HR-for-other check-in |
+| POST | `/api/v1/hr/attendance/checkout` | authenticated | staff check-out |
+| PUT | `/api/v1/hr/attendance/mark` | HR_MANAGER, ADMIN | status override (audited) |
+| GET | `/api/v1/hr/attendance/summary?month=` | HR_MANAGER, ADMIN | monthly per-employee rollup |
+| GET | `/api/v1/clients/projects` | CLIENT (own), BA/ADMIN (all) | client project submissions list |
+
+Role widenings: `QuestionBankController` +DEVELOPER (all 7); `GET /assessments` +optional batchId;
+`GET /projects/{id}/challenges` + `GET /challenges/{id}` +STUDENT +TRAINER_PM; `GET /lessons` +
+`GET /resources` gained `?track=`; `POST /lessons` / `PUT /lessons/{id}` / resource create+update
+gained `track` in the body; `standups` create/update gained `meetingLink`.
+
+Migrations: **V35** `standups.meeting_link`, **V36** `staff_attendance` (new table), **V37**
+`video_lessons.track` + `learning_resources.track`. Next = **V38**.
+
+## Standing gotchas from THIS session
+
+- Spring gotcha (the coupon bug): catching a `BusinessException` thrown by a nested `@Transactional`
+  proxy method that JOINS your transaction still fails your commit with `UnexpectedRollbackException`.
+  Fix = make the nested method non-transactional (if read-only), or `REQUIRES_NEW`, or `noRollbackFor`.
+- **Every BA page's `useEffect` load was `Promise.all([...]).then()` with NO `.catch()`** — one
+  403/500 from any call -> the page hangs on its spinner forever. `client/*` had the same shape.
+  Always `.catch(() => [])` per call + `.finally(() => setLoading(false))`.
+- Adding a component to a Java `record` breaks positional `new X(...)` in tests — grep
+  `new <Record>(` across `src/test` and fix call sites (did this for `StandupResponse`,
+  `CreateVideoLessonRequest`, `UpdateVideoLessonRequest`, `CreateResourceRequest`,
+  `UpdateResourceRequest`, `ClientProjectResponse`).
+- MapStruct `unmappedTargetPolicy = ERROR` — a new response-record component with no matching
+  entity getter fails the build.
+- `mvn -o -q surefire:test` hides the "Tests run:" line; exit 0 == BUILD SUCCESS == all matched
+  tests passed. Drop `-q` when you need the count.

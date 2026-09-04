@@ -49,12 +49,13 @@ public class ResourceController {
             + "includeInactive is honoured only for curator roles.")
     public ResponseEntity<ApiResponse<PageResponse<LearningResourceResponse>>> list(
             @RequestParam(required = false) ResourceCategory category,
+            @RequestParam(required = false) String track,
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "false") boolean includeInactive,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
 
         return ResponseEntity.ok(ApiResponse.success(
-                resourceService.list(includeInactive, category, search, pageable)));
+                resourceService.list(includeInactive, category, track, search, pageable)));
     }
 
     @GetMapping("/{id}")

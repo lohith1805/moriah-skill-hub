@@ -54,6 +54,7 @@ public class StandupService {
         standup.setLateCutoffMinutes(request.lateCutoffMinutes() != null
                 ? request.lateCutoffMinutes() : Constants.ATTENDANCE_DEFAULT_LATE_CUTOFF_MINUTES);
         standup.setNotes(request.notes());
+        standup.setMeetingLink(request.meetingLink());
         standup.setStatus(StandupStatus.SCHEDULED);
         standupRepository.save(standup);
 
@@ -103,6 +104,9 @@ public class StandupService {
         if (request.notes() != null) {
             standup.setNotes(request.notes());
         }
+        if (request.meetingLink() != null) {
+            standup.setMeetingLink(request.meetingLink());
+        }
         standup.setLateCutoffMinutes(request.lateCutoffMinutes() != null
                 ? request.lateCutoffMinutes() : standup.getLateCutoffMinutes());
         standup.setStatus(request.status());
@@ -129,6 +133,7 @@ public class StandupService {
                 standup.getLateCutoffMinutes(),
                 standup.getNotes(),
                 standup.getStatus(),
-                standup.getFinalisedAt());
+                standup.getFinalisedAt(),
+                standup.getMeetingLink());
     }
 }

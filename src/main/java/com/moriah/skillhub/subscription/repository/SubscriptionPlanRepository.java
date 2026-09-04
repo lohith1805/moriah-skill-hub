@@ -15,4 +15,7 @@ public interface SubscriptionPlanRepository extends JpaRepository<SubscriptionPl
     boolean existsByCode(String code);
 
     List<SubscriptionPlan> findByActiveTrueOrderByTierRankAsc();
+
+    /** Admin plan listing (gap B1.13) — every plan, active or not, tier order. */
+    List<SubscriptionPlan> findAllByOrderByTierRankAsc();
 }

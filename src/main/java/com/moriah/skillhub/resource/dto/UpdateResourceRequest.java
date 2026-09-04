@@ -16,6 +16,7 @@ public record UpdateResourceRequest(
         @NotNull ResourceCategory category,
         @NotBlank @Size(max = 1000) String url,
         @Size(max = 20) List<@NotBlank @Size(max = 40) String> tags,
-        boolean active
+        boolean active,
+        @Size(max = 30) String track
 ) {
 }

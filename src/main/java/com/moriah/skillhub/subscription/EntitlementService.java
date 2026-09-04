@@ -3,6 +3,7 @@ package com.moriah.skillhub.subscription;
 import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
+import com.moriah.skillhub.subscription.dto.AdminPlanResponse;
 import com.moriah.skillhub.subscription.dto.CreatePlanRequest;
 import com.moriah.skillhub.subscription.dto.PlanResponse;
 import com.moriah.skillhub.subscription.dto.SubscriptionResponse;
@@ -45,6 +46,17 @@ public class EntitlementService {
     public List<PlanResponse> listActivePlans() {
         return subscriptionPlanRepository.findByActiveTrueOrderByTierRankAsc().stream()
                 .map(planMapper::toResponse)
+                .toList();
+    }
+
+    /** {@code GET /api/v1/admin/plans} (gap B1.13) — every plan including deactivated ones, with
+     * the numeric {@code id} the update/delete routes need. Not cached: admin-only, infrequent,
+     * and must reflect a create/update/deactivate immediately (the {@code "plans"} cache is the
+     * public active-list, evicted on write — this view is separate). */
+    @Transactional(readOnly = true)
+    public List<AdminPlanResponse> listAllPlansForAdmin() {
+        return subscriptionPlanRepository.findAllByOrderByTierRankAsc().stream()
+                .map(planMapper::toAdminResponse)
                 .toList();
     }
 

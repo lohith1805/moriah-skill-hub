@@ -2,6 +2,8 @@ package com.moriah.skillhub.assessment.repository;
 
 import com.moriah.skillhub.assessment.entity.AttemptStatus;
 import com.moriah.skillhub.assessment.entity.QuizAttempt;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -11,6 +13,26 @@ import java.util.List;
 import java.util.Optional;
 
 public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, Long> {
+
+    /** Author-facing results screen ({@code GET /api/v1/assessments/results}). All filters
+     * optional; {@code onlyFinished} true drops still-{@code IN_PROGRESS} attempts. Ordered
+     * newest first. {@code quiz.batch} is left-joined — a project-scoped quiz has no batch. */
+    @Query("""
+            SELECT a FROM QuizAttempt a
+              JOIN FETCH a.quiz q
+              LEFT JOIN FETCH q.batch b
+              JOIN FETCH a.user u
+             WHERE (:assessmentId IS NULL OR q.id = :assessmentId)
+               AND (:batchId IS NULL OR b.id = :batchId)
+               AND (:track IS NULL OR b.trackCode = :track)
+               AND (:onlyFinished = false OR a.status <> com.moriah.skillhub.assessment.entity.AttemptStatus.IN_PROGRESS)
+             ORDER BY a.id DESC
+            """)
+    Page<QuizAttempt> searchResults(@Param("assessmentId") Long assessmentId,
+                                    @Param("batchId") Long batchId,
+                                    @Param("track") String track,
+                                    @Param("onlyFinished") boolean onlyFinished,
+                                    Pageable pageable);
 
     /** {@code JOIN FETCH} both associations, deliberately — backs {@code
      * QuizAttemptWriter.findExisting} (the concurrent double-start recovery read, run in its own

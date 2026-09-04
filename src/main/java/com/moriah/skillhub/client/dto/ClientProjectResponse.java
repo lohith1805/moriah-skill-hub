@@ -7,6 +7,7 @@ import java.time.Instant;
 public record ClientProjectResponse(
         Long id,
         Long clientId,
+        String clientName,
         String title,
         String scopeDescription,
         String budgetRange,

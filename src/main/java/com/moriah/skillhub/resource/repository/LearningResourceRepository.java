@@ -21,12 +21,14 @@ public interface LearningResourceRepository extends JpaRepository<LearningResour
             SELECT r FROM LearningResource r
              WHERE (:activeOnly = false OR r.active = true)
                AND (:category IS NULL OR r.category = :category)
+               AND (:track IS NULL OR r.track IS NULL OR r.track = :track)
                AND (:search IS NULL
                     OR LOWER(r.title) LIKE LOWER(CONCAT('%', :search, '%'))
                     OR LOWER(r.description) LIKE LOWER(CONCAT('%', :search, '%')))
             """)
     Page<LearningResource> search(@Param("activeOnly") boolean activeOnly,
                                   @Param("category") ResourceCategory category,
+                                  @Param("track") String track,
                                   @Param("search") String search,
                                   Pageable pageable);
 }

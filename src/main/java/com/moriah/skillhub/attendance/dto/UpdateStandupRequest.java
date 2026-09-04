@@ -14,6 +14,7 @@ import jakarta.validation.constraints.Size;
 public record UpdateStandupRequest(
         @Size(max = 2000) String notes,
         @Min(1) @Max(180) Integer lateCutoffMinutes,
-        @NotNull StandupStatus status
+        @NotNull StandupStatus status,
+        @Size(max = 500) String meetingLink
 ) {
 }

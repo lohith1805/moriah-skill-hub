@@ -57,12 +57,13 @@ public class LessonController {
             + "includeUnpublished is honoured only for curator roles.")
     public ResponseEntity<ApiResponse<PageResponse<VideoLessonResponse>>> list(
             @RequestParam(required = false) String module,
+            @RequestParam(required = false) String track,
             @RequestParam(defaultValue = "false") boolean includeUnpublished,
             @CurrentUser Long callerUserId,
             @PageableDefault(size = 20, sort = {"moduleName", "sortOrder"}, direction = Sort.Direction.ASC) Pageable pageable) {
 
         return ResponseEntity.ok(ApiResponse.success(
-                lessonService.list(includeUnpublished, module, callerUserId, pageable)));
+                lessonService.list(includeUnpublished, module, track, callerUserId, pageable)));
     }
 
     @GetMapping("/modules")

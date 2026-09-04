@@ -54,11 +54,17 @@ public class LessonService {
     private final com.moriah.skillhub.learning.repository.LessonQuizAttemptRepository quizAttemptRepository;
     private final UserRepository userRepository;
 
+    /**
+     * {@code track}, when supplied, narrows the list to lessons for that cohort track plus the
+     * untracked (all-track) ones — a UX convenience the student view passes from their batch's
+     * track, not an access boundary (published lessons were always readable by any authenticated
+     * user). A curator omits it to author across every track.
+     */
     @Transactional(readOnly = true)
-    public PageResponse<VideoLessonResponse> list(boolean includeUnpublished, String module,
+    public PageResponse<VideoLessonResponse> list(boolean includeUnpublished, String module, String track,
                                                    Long callerUserId, Pageable pageable) {
         boolean publishedOnly = !(includeUnpublished && isCurator());
-        Page<VideoLesson> page = lessonRepository.search(publishedOnly, blankToNull(module), pageable);
+        Page<VideoLesson> page = lessonRepository.search(publishedOnly, blankToNull(module), blankToNull(track), pageable);
 
         List<Long> lessonIds = page.getContent().stream().map(VideoLesson::getId).toList();
         Map<Long, LessonProgress> progressByLesson = lessonIds.isEmpty()
@@ -84,6 +90,7 @@ public class LessonService {
         lesson.setTitle(request.title());
         lesson.setDescription(blankToNull(request.description()));
         lesson.setModuleName(request.moduleName());
+        lesson.setTrack(blankToNull(request.track()));
         lesson.setVideoUrl(request.videoUrl());
         lesson.setDurationSeconds(request.durationSeconds());
         lesson.setSortOrder(request.sortOrder());
@@ -103,6 +110,7 @@ public class LessonService {
         lesson.setTitle(request.title());
         lesson.setDescription(blankToNull(request.description()));
         lesson.setModuleName(request.moduleName());
+        lesson.setTrack(blankToNull(request.track()));
         lesson.setVideoUrl(request.videoUrl());
         lesson.setDurationSeconds(request.durationSeconds());
         lesson.setSortOrder(request.sortOrder());
@@ -225,7 +233,7 @@ public class LessonService {
                 ? LessonProgressView.notStarted()
                 : new LessonProgressView(progress.getStatus().name(), progress.getWatchedSeconds(), progress.getCompletedAt());
         return new VideoLessonResponse(
-                l.getId(), l.getTitle(), l.getDescription(), l.getModuleName(), l.getVideoUrl(),
+                l.getId(), l.getTitle(), l.getDescription(), l.getModuleName(), l.getTrack(), l.getVideoUrl(),
                 l.getDurationSeconds(), l.getSortOrder(), l.isPublished(),
                 creatorUuids.get(l.getCreatedBy()), view, l.getCreatedAt(), l.getUpdatedAt());
     }

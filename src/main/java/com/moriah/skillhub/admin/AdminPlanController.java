@@ -2,9 +2,12 @@ package com.moriah.skillhub.admin;
 
 import com.moriah.skillhub.common.dto.ApiResponse;
 import com.moriah.skillhub.subscription.EntitlementService;
+import com.moriah.skillhub.subscription.dto.AdminPlanResponse;
 import com.moriah.skillhub.subscription.dto.CreatePlanRequest;
 import com.moriah.skillhub.subscription.dto.PlanResponse;
 import com.moriah.skillhub.subscription.dto.UpdatePlanRequest;
+
+import java.util.List;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -14,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -34,6 +38,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminPlanController {
 
     private final EntitlementService entitlementService;
+
+    @GetMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "List every subscription plan (active and deactivated) with its numeric id")
+    public ResponseEntity<ApiResponse<List<AdminPlanResponse>>> list() {
+        return ResponseEntity.ok(ApiResponse.success(entitlementService.listAllPlansForAdmin()));
+    }
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")

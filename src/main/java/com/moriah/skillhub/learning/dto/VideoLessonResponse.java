@@ -12,6 +12,7 @@ public record VideoLessonResponse(
         String title,
         String description,
         String moduleName,
+        String track,
         String videoUrl,
         Integer durationSeconds,
         int sortOrder,

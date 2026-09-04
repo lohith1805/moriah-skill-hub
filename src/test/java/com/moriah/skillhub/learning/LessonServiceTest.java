@@ -93,7 +93,7 @@ class LessonServiceTest {
         when(userRepository.findAllById(List.of(7L))).thenReturn(List.of(u));
 
         VideoLessonResponse response = service.create(new CreateVideoLessonRequest(
-                "Intro to Spring", "  ", "Backend Basics", "https://videos.example/1", 600, 1, false), 7L);
+                "Intro to Spring", "  ", "Backend Basics", "https://videos.example/1", 600, 1, false, "FULL_STACK"), 7L);
 
         ArgumentCaptor<VideoLesson> captor = ArgumentCaptor.forClass(VideoLesson.class);
         verify(lessonRepository).save(captor.capture());
@@ -109,7 +109,7 @@ class LessonServiceTest {
         authenticateAs(50L, RoleCode.STUDENT.name());
         VideoLesson a = lesson(1L, 9L, true);
         VideoLesson b = lesson(2L, 9L, true);
-        when(lessonRepository.search(eq(true), any(), any(Pageable.class)))
+        when(lessonRepository.search(eq(true), any(), any(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(a, b), PageRequest.of(0, 20), 2));
         LessonProgress p = new LessonProgress();
         p.setLessonId(1L);
@@ -119,7 +119,7 @@ class LessonServiceTest {
         when(progressRepository.findByUserIdAndLessonIdIn(50L, List.of(1L, 2L))).thenReturn(List.of(p));
         when(userRepository.findAllById(any())).thenReturn(List.of());
 
-        PageResponse<VideoLessonResponse> page = service.list(false, null, 50L, PageRequest.of(0, 20));
+        PageResponse<VideoLessonResponse> page = service.list(false, null, null, 50L, PageRequest.of(0, 20));
 
         assertThat(page.content()).hasSize(2);
         assertThat(page.content().get(0).progress().status()).isEqualTo("COMPLETED");
@@ -130,23 +130,23 @@ class LessonServiceTest {
     @Test
     void list_nonCurator_cannotSeeUnpublished() {
         authenticateAs(50L, RoleCode.STUDENT.name());
-        when(lessonRepository.search(eq(true), any(), any(Pageable.class)))
+        when(lessonRepository.search(eq(true), any(), any(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
 
-        service.list(true, null, 50L, PageRequest.of(0, 20));
+        service.list(true, null, null, 50L, PageRequest.of(0, 20));
 
-        verify(lessonRepository).search(eq(true), any(), any(Pageable.class));
+        verify(lessonRepository).search(eq(true), any(), any(), any(Pageable.class));
     }
 
     @Test
     void list_curator_canSeeUnpublished() {
         authenticateAs(9L, RoleCode.DEVELOPER.name());
-        when(lessonRepository.search(eq(false), any(), any(Pageable.class)))
+        when(lessonRepository.search(eq(false), any(), any(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
 
-        service.list(true, null, 9L, PageRequest.of(0, 20));
+        service.list(true, null, null, 9L, PageRequest.of(0, 20));
 
-        verify(lessonRepository).search(eq(false), any(), any(Pageable.class));
+        verify(lessonRepository).search(eq(false), any(), any(), any(Pageable.class));
     }
 
     @Test
@@ -155,7 +155,7 @@ class LessonServiceTest {
         when(lessonRepository.findById(1L)).thenReturn(Optional.of(lesson(1L, 999L, true)));
 
         assertThatThrownBy(() -> service.update(1L, new UpdateVideoLessonRequest(
-                "t", null, "m", "https://x", null, 0, true), 2L))
+                "t", null, "m", "https://x", null, 0, true, null), 2L))
                 .isInstanceOf(ForbiddenOperationException.class);
     }
 
@@ -167,10 +167,11 @@ class LessonServiceTest {
         when(userRepository.findAllById(any())).thenReturn(List.of());
 
         service.update(1L, new UpdateVideoLessonRequest(
-                "Renamed", "d", "New Module", "https://new", 900, 3, true), 2L);
+                "Renamed", "d", "New Module", "https://new", 900, 3, true, "DATA_ANALYTICS"), 2L);
 
         assertThat(l.getTitle()).isEqualTo("Renamed");
         assertThat(l.getModuleName()).isEqualTo("New Module");
+        assertThat(l.getTrack()).isEqualTo("DATA_ANALYTICS");
         assertThat(l.isPublished()).isTrue();
     }
 

@@ -5,6 +5,7 @@ import com.moriah.skillhub.client.dto.ClientProjectProgressResponse;
 import com.moriah.skillhub.client.dto.ClientProjectProgressResponse.SprintBurndown;
 import com.moriah.skillhub.client.dto.ClientProjectResponse;
 import com.moriah.skillhub.client.dto.CreateClientProjectRequest;
+import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.client.entity.Client;
 import com.moriah.skillhub.client.entity.ClientProject;
 import com.moriah.skillhub.client.entity.ClientProjectStatus;
@@ -20,6 +21,7 @@ import com.moriah.skillhub.sprint.entity.SprintStatus;
 import com.moriah.skillhub.user.entity.RoleCode;
 import com.moriah.skillhub.user.entity.User;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -62,6 +64,27 @@ public class ClientProjectService {
         clientProjectRepository.save(project);
 
         return toResponse(project);
+    }
+
+    /**
+     * {@code GET /api/v1/clients/projects} — a CLIENT sees only their own company's submissions;
+     * a BUSINESS_ANALYST / ADMIN sees every client's (staff oversight, the same unconditional
+     * split {@link #progress} already uses). A CLIENT with no linked {@code clients} row gets an
+     * empty page, not a 404 — nothing to show is not an error on a list.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<ClientProjectResponse> list(Long callerUserId, ClientProjectStatus status, Pageable pageable) {
+        List<String> roles = SecurityUtils.currentUserRoles();
+        boolean isStaff = roles.contains(RoleCode.BUSINESS_ANALYST.name()) || roles.contains(RoleCode.ADMIN.name());
+
+        Long clientId = null;
+        if (!isStaff) {
+            clientId = clientRepository.findByUserId(callerUserId).map(Client::getId).orElse(null);
+            if (clientId == null) {
+                return PageResponse.from(org.springframework.data.domain.Page.<ClientProjectResponse>empty(pageable));
+            }
+        }
+        return PageResponse.from(clientProjectRepository.search(clientId, status, pageable).map(this::toResponse));
     }
 
     /** build-plan.md feature 21 "Verify": "A client requesting another client's project gets
@@ -118,6 +141,7 @@ public class ClientProjectService {
         return new ClientProjectResponse(
                 project.getId(),
                 project.getClient().getId(),
+                project.getClient().getCompanyName(),
                 project.getTitle(),
                 project.getScopeDescription(),
                 project.getBudgetRange(),

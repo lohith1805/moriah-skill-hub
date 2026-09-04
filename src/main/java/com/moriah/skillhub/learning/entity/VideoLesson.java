@@ -30,6 +30,11 @@ public class VideoLesson extends BaseEntity {
     @Column(name = "module_name", nullable = false, length = 120)
     private String moduleName;
 
+    /** Cohort track this lesson is for — a free string matching {@code batches.track_code}.
+     * {@code null} = every track sees it. */
+    @Column(length = 30)
+    private String track;
+
     @Column(name = "video_url", nullable = false, length = 1000)
     private String videoUrl;
 

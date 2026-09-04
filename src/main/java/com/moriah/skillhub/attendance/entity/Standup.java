@@ -64,6 +64,11 @@ public class Standup extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String notes;
 
+    /** Video-call URL the trainer attaches when scheduling — students join from their dashboard.
+     * Nullable: an in-person standup, or one scheduled before a link existed. */
+    @Column(name = "meeting_link", length = 500)
+    private String meetingLink;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private StandupStatus status = StandupStatus.SCHEDULED;

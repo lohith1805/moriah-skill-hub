@@ -12,6 +12,7 @@ public record LearningResourceResponse(
         String title,
         String description,
         ResourceCategory category,
+        String track,
         String url,
         List<String> tags,
         String createdByUuid,

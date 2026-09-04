@@ -1,6 +1,8 @@
 package com.moriah.skillhub.assessment;
 
 import com.moriah.skillhub.assessment.dto.AssessmentResponse;
+import com.moriah.skillhub.assessment.dto.AssessmentResultRow;
+import com.moriah.skillhub.assessment.dto.CreateAssessmentFromBankRequest;
 import com.moriah.skillhub.assessment.dto.CreateAssessmentRequest;
 import com.moriah.skillhub.assessment.dto.QuizAttemptResponse;
 import com.moriah.skillhub.assessment.dto.SubmitAttemptRequest;
@@ -46,13 +48,53 @@ public class AssessmentController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
     }
 
+    @PostMapping("/api/v1/assessments/from-bank")
+    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @Operation(summary = "Publish a question bank as a live, batch-scoped assessment — the bank's "
+            + "questions (with answer keys) are snapshotted into the new quiz")
+    public ResponseEntity<ApiResponse<AssessmentResponse>> createFromBank(
+            @Valid @RequestBody CreateAssessmentFromBankRequest request, @CurrentUser Long callerUserId) {
+
+        AssessmentResponse response = quizService.createFromBank(callerUserId, request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
+    }
+
     @GetMapping("/api/v1/assessments")
     @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN','STUDENT')")
-    @Operation(summary = "List assessments for a batch")
+    @Operation(summary = "List assessments — for students, batchId is required; TRAINER_PM / ADMIN "
+            + "may omit it to list every assessment (for the publish / results screen)")
     public ResponseEntity<ApiResponse<PageResponse<AssessmentResponse>>> list(
-            @RequestParam Long batchId, @PageableDefault(size = 20) Pageable pageable) {
+            @RequestParam(required = false) Long batchId,
+            @CurrentUser Long callerUserId,
+            @PageableDefault(size = 20) Pageable pageable) {
 
-        return ResponseEntity.ok(ApiResponse.success(quizService.list(batchId, pageable)));
+        return ResponseEntity.ok(ApiResponse.success(quizService.list(callerUserId, batchId, pageable)));
+    }
+
+    @GetMapping("/api/v1/assessments/results")
+    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @Operation(summary = "Student attempt results across assessments — filter by assessmentId, "
+            + "batchId and cohort track")
+    public ResponseEntity<ApiResponse<PageResponse<AssessmentResultRow>>> results(
+            @RequestParam(required = false) Long assessmentId,
+            @RequestParam(required = false) Long batchId,
+            @RequestParam(required = false) String track,
+            @RequestParam(defaultValue = "true") boolean onlyFinished,
+            @PageableDefault(size = 50) Pageable pageable) {
+
+        return ResponseEntity.ok(ApiResponse.success(
+                quizService.results(assessmentId, batchId, track, onlyFinished, pageable)));
+    }
+
+    @org.springframework.web.bind.annotation.DeleteMapping("/api/v1/assessments/{id}")
+    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @Operation(summary = "Deactivate an assessment (is_active = false) — never row-deletes, so "
+            + "attempt history survives")
+    public ResponseEntity<ApiResponse<Void>> deactivate(
+            @PathVariable Long id, @CurrentUser Long callerUserId) {
+
+        quizService.deactivate(callerUserId, id);
+        return ResponseEntity.ok(ApiResponse.success(null));
     }
 
     @PostMapping("/api/v1/assessments/{id}/attempts")

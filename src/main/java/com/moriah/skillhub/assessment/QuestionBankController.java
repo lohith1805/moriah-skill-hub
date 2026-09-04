@@ -30,8 +30,9 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Assessment question bank (gap B1.15). {@code /api/v1/assessments/banks}, TRAINER_PM/ADMIN —
- * the same mutation roles {@code AssessmentController} uses for quiz creation.
+ * Assessment question bank (gap B1.15). {@code /api/v1/assessments/banks} — DEVELOPER / TRAINER_PM
+ * / ADMIN (a bank is reusable curriculum content, authored like a video lesson; see
+ * {@code CURATOR_ROLES} below).
  */
 @RestController
 @RequestMapping("/api/v1/assessments/banks")
@@ -39,10 +40,16 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "Assessments")
 public class QuestionBankController {
 
+    /** Question banks are curriculum content — a DEVELOPER authors reusable banks the same way
+     * they author video lessons and resources (feature 15 / gap B1.4-B1.6 precedent). Publishing
+     * a bank to a specific batch as a live assessment is a separate route (from-bank), whose own
+     * ownership rule keeps a TRAINER_PM to their own batches. */
+    private static final String CURATOR_ROLES = "hasAnyRole('DEVELOPER','TRAINER_PM','ADMIN')";
+
     private final QuestionBankService questionBankService;
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @PreAuthorize(CURATOR_ROLES)
     @Operation(summary = "Create a question bank")
     public ResponseEntity<ApiResponse<QuestionBankResponse>> createBank(
             @Valid @RequestBody CreateQuestionBankRequest request, @CurrentUser Long callerUserId) {
@@ -52,7 +59,7 @@ public class QuestionBankController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @PreAuthorize(CURATOR_ROLES)
     @Operation(summary = "List question banks — optional topic / active filters")
     public ResponseEntity<ApiResponse<PageResponse<QuestionBankResponse>>> listBanks(
             @RequestParam(required = false) String topic,
@@ -63,7 +70,7 @@ public class QuestionBankController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @PreAuthorize(CURATOR_ROLES)
     @Operation(summary = "Rename / re-topic a bank or toggle its active flag")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Bank updated"),
@@ -75,7 +82,7 @@ public class QuestionBankController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @PreAuthorize(CURATOR_ROLES)
     @Operation(summary = "Deactivate a bank (is_active = false) — never row-deletes")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Bank deactivated"),
@@ -87,7 +94,7 @@ public class QuestionBankController {
     }
 
     @DeleteMapping("/{id}/questions/{questionId}")
-    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @PreAuthorize(CURATOR_ROLES)
     @Operation(summary = "Remove a question from a bank")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Question removed"),
@@ -100,7 +107,7 @@ public class QuestionBankController {
     }
 
     @PostMapping("/{id}/questions")
-    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @PreAuthorize(CURATOR_ROLES)
     @Operation(summary = "Add a question to a bank")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "Question added"),
@@ -116,7 +123,7 @@ public class QuestionBankController {
     }
 
     @GetMapping("/{id}/questions")
-    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @PreAuthorize(CURATOR_ROLES)
     @Operation(summary = "List the questions in a bank (correct-answer keys are never returned)")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Question list"),

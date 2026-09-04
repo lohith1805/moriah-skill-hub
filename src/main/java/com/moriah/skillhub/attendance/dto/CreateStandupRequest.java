@@ -16,6 +16,7 @@ public record CreateStandupRequest(
         Long sprintId,
         @NotNull Instant scheduledAt,
         @Min(1) @Max(180) Integer lateCutoffMinutes,
-        @Size(max = 2000) String notes
+        @Size(max = 2000) String notes,
+        @Size(max = 500) String meetingLink
 ) {
 }

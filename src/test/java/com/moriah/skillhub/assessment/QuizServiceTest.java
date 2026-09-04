@@ -10,10 +10,19 @@ import com.moriah.skillhub.assessment.entity.AttemptStatus;
 import com.moriah.skillhub.assessment.entity.QuestionType;
 import com.moriah.skillhub.assessment.entity.Quiz;
 import com.moriah.skillhub.assessment.entity.QuizAttempt;
+import com.moriah.skillhub.assessment.dto.CreateAssessmentFromBankRequest;
+import com.moriah.skillhub.assessment.entity.QuestionBank;
+import com.moriah.skillhub.assessment.entity.QuestionBankItem;
+import com.moriah.skillhub.assessment.repository.QuestionBankItemRepository;
+import com.moriah.skillhub.assessment.repository.QuestionBankRepository;
 import com.moriah.skillhub.assessment.repository.QuizAnswerRepository;
 import com.moriah.skillhub.assessment.repository.QuizAttemptRepository;
 import com.moriah.skillhub.assessment.repository.QuizQuestionRepository;
 import com.moriah.skillhub.assessment.repository.QuizRepository;
+import com.moriah.skillhub.common.security.AuthenticatedPrincipal;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.security.authentication.TestingAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import com.moriah.skillhub.batch.BatchService;
 import com.moriah.skillhub.batch.entity.Batch;
 import com.moriah.skillhub.batch.repository.BatchRepository;
@@ -54,6 +63,10 @@ class QuizServiceTest {
     private QuizRepository quizRepository;
     @Mock
     private QuizQuestionRepository quizQuestionRepository;
+    @Mock
+    private QuestionBankRepository questionBankRepository;
+    @Mock
+    private QuestionBankItemRepository questionBankItemRepository;
     @Mock
     private QuizAttemptRepository quizAttemptRepository;
     @Mock
@@ -111,6 +124,57 @@ class QuizServiceTest {
         quizService.create(1L, createRequest(null));
 
         verify(batchService, org.mockito.Mockito.never()).requireOwnerOrAdmin(any(), any());
+    }
+
+    @Test
+    void createFromBank_asAdmin_snapshotsBankAndSkipsOwnershipCheck() {
+        SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken(
+                new AuthenticatedPrincipal(1L, "uuid-1", List.of("ADMIN")), null));
+        try {
+            QuestionBank bank = new QuestionBank();
+            bank.setId(5L);
+            bank.setName("Java Basics Bank");
+            QuestionBankItem item = new QuestionBankItem();
+            item.setQuestionText("2 + 2 = ?");
+            item.setQuestionType(QuestionType.MCQ);
+            item.setOptions("[\"3\",\"4\"]");
+            item.setCorrectAnswer("[1]");
+            item.setMarks(1);
+
+            when(questionBankRepository.findById(5L)).thenReturn(Optional.of(bank));
+            when(questionBankItemRepository.findByBankId(eq(5L), any()))
+                    .thenReturn(new PageImpl<>(List.of(item)));
+            when(batchRepository.findById(100L)).thenReturn(Optional.of(batch));
+            when(userRepository.findById(1L)).thenReturn(Optional.of(new User()));
+
+            AssessmentResponse response = quizService.createFromBank(1L,
+                    new CreateAssessmentFromBankRequest(5L, 100L, null, null, 20, null, null));
+
+            assertThat(response.title()).isEqualTo("Java Basics Bank"); // defaults to bank name
+            verify(batchService, org.mockito.Mockito.never()).requireOwnerOrAdmin(any(), any());
+            verify(quizQuestionRepository).saveAll(any());
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+    }
+
+    @Test
+    void createFromBank_emptyBank_throwsConflict() {
+        SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken(
+                new AuthenticatedPrincipal(1L, "uuid-1", List.of("ADMIN")), null));
+        try {
+            QuestionBank bank = new QuestionBank();
+            bank.setId(5L);
+            when(questionBankRepository.findById(5L)).thenReturn(Optional.of(bank));
+            when(questionBankItemRepository.findByBankId(eq(5L), any())).thenReturn(new PageImpl<>(List.of()));
+
+            assertThatThrownBy(() -> quizService.createFromBank(1L,
+                    new CreateAssessmentFromBankRequest(5L, 100L, null, null, 20, null, null)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.QUESTION_BANK_EMPTY);
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
     }
 
     @Test

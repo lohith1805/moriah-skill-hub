@@ -54,8 +54,9 @@ public class ChallengeController {
     }
 
     @GetMapping("/api/v1/projects/{id}/challenges")
-    @PreAuthorize("hasAnyRole('DEVELOPER','ADMIN')")
-    @Operation(summary = "List every bug-fix challenge on a project")
+    @PreAuthorize("hasAnyRole('DEVELOPER','ADMIN','TRAINER_PM','STUDENT')")
+    @Operation(summary = "List every bug-fix challenge on a project — students see them to attempt "
+            + "(broken-code / test-script are fresh presigned download URLs)")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Challenge list"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "No project with this id")
@@ -66,7 +67,7 @@ public class ChallengeController {
     }
 
     @GetMapping("/api/v1/challenges/{challengeId}")
-    @PreAuthorize("hasAnyRole('DEVELOPER','ADMIN')")
+    @PreAuthorize("hasAnyRole('DEVELOPER','ADMIN','TRAINER_PM','STUDENT')")
     @Operation(summary = "One bug-fix challenge by id")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Challenge"),

@@ -38,6 +38,11 @@ public class LearningResource extends BaseEntity {
     @Column(nullable = false, length = 20)
     private ResourceCategory category;
 
+    /** Cohort track this resource is for — a free string matching {@code batches.track_code}.
+     * {@code null} = every track sees it. */
+    @Column(length = 30)
+    private String track;
+
     @Column(nullable = false, length = 1000)
     private String url;
 
