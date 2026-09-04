@@ -1013,6 +1013,20 @@ Follow-up ask: "resource library with track filter but we can also add project a
 - Frontend: `npm run build` — **green**.
 - Committed: backend `main`, frontend `master` (frontend repo is on `master`, not `main`).
 
+## Spinner-hang sweep (same session, FE only, commit `<frontend>`)
+
+The "`Promise.all([...]).then()` / bare `getX().then()` with no `.catch()` → page hangs on its
+spinner forever if any call rejects" bug (BA + client pages in part-2) was swept site-wide. Fixed
+every `useEffect`/`load()` loader that set `setLoading(false)` only inside `.then` and had no
+`.catch`/`.finally`: **developer/Dashboard, hr/Dashboard, trainer/Dashboard, leadgen/Dashboard,
+student/Dashboard (2nd effect), student/Tasks, student/Subscription, student/Certificates,
+student/PipStatus, student/Submissions, trainer/Sprints, trainer/SprintPlanning,
+trainer/PIPManagement, trainer/Batches, trainer/Analytics, developer/ClientRequirements,
+developer/VideoLessons, developer/AssessmentBank, admin/UserManagement, leadgen/Targets.**
+Pattern applied: per-call `.catch(() => <empty>)` + move `setLoading(false)` to `.finally()`, and
+a `notify(...)` toast where the component already had `useToast`. The part-2-fixed pages
+(BA + client dashboards, ba/Documents, etc.) were already correct.
+
 ## Still NOT done / open
 
 - **Client-registration → Student dashboard** report (message 17). Traced end to end:
