@@ -43,6 +43,11 @@ public class LearningResource extends BaseEntity {
     @Column(length = 30)
     private String track;
 
+    /** Optional project this resource is tied to — a bare {@code projects.id}, same "plain id, no
+     * navigation needed" reasoning as {@code createdBy}. {@code null} = not tied to any project. */
+    @Column(name = "project_id")
+    private Long projectId;
+
     @Column(nullable = false, length = 1000)
     private String url;
 

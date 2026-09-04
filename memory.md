@@ -1,8 +1,8 @@
 # Memory — Moriah Skill Hub (backend + frontend integration)
 
-Last updated: **2026-09-04** (part-2 session — dashboard bug-fix sweep across every role portal;
-see the section at the very end of this file). This file is the authoritative handoff — earlier
-prose was consolidated here.
+Last updated: **2026-09-04** (part-3 session — MCQ-only assessments, bug-challenge submission flow,
+P0 batch; see "Part-3 session" at the very end of this file). This file is the authoritative
+handoff — earlier prose was consolidated here.
 
 ---
 
@@ -897,3 +897,131 @@ Migrations: **V35** `standups.meeting_link`, **V36** `staff_attendance` (new tab
   entity getter fails the build.
 - `mvn -o -q surefire:test` hides the "Tests run:" line; exit 0 == BUILD SUCCESS == all matched
   tests passed. Drop `-q` when you need the count.
+
+---
+
+# Part-3 session (2026-09-04) — assessment/bug-challenge redesign + P0 batch
+
+Follows the part-2 sweep. Big user batch (~16 items) + two decisions: **drop the live code runner
+entirely** (assessments are MCQ-only now) and **build a real bug-challenge submission flow**
+(student pastes rewritten code; dev/trainer review it). Backend + FE both **build clean**
+(`mvn -o -q compile/test-compile` exit 0; `npm run build` OK). **NOT committed yet, backend NOT
+restarted** — same as always, user runs it on 8080.
+
+## Backend changes (uncommitted)
+
+- **Migration V38** `challenge_submissions` (`src/main/resources/db/migration/V38__challenge_submissions.sql`) —
+  challenge_id, student_id, solution_code MEDIUMTEXT, notes, status (`SUBMITTED|ACCEPTED|NEEDS_WORK`),
+  reviewer_id, reviewer_feedback, score 0-100, submitted_at, reviewed_at. Next migration = **V39**.
+- `project/entity/ChallengeSubmission.java` + `ChallengeSubmissionStatus.java` (NEW).
+- `project/repository/ChallengeSubmissionRepository.java` (NEW) — `findMine(studentId, pageable)`,
+  `findForChallenge(challengeId, pageable)` (both JOIN FETCH challenge→project).
+- `project/ChallengeSubmissionService.java` (NEW) — `submit` / `mySubmissions` / `submissionsForChallenge` / `review`.
+  Kept OUT of the already-huge `ProjectService`.
+- `project/ChallengeSubmissionController.java` (NEW):
+  | Method | Path | Roles |
+  |---|---|---|
+  | POST | `/api/v1/challenges/{challengeId}/submissions` | STUDENT |
+  | GET | `/api/v1/challenges/submissions/me` | STUDENT |
+  | GET | `/api/v1/challenges/{challengeId}/submissions` | DEVELOPER, TRAINER_PM, ADMIN |
+  | PUT | `/api/v1/challenges/submissions/{id}/review` | DEVELOPER, TRAINER_PM, ADMIN |
+- `project/dto/`: `SubmitChallengeRequest`, `ReviewChallengeSubmissionRequest`, `ChallengeSubmissionResponse` (NEW).
+- `ErrorCode` +`CHALLENGE_SUBMISSION_NOT_FOUND`.
+- **Assessment "completed" state**: `assessment/dto/MyAssessmentAttemptRow.java` (NEW);
+  `QuizAttemptRepository.findMineByUser(userId, pageable)` (JOIN FETCH quiz + LEFT JOIN batch);
+  `QuizService.myAttempts(callerUserId, pageable)`; `AssessmentController` NEW
+  `GET /api/v1/assessments/attempts/me` (STUDENT) — returns newest-first attempts so the student
+  list can show Completed/Passed/Failed instead of always "Start Assessment".
+- `ClientProjectService.resolveOrCreateClient` self-heal (from part-2, still uncommitted) — carried forward.
+- **Seed** (`db/testdata/R__dev_seed_data.sql`): added a richer PUBLISHED project
+  `shopsprint-storefront-api` ("ShopSprint — E-Commerce Storefront API") with a multi-line brief +
+  **2 bug_challenges** (cart-total coupon bug, checkout oversell-under-concurrency) so the new
+  submission flow has real data on a `dev` boot. Seed question banks were ALREADY MCQ/MULTI_SELECT
+  only — no CODE items to strip.
+
+## Frontend changes (uncommitted)
+
+- **MCQ-only** `pages/developer/AssessmentBank.jsx` — removed all live-code-runner UI (codeForm,
+  addCodeQuestion, parseJsonField, the "Live Code Runner" type option, the code-form JSX branch,
+  `Code2` icon). Create-bank modal is title-only now (type hardcoded `"MCQ"`).
+  `services/developerService.js` `addQuestionToBank` is MCQ-only. `getAssessmentBanks()` sends
+  `?active=true` (deleted banks stay gone). `questionFileParser.js` accepts `.xlsx/.xls` via SheetJS
+  (`xlsx` in package.json). Manual add-question + delete-bank now wrapped in try/catch + notify;
+  `addMcqQuestion` passes the correct-option **index** (was passing option text → backend 400).
+- **Assessment completed state** `pages/student/Assessments.jsx` — `load()` now
+  `Promise.all([getAssessments(), getMyAssessmentAttempts()])`; each card shows In progress / Awaiting
+  grading / Passed / Not passed + "Assessment Completed — scored X%" and only offers Retake when
+  failed with attempts left. `studentService.getMyAssessmentAttempts()` → map keyed by assessmentId.
+- **Remove student self check-in** — `pages/student/Attendance.jsx` + `pages/student/Dashboard.jsx`
+  standup card: Join-meet + read-only history only, no check-in button. `studentService.checkInToStandup`
+  removed. Trainer already marks attendance on `trainer/Standups.jsx` (unchanged).
+- **Trainer Resources track filter** `pages/trainer/Resources.jsx` — `<Select>` of `TRACKS` +
+  client-side filter (blank track row = "All tracks", always shows).
+- **Admin Reports format picker** `pages/admin/Reports.jsx` — dropped the silently-failing
+  `exportReport(format)` backend call; Export now opens a radio modal (.csv / .pdf / .txt) and
+  generates+downloads client-side (`utils/pdf.js` `downloadPdf` for PDF). Preview modal's Download
+  routes through the same picker.
+- **Code review full-screen + GitHub** — `components/ui/Modal.jsx` gained `size="full"`
+  (`max-w-[96vw] h-[92vh]`, flex column, body flex-1). `pages/trainer/CodeReview.jsx` uses it,
+  plus an "Open in GitHub" footer button + a prominent "Open this pull request on GitHub" banner
+  (icon `GitPullRequest` — lucide has no `Github` export in this version).
+- **Bug-challenge submission** — `pages/student/Projects.jsx` rewritten: per-challenge "Submit fix"
+  modal (code textarea + notes), shows Submitted/Accepted/Needs work badge + reviewer feedback,
+  resubmit allowed. `pages/developer/BugChallenges.jsx`: "Submissions" button per challenge →
+  full-screen modal listing every submission with the code, a feedback box, a /100 score, and
+  Accept / Needs work buttons. `studentService`: `getMyBugChallengeSubmissions` / `submitBugChallenge`
+  (dropped the localStorage `attemptBugChallenge`). `developerService`: `getChallengeSubmissions` /
+  `reviewChallengeSubmission`.
+- **Client shows as Student in admin** — `services/adminService.js` `toFeUserRow` now uses
+  `primaryFeRole(u.roles)` (priority collapse) instead of "first recognised role else student".
+  NOTE: the client-registration → student-dashboard report could NOT be reproduced in code —
+  `Register.jsx` → `registerClientAccount` → `/auth/register/client` → PENDING_APPROVAL is correct
+  and can't even log in. Needs the user's fresh re-test after a backend restart.
+
+## New endpoints (V38 batch)
+
+| Method | Path | Roles | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/assessments/attempts/me` | STUDENT | caller's attempts, newest-first → list state |
+| POST | `/api/v1/challenges/{id}/submissions` | STUDENT | submit a rewritten fix |
+| GET | `/api/v1/challenges/submissions/me` | STUDENT | caller's own submissions |
+| GET | `/api/v1/challenges/{id}/submissions` | DEVELOPER, TRAINER_PM, ADMIN | review view |
+| PUT | `/api/v1/challenges/submissions/{id}/review` | DEVELOPER, TRAINER_PM, ADMIN | verdict + feedback + score |
+
+## V39 — resource library project filter (added same session, after the batch above)
+
+Follow-up ask: "resource library with track filter but we can also add project as filter also."
+- **Migration V39** `learning_resource_project.sql` — `learning_resources.project_id BIGINT UNSIGNED
+  NULL` + FK to `projects(id)` + index. NULL = shown everywhere (same semantics as `track`). Next = **V40**.
+- `LearningResource` entity / `CreateResourceRequest` / `UpdateResourceRequest` / `LearningResourceResponse`
+  all gained `projectId` (plain `Long`, no `@ManyToOne` — same "id only, no navigation" reasoning as `createdBy`).
+- `LearningResourceRepository.search(...)` + `ResourceService.list(...)` + `ResourceController GET
+  /api/v1/resources` gained optional `projectId` param — filters "this project OR untied" like `track` does.
+- `ResourceServiceTest` updated for the new record component + repo arity (added one `any()` to the
+  `search(...)` matchers, one `null` to the `Create/UpdateResourceRequest` constructors, one arg to `list(...)`).
+- FE: `developerService.getResourceLibrary(track, projectId)` + `create/updateResource` carry `projectId`
+  + `toFeResource` exposes it. `developer/Resources.jsx` — Track + Project filter dropdowns + a Project
+  column + a Project selector in the Add form. `trainer/Resources.jsx` — Project filter next to the Track
+  filter. `student/Resources.jsx` — Project filter (shown only when the student has projects). All three
+  use `getProjects()` (`GET /projects` allows TRAINER_PM + STUDENT already).
+- Seed: the ShopSprint project now also seeds 2 project-scoped `learning_resources` (OpenAPI contract,
+  Postman collection) so the filter has something to show.
+
+## Verification at commit time
+
+- Backend: `mvn -o -q test` — full suite, **exit 0** (all pass).
+- Frontend: `npm run build` — **green**.
+- Committed: backend `main`, frontend `master` (frontend repo is on `master`, not `main`).
+
+## Still NOT done / open
+
+- **Client-registration → Student dashboard** report (message 17). Traced end to end:
+  `registerClientAccount` → `POST /auth/register/client` → `PENDING_APPROVAL` (no email-verify step) →
+  admin approve (`ClientApprovalService.approve` flips status only, CLIENT role was set at registration) →
+  login → `AuthService.issueTokenPair` reads `userRoleRepository.findRoleCodesByUserId` fresh → JWT
+  `roles` claim = `["CLIENT"]` → FE `primaryFeRole` → `/client/dashboard`. **The code path is correct
+  and the bug could not be reproduced.** Defensive fix applied anyway: `adminService.toFeUserRow` now
+  uses `primaryFeRole(u.roles)` (priority collapse) instead of "first recognised role else student", so
+  a client never *displays* as Student in User Management. Needs the user's fresh re-test after a
+  backend restart. Likely causes if it recurs: OAuth "Continue with Google" on the login page
+  (auto-creates an ACTIVE STUDENT), or registering on the Student tab by mistake, or a stale pre-restart observation.

@@ -6,6 +6,7 @@ import com.moriah.skillhub.assessment.dto.AssessmentResultRow;
 import com.moriah.skillhub.assessment.dto.CreateAssessmentFromBankRequest;
 import com.moriah.skillhub.assessment.dto.CreateAssessmentRequest;
 import com.moriah.skillhub.assessment.dto.CreateQuestionRequest;
+import com.moriah.skillhub.assessment.dto.MyAssessmentAttemptRow;
 import com.moriah.skillhub.assessment.dto.QuizAttemptResponse;
 import com.moriah.skillhub.assessment.dto.SubmitAnswerRequest;
 import com.moriah.skillhub.assessment.dto.SubmitAttemptRequest;
@@ -152,6 +153,31 @@ public class QuizService {
                             q.getBatch() == null ? null : q.getBatch().getTrackCode(),
                             a.getUser().getUuid(),
                             a.getUser().getFullName(),
+                            a.getAttemptNumber(),
+                            a.getStatus(),
+                            a.getPercentage(),
+                            a.getPassed(),
+                            q.getPassPercentage(),
+                            a.getSubmittedAt());
+                }));
+    }
+
+    /**
+     * The calling student's own attempts, newest first ({@code GET /api/v1/assessments/attempts/me}).
+     * The student assessment list merges this by {@code assessmentId} so each row shows its real
+     * state ("Completed — Passed 82%", "Failed", "In progress") rather than always offering a fresh
+     * start. No answer keys or per-question detail — that stays on {@link #getAttempt}.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<MyAssessmentAttemptRow> myAttempts(Long callerUserId, Pageable pageable) {
+        return PageResponse.from(quizAttemptRepository.findMineByUser(callerUserId, pageable)
+                .map(a -> {
+                    Quiz q = a.getQuiz();
+                    return new MyAssessmentAttemptRow(
+                            a.getId(),
+                            q.getId(),
+                            q.getTitle(),
+                            q.getBatch() == null ? null : q.getBatch().getId(),
                             a.getAttemptNumber(),
                             a.getStatus(),
                             a.getPercentage(),

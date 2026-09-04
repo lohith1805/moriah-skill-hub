@@ -34,6 +34,17 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, Long> 
                                     @Param("onlyFinished") boolean onlyFinished,
                                     Pageable pageable);
 
+    /** The calling student's own attempts ({@code GET /api/v1/assessments/attempts/me}), newest
+     * first. {@code quiz.batch} left-joined — a project-scoped quiz has no batch. */
+    @Query("""
+            SELECT a FROM QuizAttempt a
+              JOIN FETCH a.quiz q
+              LEFT JOIN FETCH q.batch b
+             WHERE a.user.id = :userId
+             ORDER BY a.id DESC
+            """)
+    Page<QuizAttempt> findMineByUser(@Param("userId") Long userId, Pageable pageable);
+
     /** {@code JOIN FETCH} both associations, deliberately — backs {@code
      * QuizAttemptWriter.findExisting} (the concurrent double-start recovery read, run in its own
      * short-lived {@code REQUIRES_NEW} transaction/session). Same "confirmed the hard way"

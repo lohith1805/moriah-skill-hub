@@ -53,3 +53,57 @@ MiniIO Bucket
 
 docker exec skillhub-minio mc alias set local http://localhost:9000 skillhub_minio minio_dev_only
 docker exec skillhub-minio mc mb --ignore-existing local/moriah-skillhub
+
+Test Key ID,
+
+rzp_test_SrUcvFHwwvCf5R
+Test Key Secret,
+
+qfwMG4vxVTjJfWKGcn83giuP
+
+## Seeded users
+
+From `src/main/resources/db/testdata/R__dev_seed_data.sql` (dev profile only).
+All passwords: `Password123!`
+
+| Email | Role |
+|---|---|
+| `admin@moriah.test` | ADMIN — mandatory 2FA (setup prompt on first login) |
+| `hr@moriah.test` | HR_MANAGER — mandatory 2FA (setup prompt on first login) |
+| `pm@moriah.test` | TRAINER_PM |
+| `dev@moriah.test` | DEVELOPER |
+| `sales@moriah.test` | LEAD_GEN |
+| `ba@moriah.test` | BUSINESS_ANALYST |
+| `client@moriah.test` | CLIENT |
+| `student1@moriah.test` … `student9@moriah.test` | STUDENT (`student1`–`student3` have an ACTIVE `PROJECT_BASED` subscription + batch; `student6` is GRADUATED with a certificate) |
+
+python -m ensurepip --default-pip
+pip install pyotp
+python -c "import pyotp; print(pyotp.TOTP('JMTSKLPRZTGEBH5KQBVWARABIDB2JMWU').now())"
+
+
+# to generate open api json 
+
+cd "project_path\moriah_skill_hub\Moriah_Backend Final"
+	- cd "C:\Users\ADMIN\Downloads\vs-code\moriah_skill_hub\Moriah_Backend Final"
+
+curl http://localhost:8080/v3/api-docs -o docs/openapi.json
+
+# to generate api API-Documentation
+
+cd "project_path\moriah_skill_hub\Moriah_Backend Final"
+	- cd "C:\Users\ADMIN\Downloads\vs-code\moriah_skill_hub\Moriah_Backend Final"
+
+# to generate postman collection
+
+cd "project_path\moriah_skill_hub\Moriah_Backend Final"
+	- cd "C:\Users\ADMIN\Downloads\vs-code\moriah_skill_hub\Moriah_Backend Final"
+
+python scripts/gen-postman.py
+
+# how to view logs
+
+```
+tail -f logs/skillhub.log
+```
+

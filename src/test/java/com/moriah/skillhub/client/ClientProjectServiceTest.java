@@ -46,6 +46,8 @@ class ClientProjectServiceTest {
     @Mock
     private ClientRepository clientRepository;
     @Mock
+    private com.moriah.skillhub.user.repository.UserRepository userRepository;
+    @Mock
     private SprintService sprintService;
 
     @InjectMocks
@@ -100,14 +102,24 @@ class ClientProjectServiceTest {
     }
 
     @Test
-    void create_callerHasNoLinkedClientRow_throwsClientNotFound() {
+    void create_callerHasNoLinkedClientRow_selfHealsFromUser() {
+        User user = new User();
+        user.setId(50L);
+        user.setFullName("Acme Contact");
+        user.setEmail("contact@acme.test");
         when(clientRepository.findByUserId(50L)).thenReturn(Optional.empty());
+        when(userRepository.findById(50L)).thenReturn(Optional.of(user));
+        when(clientRepository.save(org.mockito.ArgumentMatchers.any(Client.class)))
+                .thenAnswer(inv -> { Client c = inv.getArgument(0); c.setId(9L); return c; });
+        when(clientProjectRepository.save(org.mockito.ArgumentMatchers.any(ClientProject.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
 
         CreateClientProjectRequest request = new CreateClientProjectRequest("T", "S", null);
+        ClientProjectResponse response = clientProjectService.create(request, 50L);
 
-        assertThatThrownBy(() -> clientProjectService.create(request, 50L))
-                .isInstanceOf(ResourceNotFoundException.class)
-                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.CLIENT_NOT_FOUND);
+        assertThat(response.title()).isEqualTo("T");
+        assertThat(response.clientName()).isEqualTo("Acme Contact");
+        org.mockito.Mockito.verify(clientRepository).save(org.mockito.ArgumentMatchers.any(Client.class));
     }
 
     @Test

@@ -9,6 +9,7 @@ import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.client.entity.Client;
 import com.moriah.skillhub.client.entity.ClientProject;
 import com.moriah.skillhub.client.entity.ClientProjectStatus;
+import com.moriah.skillhub.client.entity.ClientStatus;
 import com.moriah.skillhub.client.repository.ClientProjectRepository;
 import com.moriah.skillhub.client.repository.ClientRepository;
 import com.moriah.skillhub.common.exception.ErrorCode;
@@ -20,7 +21,9 @@ import com.moriah.skillhub.sprint.dto.SprintProgressProjection;
 import com.moriah.skillhub.sprint.entity.SprintStatus;
 import com.moriah.skillhub.user.entity.RoleCode;
 import com.moriah.skillhub.user.entity.User;
+import com.moriah.skillhub.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,10 +41,12 @@ import java.util.Objects;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ClientProjectService {
 
     private final ClientProjectRepository clientProjectRepository;
     private final ClientRepository clientRepository;
+    private final UserRepository userRepository;
     private final SprintService sprintService;
 
     /** Resolves the caller's own {@code client_id} via {@code clients.user_id = callerUserId}
@@ -51,8 +56,7 @@ public class ClientProjectService {
      * a clear {@link ErrorCode#CLIENT_NOT_FOUND}, not an NPE. */
     @Transactional
     public ClientProjectResponse create(CreateClientProjectRequest request, Long callerUserId) {
-        Client client = clientRepository.findByUserId(callerUserId)
-                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.CLIENT_NOT_FOUND, callerUserId));
+        Client client = resolveOrCreateClient(callerUserId);
 
         ClientProject project = new ClientProject();
         project.setClient(client);
@@ -125,6 +129,28 @@ public class ClientProjectService {
      * ownership shape. {@code SecurityUtils.currentUserRoles()} — no DB round trip, same
      * technique {@code BatchService}/{@code TaskService} already use for this exact kind of
      * check. */
+    /** A CLIENT user should always have a linked {@code clients} row — {@code
+     * ClientRegistrationService} and {@code ClientService.create} both create one in the same
+     * transaction as the user. If one is somehow missing (a legacy account, an OAuth signup),
+     * self-heal a minimal row from the {@code User} so the portal still works instead of
+     * dead-ending every action with {@code CLIENT_NOT_FOUND}. */
+    private Client resolveOrCreateClient(Long callerUserId) {
+        return clientRepository.findByUserId(callerUserId).orElseGet(() -> {
+            User user = userRepository.findById(callerUserId)
+                    .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.USER_NOT_FOUND, callerUserId));
+            Client fresh = new Client();
+            fresh.setCompanyName(user.getFullName());
+            fresh.setContactPerson(user.getFullName());
+            fresh.setEmail(user.getEmail());
+            fresh.setPhone(user.getPhone());
+            fresh.setStatus(ClientStatus.ACTIVE);
+            fresh.setUser(user);
+            clientRepository.save(fresh);
+            log.warn("[client] self-healed a missing clients row for user {} ({})", callerUserId, user.getEmail());
+            return fresh;
+        });
+    }
+
     private void requireOwningClientOrStaff(Long callerUserId, ClientProject project) {
         List<String> roles = SecurityUtils.currentUserRoles();
         boolean isStaff = roles.contains(RoleCode.BUSINESS_ANALYST.name()) || roles.contains(RoleCode.ADMIN.name());

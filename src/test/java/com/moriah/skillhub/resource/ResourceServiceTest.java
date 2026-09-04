@@ -87,7 +87,7 @@ class ResourceServiceTest {
 
         LearningResourceResponse response = service.create(
                 new CreateResourceRequest("Clean Architecture", "  ", ResourceCategory.ARTICLE,
-                        "https://example.com/clean-arch", List.of("architecture", "architecture", "design"), "FULL_STACK"),
+                        "https://example.com/clean-arch", List.of("architecture", "architecture", "design"), "FULL_STACK", null),
                 7L);
 
         ArgumentCaptor<LearningResource> captor = ArgumentCaptor.forClass(LearningResource.class);
@@ -102,26 +102,26 @@ class ResourceServiceTest {
     @Test
     void list_nonCurator_neverSeesInactiveEvenWhenAsked() {
         authenticateAs(50L, RoleCode.STUDENT.name());
-        when(resourceRepository.search(eq(true), any(), any(), any(), any(Pageable.class)))
+        when(resourceRepository.search(eq(true), any(), any(), any(), any(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
 
-        service.list(true, null, null, null, PageRequest.of(0, 20));
+        service.list(true, null, null, null, null, PageRequest.of(0, 20));
 
         // activeOnly stays true (first arg) despite includeInactive=true, because the caller is not a curator
-        verify(resourceRepository).search(eq(true), any(), any(), any(), any(Pageable.class));
+        verify(resourceRepository).search(eq(true), any(), any(), any(), any(), any(Pageable.class));
     }
 
     @Test
     void list_curator_canIncludeInactive() {
         authenticateAs(9L, RoleCode.ADMIN.name());
-        when(resourceRepository.search(eq(false), any(), any(), any(), any(Pageable.class)))
+        when(resourceRepository.search(eq(false), any(), any(), any(), any(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(resource(1L, 9L)), PageRequest.of(0, 20), 1));
         when(userRepository.findAllById(any())).thenReturn(List.of());
 
-        PageResponse<LearningResourceResponse> page = service.list(true, null, null, null, PageRequest.of(0, 20));
+        PageResponse<LearningResourceResponse> page = service.list(true, null, null, null, null, PageRequest.of(0, 20));
 
         assertThat(page.content()).hasSize(1);
-        verify(resourceRepository).search(eq(false), any(), any(), any(), any(Pageable.class));
+        verify(resourceRepository).search(eq(false), any(), any(), any(), any(), any(Pageable.class));
     }
 
     @Test
@@ -130,7 +130,7 @@ class ResourceServiceTest {
         when(resourceRepository.findById(1L)).thenReturn(Optional.of(resource(1L, 999L)));
 
         assertThatThrownBy(() -> service.update(1L,
-                new UpdateResourceRequest("t", null, ResourceCategory.VIDEO, "https://x", List.of(), true, null), 2L))
+                new UpdateResourceRequest("t", null, ResourceCategory.VIDEO, "https://x", List.of(), true, null, null), 2L))
                 .isInstanceOf(ForbiddenOperationException.class);
     }
 
@@ -142,7 +142,7 @@ class ResourceServiceTest {
         when(userRepository.findAllById(any())).thenReturn(List.of());
 
         service.update(1L, new UpdateResourceRequest("Renamed", "d", ResourceCategory.COURSE,
-                "https://new", List.of("x"), false, "PRODUCT_DESIGN"), 2L);
+                "https://new", List.of("x"), false, "PRODUCT_DESIGN", null), 2L);
 
         assertThat(r.getTitle()).isEqualTo("Renamed");
         assertThat(r.getCategory()).isEqualTo(ResourceCategory.COURSE);

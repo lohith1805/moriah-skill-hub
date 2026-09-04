@@ -22,6 +22,7 @@ public interface LearningResourceRepository extends JpaRepository<LearningResour
              WHERE (:activeOnly = false OR r.active = true)
                AND (:category IS NULL OR r.category = :category)
                AND (:track IS NULL OR r.track IS NULL OR r.track = :track)
+               AND (:projectId IS NULL OR r.projectId IS NULL OR r.projectId = :projectId)
                AND (:search IS NULL
                     OR LOWER(r.title) LIKE LOWER(CONCAT('%', :search, '%'))
                     OR LOWER(r.description) LIKE LOWER(CONCAT('%', :search, '%')))
@@ -29,6 +30,7 @@ public interface LearningResourceRepository extends JpaRepository<LearningResour
     Page<LearningResource> search(@Param("activeOnly") boolean activeOnly,
                                   @Param("category") ResourceCategory category,
                                   @Param("track") String track,
+                                  @Param("projectId") Long projectId,
                                   @Param("search") String search,
                                   Pageable pageable);
 }

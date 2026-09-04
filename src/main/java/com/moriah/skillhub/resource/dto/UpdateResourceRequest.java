@@ -17,6 +17,7 @@ public record UpdateResourceRequest(
         @NotBlank @Size(max = 1000) String url,
         @Size(max = 20) List<@NotBlank @Size(max = 40) String> tags,
         boolean active,
-        @Size(max = 30) String track
+        @Size(max = 30) String track,
+        Long projectId
 ) {
 }

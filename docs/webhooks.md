@@ -113,7 +113,16 @@ checkout.
 
 ```bash
 BODY='{"event":"payment.captured","payload":{"payment":{"entity":{"id":"pay_TEST1","order_id":"order_TEST1","amount":1499900,"currency":"INR","status":"captured"}}}}'
-SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$RAZORPAY_WEBHOOK_SECRET" -hex | sed 's/^.* //')
+SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "qfwMG4vxVTjJfWKGcn83giuP" -hex | sed 's/^.* //')
+curl -sS -i -X POST http://localhost:8080/api/v1/webhooks/razorpay \
+  -H "Content-Type: application/json" \
+  -H "X-Razorpay-Signature: $SIG" \
+  --data "$BODY"
+
+  order_TXnWgmte5PYzVb ,pay_manual6
+
+  BODY='{"event":"payment.captured","payload":{"payment":{"entity":{"id":"pay_manual6","order_id":"order_TXnWgmte5PYzVb","amount":1499900,"currency":"INR","status":"captured"}}}}'
+SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "qfwMG4vxVTjJfWKGcn83giuP" -hex | sed 's/^.* //')
 curl -sS -i -X POST http://localhost:8080/api/v1/webhooks/razorpay \
   -H "Content-Type: application/json" \
   -H "X-Razorpay-Signature: $SIG" \

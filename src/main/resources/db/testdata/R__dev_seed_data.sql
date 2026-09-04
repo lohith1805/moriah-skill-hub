@@ -136,6 +136,59 @@ SELECT 'Todo API', 'todo-api', 'A REST API for a todo list - the sprint-1 refere
        (SELECT id FROM users WHERE email = 'dev@moriah.test')
 WHERE NOT EXISTS (SELECT 1 FROM projects WHERE slug = 'todo-api');
 
+-- ---- A richer PUBLISHED project with a real brief + bug challenges -------------------
+--   Gives every "Projects & Bug Challenges" screen (student / developer / trainer) a
+--   substantial project to exercise: multi-line brief, a full stack, a starter repo, and
+--   two attached bug-fix challenges the new challenge_submissions flow can be tested on.
+INSERT INTO projects (title, slug, description, tech_stack, difficulty, domain, version, starter_repo_url, status, created_by)
+SELECT 'ShopSprint — E-Commerce Storefront API', 'shopsprint-storefront-api',
+       CONCAT(
+         'A production-shaped storefront backend built over one agile sprint. You will implement ',
+         'the cart, checkout and order-history slices on top of a provided catalogue service.\n\n',
+         'Scope:\n',
+         '  - GET /api/products with pagination, text search and a category filter\n',
+         '  - Cart: add / update quantity / remove line items, server-side price + stock re-check\n',
+         '  - POST /api/checkout: validate stock, apply a single coupon, persist an Order, decrement stock atomically\n',
+         '  - GET /api/orders/me: the signed-in customer''s past orders, newest first\n\n',
+         'Non-functional: every write is transactional, money is stored in paise (integer), and the ',
+         'checkout endpoint must be safe to call twice (idempotency key). Ship a Postman collection ',
+         'and a short Loom walkthrough with your PR.'
+       ),
+       JSON_ARRAY('Java 21', 'Spring Boot 3', 'Spring Data JPA', 'MySQL 8', 'Redis', 'Testcontainers'),
+       'INTERMEDIATE', 'E-Commerce', 'v1',
+       'https://github.com/moriah/shopsprint-storefront-api', 'PUBLISHED',
+       (SELECT id FROM users WHERE email = 'dev@moriah.test')
+WHERE NOT EXISTS (SELECT 1 FROM projects WHERE slug = 'shopsprint-storefront-api');
+
+INSERT INTO bug_challenges (project_id, title, broken_code_key, expected_behaviour, test_script_key, difficulty, created_by)
+SELECT p.id, v.title, v.broken_key, v.expected, v.test_key, v.diff,
+       (SELECT id FROM users WHERE email = 'dev@moriah.test')
+FROM projects p JOIN (
+    SELECT 'Cart total is wrong when a coupon is applied' AS title,
+           'projects/shopsprint/challenges/cart-total-broken.java' AS broken_key,
+           CONCAT(
+             'CartService.total() should return the sum of (unitPricePaise * quantity) for every line, ',
+             'then subtract the coupon discount, and never return a negative number. Right now it applies ',
+             'the discount once per line item instead of once per cart, so a 3-line cart with a flat ₹100 ',
+             'coupon is discounted ₹300. Rewrite total() so the coupon is applied exactly once and the ',
+             'result is floored at 0.'
+           ) AS expected,
+           'projects/shopsprint/challenges/cart-total-tests.java' AS test_key,
+           'INTERMEDIATE' AS diff
+    UNION ALL SELECT 'Checkout oversells the last item under concurrency',
+           'projects/shopsprint/challenges/checkout-oversell-broken.java',
+           CONCAT(
+             'CheckoutService.checkout() reads stock, checks quantity, then decrements in three separate ',
+             'statements with no lock, so two simultaneous checkouts for the last unit both succeed. ',
+             'Rewrite it so stock can never go below zero — either a conditional UPDATE ... WHERE stock >= :qty ',
+             'that fails the checkout when it affects 0 rows, or a SELECT ... FOR UPDATE inside the transaction.'
+           ),
+           NULL,
+           'ADVANCED'
+) v
+WHERE p.slug = 'shopsprint-storefront-api'
+  AND NOT EXISTS (SELECT 1 FROM bug_challenges bc WHERE bc.project_id = p.id AND bc.title = v.title);
+
 -- ---- A small CRM pipeline for the sales rep -----------------------------------------
 --   One lead per pipeline stage so /leads/pipeline, the leaderboard and the activity
 --   history all have something to show on a fresh `dev` boot. dedupe_hash is just any
@@ -372,6 +425,25 @@ FROM (
            'TEMPLATE', 'https://github.com/moriah/skillhub/blob/main/pull_request_template.md', JSON_ARRAY('git','process')
 ) v
 WHERE NOT EXISTS (SELECT 1 FROM learning_resources lr WHERE lr.title = v.title);
+
+-- Two resources scoped to the ShopSprint project, so the Resource Library's project filter
+-- has something to show. project_id is resolved from the slug.
+INSERT INTO learning_resources (title, description, category, track, project_id, url, tags, created_by, is_active)
+SELECT v.title, v.descr, v.cat, 'FULL_STACK',
+       (SELECT id FROM projects WHERE slug = 'shopsprint-storefront-api'),
+       v.url, v.tags, (SELECT id FROM users WHERE email = 'dev@moriah.test'), TRUE
+FROM (
+    SELECT 'ShopSprint — API contract (OpenAPI)' AS title,
+           'The frozen request/response contract for the storefront endpoints you implement.' AS descr,
+           'ARTICLE' AS cat, 'https://github.com/moriah/shopsprint-storefront-api/blob/main/openapi.yaml' AS url,
+           JSON_ARRAY('shopsprint','api') AS tags
+    UNION ALL SELECT 'ShopSprint — Postman collection',
+           'Ready-made requests for the cart, checkout and orders flows.',
+           'TOOL', 'https://github.com/moriah/shopsprint-storefront-api/blob/main/ShopSprint.postman_collection.json',
+           JSON_ARRAY('shopsprint','testing')
+) v
+WHERE EXISTS (SELECT 1 FROM projects WHERE slug = 'shopsprint-storefront-api')
+  AND NOT EXISTS (SELECT 1 FROM learning_resources lr WHERE lr.title = v.title);
 
 -- ---- A few IN_APP notifications for student1 -----------------------------------------
 INSERT INTO notifications (user_id, channel, template_code, payload, status, sent_at)

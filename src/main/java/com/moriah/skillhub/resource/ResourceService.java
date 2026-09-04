@@ -55,13 +55,14 @@ public class ResourceService {
     /** {@code includeInactive} is a curator affordance — a plain browsing user always sees the
      * active-only view regardless of the flag they send. */
     /** {@code track}, when supplied, narrows the feed to that cohort track plus the untracked
-     * (all-track) resources — the student view passes their batch's track; a curator omits it. */
+     * (all-track) resources — the student view passes their batch's track; a curator omits it.
+     * {@code projectId} narrows the same way against an optional per-project tag. */
     @Transactional(readOnly = true)
     public PageResponse<LearningResourceResponse> list(boolean includeInactive, ResourceCategory category,
-                                                        String track, String search, Pageable pageable) {
+                                                        String track, Long projectId, String search, Pageable pageable) {
         boolean effectiveIncludeInactive = includeInactive && isCurator();
         Page<LearningResource> page = resourceRepository.search(
-                !effectiveIncludeInactive, category, blankToNull(track), blankToNull(search), pageable);
+                !effectiveIncludeInactive, category, blankToNull(track), projectId, blankToNull(search), pageable);
         Map<Long, String> uuidByUserId = resolveCreatorUuids(page.getContent());
         return PageResponse.from(page.map(r -> toResponse(r, uuidByUserId)));
     }
@@ -79,6 +80,7 @@ public class ResourceService {
         resource.setDescription(blankToNull(request.description()));
         resource.setCategory(request.category());
         resource.setTrack(blankToNull(request.track()));
+        resource.setProjectId(request.projectId());
         resource.setUrl(request.url());
         resource.setTags(toJson(request.tags()));
         resource.setCreatedBy(callerUserId);
@@ -98,6 +100,7 @@ public class ResourceService {
         resource.setDescription(blankToNull(request.description()));
         resource.setCategory(request.category());
         resource.setTrack(blankToNull(request.track()));
+        resource.setProjectId(request.projectId());
         resource.setUrl(request.url());
         resource.setTags(toJson(request.tags()));
         resource.setActive(request.active());
@@ -148,6 +151,7 @@ public class ResourceService {
                 r.getDescription(),
                 r.getCategory(),
                 r.getTrack(),
+                r.getProjectId(),
                 r.getUrl(),
                 fromJson(r.getTags()),
                 uuidByUserId.get(r.getCreatedBy()),

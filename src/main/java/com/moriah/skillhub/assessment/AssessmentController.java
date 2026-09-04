@@ -4,6 +4,7 @@ import com.moriah.skillhub.assessment.dto.AssessmentResponse;
 import com.moriah.skillhub.assessment.dto.AssessmentResultRow;
 import com.moriah.skillhub.assessment.dto.CreateAssessmentFromBankRequest;
 import com.moriah.skillhub.assessment.dto.CreateAssessmentRequest;
+import com.moriah.skillhub.assessment.dto.MyAssessmentAttemptRow;
 import com.moriah.skillhub.assessment.dto.QuizAttemptResponse;
 import com.moriah.skillhub.assessment.dto.SubmitAttemptRequest;
 import com.moriah.skillhub.common.dto.ApiResponse;
@@ -105,6 +106,16 @@ public class AssessmentController {
 
         QuizAttemptResponse response = quizService.startAttempt(callerUserId, id);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
+    }
+
+    @GetMapping("/api/v1/assessments/attempts/me")
+    @PreAuthorize("hasRole('STUDENT')")
+    @Operation(summary = "The calling student's own attempts across every assessment — drives the "
+            + "\"Completed / Passed / Failed\" state on the student assessment list")
+    public ResponseEntity<ApiResponse<PageResponse<MyAssessmentAttemptRow>>> myAttempts(
+            @CurrentUser Long callerUserId, @PageableDefault(size = 100) Pageable pageable) {
+
+        return ResponseEntity.ok(ApiResponse.success(quizService.myAttempts(callerUserId, pageable)));
     }
 
     @GetMapping("/api/v1/assessments/attempts/{id}")

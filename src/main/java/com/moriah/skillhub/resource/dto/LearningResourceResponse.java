@@ -13,6 +13,7 @@ public record LearningResourceResponse(
         String description,
         ResourceCategory category,
         String track,
+        Long projectId,
         String url,
         List<String> tags,
         String createdByUuid,
