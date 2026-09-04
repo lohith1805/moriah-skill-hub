@@ -21,13 +21,17 @@ export default function StudentDashboard() {
   const { notify } = useToast();
   const navigate = useNavigate();
 
+  const [subscription, setSubscription] = useState(null);
+
   // D2 flow: a freshly-verified student has no subscription yet — send them to
   // pick a plan before the dashboard is useful.
   useEffect(() => {
     let cancelled = false;
     getMySubscription()
       .then((sub) => {
-        if (!cancelled && !sub) {
+        if (cancelled) return;
+        setSubscription(sub || null);
+        if (!sub) {
           notify("Choose a plan to unlock your training dashboard.", { type: "info" });
           navigate("/student/subscription", { replace: true });
         }
@@ -333,8 +337,10 @@ export default function StudentDashboard() {
         title={`Welcome back, ${user?.name?.split(" ")[0]}`}
         subtitle={
           myBatch
-            ? [myBatch.trackCode, myBatch.name].filter(Boolean).join(" · ")
-            : "You're on a plan — we're placing you into a batch. You'll be notified the moment you're in."
+            ? [subscription?.planName, myBatch.trackCode, myBatch.name].filter(Boolean).join(" · ")
+            : subscription?.planName
+              ? `${subscription.planName} — we're placing you into a batch. You'll be notified the moment you're in.`
+              : "You're on a plan — we're placing you into a batch. You'll be notified the moment you're in."
         }
       />
 
