@@ -33,7 +33,7 @@ export function invoiceNumberFor(txn) {
 
 export function buildInvoiceHTML(txn) {
   const { taxableValue, cgst, sgst, total } = buildInvoiceBreakdown(txn.amount);
-  const isCreditNote = txn.status === "Refunded";
+  const isCreditNote = txn.status === "Refunded" || txn.status === "REFUNDED";
   const docLabel = isCreditNote ? "CREDIT NOTE (Refund)" : "TAX INVOICE";
   const invoiceNo = invoiceNumberFor(txn);
   const issueDate = txn.date ? new Date(txn.date) : new Date();
@@ -106,7 +106,7 @@ export function buildInvoiceHTML(txn) {
       <div class="meta-box">
         <h3>Payment Details</h3>
         <p>Gateway: ${escapeHtml(txn.gateway || "—")}</p>
-        <p>Status: <span class="status-badge ${txn.status === "Success" ? "status-success" : "status-refunded"}">${escapeHtml(txn.status || "")}</span></p>
+        <p>Status: <span class="status-badge ${txn.status === "Success" || txn.status === "CAPTURED" ? "status-success" : "status-refunded"}">${escapeHtml(txn.status || "")}</span></p>
       </div>
     </div>
 
@@ -163,7 +163,7 @@ export function openInvoice(txn) {
 export function downloadInvoice(txn) {
   downloadInvoicePdf({
     invoiceNo: invoiceNumberFor(txn),
-    isCreditNote: txn.status === "Refunded",
+    isCreditNote: txn.status === "Refunded" || txn.status === "REFUNDED",
     txn,
     breakdown: buildInvoiceBreakdown(txn.amount),
   });

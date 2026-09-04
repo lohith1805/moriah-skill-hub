@@ -6,7 +6,7 @@ import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import ProgressBar from "../../components/ui/ProgressBar";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
-import { getVideoLessons, getVideoLessonDetail, markLessonWatched, submitLessonQuiz } from "../../services/studentService";
+import { getVideoLessons, getVideoLessonDetail, markLessonWatched, submitLessonQuiz, getMyBatch } from "../../services/studentService";
 import { useToast } from "../../context/ToastContext";
 
 // NOTE: videoId values in utils/constants.js#VIDEO_LESSONS are sample public
@@ -37,10 +37,12 @@ export default function StudentLearning() {
 
   const load = () => {
     setLoading(true);
-    getVideoLessons().then((data) => {
-      setLessons(data);
-      setLoading(false);
-    });
+    getMyBatch()
+      .catch(() => null)
+      .then((batch) => getVideoLessons(batch?.trackCode))
+      .then((data) => setLessons(data))
+      .catch(() => setLessons([]))
+      .finally(() => setLoading(false));
   };
 
   const openLesson = async (lessonSummary) => {

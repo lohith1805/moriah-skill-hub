@@ -26,10 +26,10 @@ export default function ClientDemos() {
 
   useEffect(() => {
     // Load projects
-    getClientProjects().then((p) => {
-      setProjects(p);
-      setLoading(false);
-    });
+    getClientProjects()
+      .then((p) => setProjects(p))
+      .catch(() => setProjects([]))
+      .finally(() => setLoading(false));
 
     // Load feedbacks
     const saved = localStorage.getItem("msh_client_projects_feedback");

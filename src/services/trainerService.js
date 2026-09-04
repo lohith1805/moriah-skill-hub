@@ -284,7 +284,7 @@ export async function getStudentsForBatch(batchId) {
 
 // --- Standups + attendance -------------------------------------------
 
-const STANDUP_STATUS_TO_FE = { SCHEDULED: "Scheduled", FINALISED: "Finalised", CANCELLED: "Cancelled" };
+const STANDUP_STATUS_TO_FE = { SCHEDULED: "Scheduled", CONDUCTED: "Conducted", CANCELLED: "Cancelled" };
 
 // GET /api/v1/standups?batchId=&date=YYYY-MM-DD
 export async function getStandups(batchId, date) {
@@ -298,20 +298,44 @@ export async function getStandups(batchId, date) {
     scheduledAt: s.scheduledAt,
     lateCutoffMinutes: s.lateCutoffMinutes ?? null,
     notes: s.notes || "",
+    meetingLink: s.meetingLink || null,
+    finalisedAt: s.finalisedAt || null,
     status: STANDUP_STATUS_TO_FE[s.status] || s.status,
   }));
 }
 
 // POST /api/v1/standups
-export async function scheduleStandup({ batchId, sprintId, scheduledAt, lateCutoffMinutes = 15, notes }) {
+export async function scheduleStandup({ batchId, sprintId, scheduledAt, lateCutoffMinutes = 15, notes, meetingLink }) {
   const res = await apiClient.post("/standups", {
     batchId: Number(batchId),
     sprintId: sprintId ? Number(sprintId) : null,
     scheduledAt: scheduledAt || new Date().toISOString(),
     lateCutoffMinutes: Number(lateCutoffMinutes),
     notes: notes || null,
+    meetingLink: meetingLink || null,
   });
   return { id: res.id, ...res };
+}
+
+// PUT /api/v1/standups/{id} — used here only to CANCEL a scheduled standup.
+export async function cancelStandup(standupId) {
+  return apiClient.put(`/standups/${standupId}`, { status: "CANCELLED" });
+}
+
+// GET /api/v1/attendance/batch/{batchId} → the rows for one standup, keyed by
+// student, so the roster can show who has already checked in / been marked.
+export async function getStandupAttendance(batchId, standupId) {
+  const res = await apiClient.get(`/attendance/batch/${batchId}`, { size: 200 });
+  const FE = { PRESENT: "Present", LATE: "Late", ABSENT: "Absent", EXCUSED: "Excused" };
+  return asRows(res)
+    .filter((a) => String(a.standupId) === String(standupId))
+    .map((a) => ({
+      userUuid: a.userUuid,
+      status: FE[a.status] || a.status,
+      autoMarked: !!a.autoMarked,
+      markedByPm: !!a.markedByUuid,
+      checkedInAt: a.checkedInAt || null,
+    }));
 }
 
 const FE_ATTENDANCE_TO_STATUS = { Present: "PRESENT", Late: "LATE", Absent: "ABSENT", Excused: "EXCUSED" };
@@ -679,4 +703,86 @@ export async function createStudent(payload) {
   registeredUsers.push(newStudent);
   localStorage.setItem("mORIAH_REGISTERED_USERS", JSON.stringify(registeredUsers));
   return mockRequest(newStudent, { delay: 500 });
+}
+// --- Assessments: publish dev-authored question banks + read results --------
+// The DEVELOPER authors reusable question banks; the TRAINER decides when to
+// publish one as a live assessment to a batch they own, and reviews results.
+// GET /assessments/banks · POST /assessments/from-bank · GET /assessments
+// · DELETE /assessments/{id} · GET /assessments/results
+
+export async function getQuestionBanks() {
+  const res = await apiClient.get("/assessments/banks", { size: 100 });
+  return asRows(res).map((b) => ({
+    id: b.id,
+    title: b.name,
+    topic: b.topic,
+    description: b.description || "",
+    active: b.active !== false,
+    questionCount: b.questionCount ?? 0,
+  }));
+}
+
+function toFePublishedAssessment(a) {
+  return {
+    id: a.id,
+    title: a.title,
+    batchId: a.batchId ?? null,
+    duration: `${a.durationMinutes} min`,
+    durationMinutes: a.durationMinutes,
+    passingScore: a.passPercentage,
+    maxAttempts: a.maxAttempts,
+    active: a.active !== false,
+  };
+}
+
+export async function getPublishedAssessments() {
+  const res = await apiClient.get("/assessments", { size: 100 });
+  return asRows(res).map(toFePublishedAssessment);
+}
+
+// POST /assessments/from-bank — snapshots the bank's questions (+ answer keys)
+// into a live assessment for one batch. The backend holds a TRAINER_PM to a
+// batch they own.
+export async function publishAssessmentFromBank({ bankId, batchId, title, durationMinutes, passingScore }) {
+  if (!bankId) throw new Error("Pick a question bank.");
+  if (!batchId) throw new Error("Pick the batch this assessment is for.");
+  const res = await apiClient.post("/assessments/from-bank", {
+    bankId: Number(bankId),
+    batchId: Number(batchId),
+    title: title || undefined,
+    durationMinutes: Number(durationMinutes) || 20,
+    passPercentage: passingScore ? Number(passingScore) : undefined,
+  });
+  return toFePublishedAssessment(res);
+}
+
+export async function unpublishAssessment(id) {
+  await apiClient.del(`/assessments/${id}`);
+  return { id };
+}
+
+// GET /assessments/results — one row per student attempt, filterable by
+// assessment / batch / cohort track.
+export async function getAssessmentResults({ assessmentId, batchId, track } = {}) {
+  const params = { size: 300 };
+  if (assessmentId) params.assessmentId = assessmentId;
+  if (batchId) params.batchId = batchId;
+  if (track) params.track = track;
+  const res = await apiClient.get("/assessments/results", params);
+  return asRows(res).map((r) => ({
+    attemptId: r.attemptId,
+    assessmentId: r.assessmentId,
+    assessmentTitle: r.assessmentTitle,
+    batchId: r.batchId,
+    batchName: r.batchName || "—",
+    track: r.track || "",
+    studentName: r.studentName,
+    studentUuid: r.studentUuid,
+    attemptNumber: r.attemptNumber,
+    status: r.status,
+    percentage: r.percentage != null ? Number(r.percentage) : null,
+    passed: r.passed,
+    passMark: r.passMark,
+    submittedAt: r.submittedAt,
+  }));
 }

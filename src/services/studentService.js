@@ -146,6 +146,60 @@ export async function getMyBatch() {
     : null;
 }
 
+// --- Standups + attendance --------------------------------------------------
+
+const ATT_STATUS_TO_FE = { PRESENT: "Present", LATE: "Late", ABSENT: "Absent", EXCUSED: "Excused" };
+
+// GET /api/v1/standups?batchId=&date= for the caller's own batch (STUDENT is
+// allowed to read their batch's schedule). `date` is YYYY-MM-DD. [] if not in a
+// batch yet.
+export async function getMyStandups(date) {
+  const batch = await getMyBatch().catch(() => null);
+  if (!batch) return [];
+  const params = { batchId: batch.id, size: 20 };
+  if (date) params.date = date;
+  const res = await apiClient.get("/standups", params);
+  return asRows(res)
+    .map((s) => ({
+      id: s.id,
+      batchId: s.batchId,
+      scheduledAt: s.scheduledAt,
+      meetingLink: s.meetingLink || null,
+      notes: s.notes || "",
+      lateCutoffMinutes: s.lateCutoffMinutes ?? 15,
+      status: s.status,
+      finalisedAt: s.finalisedAt || null,
+    }))
+    .sort((a, b) => new Date(b.scheduledAt) - new Date(a.scheduledAt));
+}
+
+// POST /api/v1/standups/{id}/checkin — student self check-in. On time -> PRESENT,
+// after the late cutoff -> LATE; a repeat check-in is idempotent, not an error.
+export async function checkInToStandup(standupId, blockerNotes = "") {
+  const res = await apiClient.post(`/standups/${standupId}/checkin`, {
+    blockerNotes: blockerNotes || null,
+  });
+  return {
+    status: ATT_STATUS_TO_FE[res.status] || res.status,
+    checkedInAt: res.checkedInAt || null,
+  };
+}
+
+// GET /api/v1/attendance/me — the caller's attendance history, newest first.
+export async function getMyAttendance() {
+  const res = await apiClient.get("/attendance/me", { size: 50 });
+  return asRows(res).map((a) => ({
+    id: a.id,
+    standupId: a.standupId,
+    scheduledAt: a.standupScheduledAt,
+    status: ATT_STATUS_TO_FE[a.status] || a.status,
+    checkedInAt: a.checkedInAt || null,
+    blockerNotes: a.blockerNotes || "",
+    autoMarked: !!a.autoMarked,
+    markedByPm: !!a.markedByUuid,
+  }));
+}
+
 // GET /api/v1/tasks?sprintId= for every sprint in the caller's batches, kept
 // to tasks assigned to the caller OR still in the BACKLOG (pullable).
 export async function getMyTasks() {
@@ -200,80 +254,75 @@ function readLocalJSON(key) {
   }
 }
 
-// A Project only appears here once a Trainer has deliberately assigned it to
-// this student's batch (Trainer > Batches > Assign Projects) — publishing it
-// on the Developer side alone is not enough. Same batch-name-to-id lookup
-// pattern as getMySprints above.
+const DIFFICULTY_TO_FE = { BEGINNER: "Beginner", INTERMEDIATE: "Intermediate", ADVANCED: "Advanced" };
+
+// GET /api/v1/projects — the practice-project catalogue. A STUDENT only ever
+// gets PUBLISHED projects back from this endpoint.
 export async function getMyProjects() {
-  const user = getPersistedUser();
-  if (!user) return mockRequest([]);
-
-  const batch = BATCHES.find((b) => b.name === user.batch);
-  if (!batch) return mockRequest([]);
-
-  const projects = readLocalJSON("msh_developer_projects");
-  const mine = projects.filter(
-    (p) => p.status === "Published" && (p.assignedBatches || []).includes(batch.id)
-  );
-  return mockRequest(mine);
+  const res = await apiClient.get("/projects", { size: 100 }).catch(() => null);
+  return asRows(res)
+    .filter((p) => (p.status || "PUBLISHED") === "PUBLISHED")
+    .map((p) => ({
+      id: p.id,
+      title: p.title,
+      description: p.description || "",
+      stack: p.techStack || [],
+      difficulty: DIFFICULTY_TO_FE[p.difficulty] || p.difficulty || "",
+      domain: p.domain || "",
+      starterRepo: p.starterRepoUrl || "",
+      challengeCount: (p.challenges || []).length,
+    }));
 }
 
-// Bug Challenges are linked to a Project by title, not by batch (see
-// Developer > Bug Challenges), so a challenge becomes visible the moment its
-// parent Project is assigned to this student's batch — no separate
-// assignment step needed for challenges themselves.
-export async function getMyBugChallenges() {
-  const myProjects = await getMyProjects();
-  const titles = new Set(myProjects.map((p) => p.title));
-  const challenges = readLocalJSON("msh_bug_challenges");
-  return mockRequest(challenges.filter((c) => titles.has(c.project)));
-}
+// The caller's locally-recorded "solved" markers for bug challenges. There is
+// no backend attempt/grading endpoint for challenges yet, so this one flag is
+// kept per-student in localStorage (everything else on this screen is live).
+const solvedKey = () => `msh_bug_solved_${getPersistedUser()?.uuid || "anon"}`;
+const readSolved = () => {
+  try { return new Set(JSON.parse(localStorage.getItem(solvedKey()) || "[]")); } catch { return new Set(); }
+};
 
-// Reconstructs real, callable testFn closures for a single Bug Challenge's
-// test cases from the developer-authored spec (functionName + args +
-// expected) — identical mechanism to getAssessmentDetails' Code questions,
-// so a student's fix is genuinely executed and checked, not just clicked
-// through.
-export async function getBugChallengeDetails(challengeId) {
-  const challenges = readLocalJSON("msh_bug_challenges");
-  const challenge = challenges.find((c) => c.id === challengeId);
-  if (!challenge) return null;
-
+function toFeBugChallenge(c, projectTitle) {
   return {
-    ...challenge,
-    testCases: (challenge.testCases || []).map((tc) => ({
-      ...tc,
-      inputDesc: tc.inputDesc || `${challenge.functionName}(${(tc.args || []).map((a) => JSON.stringify(a)).join(", ")})`,
-      testFn: (codeStr) => {
-        try {
-          const argNames = (tc.args || []).map((_, i) => `arg${i}`);
-          const fn = new Function(...argNames, `${codeStr}\nreturn ${challenge.functionName}(${argNames.join(", ")});`);
-          const result = fn(...(tc.args || []));
-          return JSON.stringify(result) === JSON.stringify(tc.expected);
-        } catch (e) {
-          return false;
-        }
-      },
-    })),
+    id: c.id,
+    project: projectTitle,
+    title: c.title,
+    expectedBehaviour: c.expectedBehaviour || "",
+    brokenCodeUrl: c.brokenCodeUrl || null,
+    testScriptUrl: c.testScriptUrl || null,
+    difficulty: DIFFICULTY_TO_FE[c.difficulty] || c.difficulty || "",
+    solved: readSolved().has(String(c.id)),
   };
 }
 
-// Records a student's attempt at a Bug Challenge. Updates the same
-// solved/attempts counters Developer > Bug Challenges displays, so that
-// progress bar reflects real student activity instead of manually-edited
-// numbers.
+// GET /api/v1/projects/{id}/challenges for every published project. Each row's
+// brokenCode / testScript are fresh presigned download URLs.
+export async function getMyBugChallenges() {
+  const projects = await getMyProjects();
+  const perProject = await Promise.all(
+    projects.map((p) =>
+      apiClient.get(`/projects/${p.id}/challenges`)
+        .then((list) => (Array.isArray(list) ? list : list?.content || []).map((c) => toFeBugChallenge(c, p.title)))
+        .catch(() => [])
+    )
+  );
+  return perProject.flat();
+}
+
+// GET /api/v1/challenges/{id}.
+export async function getBugChallengeDetails(challengeId) {
+  const c = await apiClient.get(`/challenges/${challengeId}`).catch(() => null);
+  return c ? toFeBugChallenge(c, "") : null;
+}
+
+// No backend grading for challenges yet — record the student's self-reported
+// "I fixed it" locally so the UI can show progress.
 export async function attemptBugChallenge(challengeId, solved) {
-  const challenges = readLocalJSON("msh_bug_challenges");
-  const idx = challenges.findIndex((c) => c.id === challengeId);
-  if (idx > -1) {
-    challenges[idx] = {
-      ...challenges[idx],
-      attempts: (challenges[idx].attempts || 0) + 1,
-      solved: (challenges[idx].solved || 0) + (solved ? 1 : 0),
-    };
-    localStorage.setItem("msh_bug_challenges", JSON.stringify(challenges));
-  }
-  return mockRequest(idx > -1 ? challenges[idx] : null);
+  const set = readSolved();
+  if (solved) set.add(String(challengeId));
+  else set.delete(String(challengeId));
+  try { localStorage.setItem(solvedKey(), JSON.stringify([...set])); } catch { /* ignore */ }
+  return { id: challengeId, solved: !!solved };
 }
 
 // A STUDENT can only self-assign a BACKLOG task (POST /tasks/{id}/pull ->
@@ -689,8 +738,10 @@ function writeQuizScore(id, score, passed) {
   localStorage.setItem("msh_lesson_quiz_scores", JSON.stringify(all));
 }
 
-export async function getVideoLessons() {
-  const res = await apiClient.get("/lessons", { size: 100 });
+// `track` (optional) scopes the list to that cohort track + the all-track
+// lessons — the caller passes their enrolled batch's trackCode.
+export async function getVideoLessons(track) {
+  const res = await apiClient.get("/lessons", track ? { size: 100, track } : { size: 100 });
   const scores = readQuizScoreCache();
   return asRows(res)
     .filter((l) => l.published)

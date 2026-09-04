@@ -58,17 +58,17 @@ export default function BaResourcePlanning() {
 
   const load = () => {
     setLoading(true);
-    getSprintResourcePlan().then((r) => {
-      setPlans(r);
-      setLoading(false);
-    });
+    getSprintResourcePlan()
+      .then((r) => setPlans(r))
+      .catch(() => setPlans([]))
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {
     load();
-    getDocuments().then(setProjects);
-    getAssignableStudents().then(setAvailableStudents);
-    getAssignableDevelopers().then(setAvailableDevs);
+    getDocuments().then(setProjects).catch(() => setProjects([]));
+    getAssignableStudents().then(setAvailableStudents).catch(() => setAvailableStudents([]));
+    getAssignableDevelopers().then(setAvailableDevs).catch(() => setAvailableDevs([]));
   }, []);
 
   const resetValues = () => ({

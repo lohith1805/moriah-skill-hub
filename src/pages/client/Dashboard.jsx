@@ -16,7 +16,9 @@ export default function ClientDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([getClientProjects(), getTalentPool()]).then(([p, t]) => { setProjects(p); setTalent(t); setLoading(false); });
+    Promise.all([getClientProjects().catch(() => []), getTalentPool().catch(() => [])])
+      .then(([p, t]) => { setProjects(p); setTalent(t); })
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <div className="flex justify-center py-24"><LoadingSpinner label="Loading dashboard…" /></div>;
@@ -32,18 +34,24 @@ export default function ClientDashboard() {
       </div>
 
       <Card className="mt-4">
-        <CardHeader title="Project Progress" />
-        <div className="flex flex-col gap-4">
-          {projects.map((p) => (
-            <div key={p.id}>
-              <div className="flex items-center justify-between mb-1">
-                <p className="text-sm font-medium text-ink-800">{p.title}</p>
-                <Badge tone="gold">{p.milestone}</Badge>
+        <CardHeader title="Your Project Submissions" />
+        {projects.length === 0 ? (
+          <p className="text-sm text-ink-400 py-4 text-center">No projects submitted yet.</p>
+        ) : (
+          <div className="flex flex-col divide-y divide-border">
+            {projects.map((p) => (
+              <div key={p.id} className="flex items-center justify-between py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-ink-800 truncate">{p.title}</p>
+                  <p className="text-xs text-ink-400 mt-0.5">Submitted {p.submittedAt}</p>
+                </div>
+                <Badge tone={p.status === "Completed" ? "success" : p.status === "In Progress" ? "primary" : "warning"}>
+                  {p.allocated ? p.status : "Awaiting batch"}
+                </Badge>
               </div>
-              <ProgressBar value={p.progress} tone="primary" showValue={true} />
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   );

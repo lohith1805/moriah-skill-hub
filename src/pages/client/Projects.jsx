@@ -1,136 +1,87 @@
 import { useEffect, useState } from "react";
-import { Plus, Send, Edit, Trash2 } from "lucide-react";
+import { Plus, Send, Activity } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
 import Table from "../../components/ui/Table";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
-import FileUpload from "../../components/ui/FileUpload";
-import { Input, Textarea } from "../../components/ui/FormField";
+import ProgressBar from "../../components/ui/ProgressBar";
+import { Input, Select, Textarea } from "../../components/ui/FormField";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required } from "../../utils/validators";
-import { getMyRequirements, submitProjectRequirement, updateMyRequirement, deleteMyRequirement } from "../../services/clientService";
+import { getMyRequirements, submitProjectRequirement, getClientProjectProgress } from "../../services/clientService";
 
-// This page used to keep its own private, disconnected copy of "requirements"
-// in localStorage. It now calls through clientService, which writes straight
-// into the same BA Documents queue (src/pages/ba/Documents.jsx) -- so a
-// submission here is what a BA actually reviews, and the status shown below
-// is the BA's real, current decision (not something the client can set
-// themselves).
+const BUDGETS = ["< ₹5L", "₹5L – ₹15L", "₹15L – ₹40L", "₹40L+", "Not sure yet"].map((b) => ({ value: b, label: b }));
+
 export default function ClientProjects() {
+  const { notify } = useToast();
   const [reqs, setReqs] = useState([]);
   const [loading, setLoading] = useState(true);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [values, setValues] = useState({ title: "", scope: "", files: [] });
-
-  // Edit states -- title/scope/files only; status is BA-owned.
-  const [editOpen, setEditOpen] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [editValues, setEditValues] = useState({ title: "", scope: "", files: [] });
-
+  const [values, setValues] = useState({ title: "", scope: "", budgetRange: "" });
   const [errors, setErrors] = useState({});
-  const { notify } = useToast();
+
+  const [progress, setProgress] = useState(null); // { title, milestoneCompletion, burndown }
+  const [progressLoading, setProgressLoading] = useState(false);
 
   const load = () => {
     setLoading(true);
-    getMyRequirements().then((docs) => {
-      setReqs(
-        docs.map((d) => ({
-          id: d.id,
-          title: d.title,
-          scope: d.summary,
-          status: d.status,
-          type: d.type,
-          version: d.version,
-          date: d.updatedAt,
-          files: (d.files || []).map((f) => new File([""], f.name, { type: "application/pdf" })),
-        }))
-      );
-      setLoading(false);
-    });
+    getMyRequirements()
+      .then(setReqs)
+      .catch(() => setReqs([]))
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, []);
 
   const submit = async (e) => {
     e.preventDefault();
-    const validation = validateForm(values, { title: [required], scope: [required] });
-    setErrors(validation);
-    if (Object.keys(validation).length) return;
+    const v = validateForm(values, { title: [required], scope: [required] });
+    setErrors(v);
+    if (Object.keys(v).length) return;
     setSubmitting(true);
     try {
-      await submitProjectRequirement({ title: values.title, scope: values.scope, files: values.files });
-      notify("Requirement submitted to our Business Analyst team for scoping.", { type: "success", title: "Submitted" });
+      await submitProjectRequirement(values);
+      notify("Project scope submitted — our BA team will review it.", { type: "success", title: "Submitted" });
       setModalOpen(false);
-      setValues({ title: "", scope: "", files: [] });
+      setValues({ title: "", scope: "", budgetRange: "" });
       load();
+    } catch (err) {
+      notify(err?.message || "Couldn't submit. Please try again.", { type: "error" });
     } finally {
       setSubmitting(false);
     }
   };
 
-  const openEdit = (item) => {
-    setEditingId(item.id);
-    setEditValues({ title: item.title, scope: item.scope, files: item.files || [] });
-    setErrors({});
-    setEditOpen(true);
-  };
-
-  const onEditSave = async (e) => {
-    e.preventDefault();
-    const validation = validateForm(editValues, { title: [required], scope: [required] });
-    setErrors(validation);
-    if (Object.keys(validation).length) return;
-    // Pass the raw File objects through (not just {name, size}) so
-    // clientService.updateMyRequirement can read any newly-picked file's
-    // real content and keep it downloadable for the BA.
-    await updateMyRequirement(editingId, {
-      title: editValues.title,
-      summary: editValues.scope,
-      files: editValues.files || [],
-    });
-    notify("Requirement details updated successfully.", { type: "success" });
-    setEditOpen(false);
-    setEditingId(null);
-    load();
-  };
-
-  const handleDelete = async (id) => {
-    const target = reqs.find((r) => r.id === id);
-    await deleteMyRequirement(id);
-    notify(`Requirement "${target?.title}" deleted successfully.`, { type: "success" });
-    load();
-  };
-
-  const downloadAttachedFile = (file) => {
-    const blob = new Blob([""], { type: "application/pdf" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = file.name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    notify(`Downloading: ${file.name}`, { type: "info" });
+  const viewProgress = async (row) => {
+    setProgressLoading(true);
+    setProgress({ title: row.title, milestoneCompletion: 0, burndown: [] });
+    try {
+      setProgress(await getClientProjectProgress(row.id));
+    } catch (err) {
+      notify(err?.message || "Couldn't load progress.", { type: "error" });
+      setProgress(null);
+    } finally {
+      setProgressLoading(false);
+    }
   };
 
   return (
     <div>
       <PageHeader
         title="My Project Requirements"
-        subtitle="Submit real-world business challenges for our BA team to scope"
+        subtitle="Submit a real-world business challenge for our BA team to scope and staff against a training batch"
         breadcrumbs={[{ label: "Dashboard", to: "/client/dashboard" }, { label: "Project Requirements" }]}
-        action={<Button icon={Plus} onClick={() => { setErrors({}); setValues({ title: "", scope: "", files: [] }); setModalOpen(true); }}>Submit New Requirement</Button>}
+        action={<Button icon={Plus} onClick={() => { setErrors({}); setValues({ title: "", scope: "", budgetRange: "" }); setModalOpen(true); }}>Submit New</Button>}
       />
 
       <Card className="mb-4">
         <p className="text-sm text-ink-500">
-          Your submitted requirements go straight to our Business Analyst team's review queue. A BA reads your
-          brief and authors the formal BRD, SRS, and FRS specs from it — you don't need to prepare those yourself.
-          Once approved and staffed against a training batch, it becomes a live project you can track under Sprint Demo Reviews.
+          Your submission goes to our Business Analyst team. A BA reads your brief and authors the formal BRD / SRS / FRS
+          from it — you don't prepare those. Once a training batch is allocated, you can track its sprint burndown here.
         </p>
       </Card>
 
@@ -139,39 +90,31 @@ export default function ClientProjects() {
         <Table
           loading={loading}
           data={reqs}
+          emptyTitle="Nothing submitted yet"
           columns={[
-            { key: "title", header: "Requirement Title", className: "text-left font-medium text-ink-900", render: (r) => (
-              <div>
-                <p className="font-semibold text-ink-900 text-left">{r.title}</p>
-                {r.files && r.files.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-1">
-                    {r.files.map((file, idx) => (
-                      <span key={idx} className="inline-flex items-center text-xs text-primary-700 bg-primary-50 px-2 py-0.5 rounded font-mono hover:underline cursor-pointer" onClick={() => downloadAttachedFile(file)}>
-                        {file.name}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) },
+            { key: "title", header: "Project", className: "text-left font-medium text-ink-900" },
             { key: "scope", header: "Business Scope", className: "text-left max-w-md truncate", render: (r) => r.scope },
-            { key: "date", header: "Last Updated", className: "text-left" },
-            { key: "status", header: "BA Status", className: "text-left", render: (r) => <Badge tone={r.status === "Approved" ? "success" : r.status === "Under Review" ? "warning" : "neutral"}>{r.status}</Badge> },
+            { key: "budgetRange", header: "Budget", className: "text-left text-xs", render: (r) => r.budgetRange || "—" },
+            { key: "submittedAt", header: "Submitted", className: "text-left text-xs" },
+            { key: "status", header: "Status", className: "text-left", render: (r) => (
+              <Badge tone={r.status === "Completed" ? "success" : r.status === "In Progress" ? "primary" : "warning"}>
+                {r.allocated ? r.status : "Awaiting batch"}
+              </Badge>
+            ) },
             { key: "action", header: "", className: "text-right", render: (r) => (
-              <div className="flex gap-2 justify-end">
-                <Button size="sm" variant="secondary" icon={Edit} onClick={() => openEdit(r)} disabled={r.status === "Approved"}>Edit</Button>
-                <Button size="sm" variant="danger" icon={Trash2} onClick={() => handleDelete(r.id)} disabled={r.status === "Approved"}>Delete</Button>
-              </div>
+              r.allocated
+                ? <Button size="sm" variant="secondary" icon={Activity} onClick={() => viewProgress(r)}>Progress</Button>
+                : <span className="text-xs text-ink-400">—</span>
             ) },
           ]}
         />
       </Card>
 
-      {/* Create Modal */}
+      {/* Submit modal */}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="Submit Project Requirement"
+        title="Submit a project scope"
         footer={<>
           <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
           <Button icon={Send} loading={submitting} onClick={submit}>Submit</Button>
@@ -179,38 +122,49 @@ export default function ClientProjects() {
       >
         <form className="flex flex-col gap-4 text-left font-sans" onSubmit={submit}>
           <Input label="Project title" required placeholder="e.g. Inventory Management Portal" value={values.title} onChange={(e) => setValues((v) => ({ ...v, title: e.target.value }))} error={errors.title} />
-          <Textarea label="Business challenge & scope" required rows={4} value={values.scope} onChange={(e) => setValues((v) => ({ ...v, scope: e.target.value }))} error={errors.scope} />
-          <FileUpload
-            label="Project brief / reference documents"
-            hint="Briefs, wireframes, screenshots — our BA team will turn this into the formal BRD/SRS/FRS"
-            multiple
-            initialFiles={values.files}
-            onChange={(uploaded) => setValues((v) => ({ ...v, files: uploaded }))}
-          />
+          <Textarea label="Business challenge & scope" required rows={5} value={values.scope} onChange={(e) => setValues((v) => ({ ...v, scope: e.target.value }))} error={errors.scope} placeholder="What problem should this solve? Who are the users? Any must-have features or constraints?" />
+          <Select label="Budget range" placeholder="Optional" options={BUDGETS} value={values.budgetRange} onChange={(e) => setValues((v) => ({ ...v, budgetRange: e.target.value }))} />
         </form>
       </Modal>
 
-      {/* Edit Modal -- title/scope/files only; BA owns status & version */}
-      <Modal
-        open={editOpen}
-        onClose={() => setEditOpen(false)}
-        title="Edit Project Requirement"
-        footer={<>
-          <Button variant="secondary" onClick={() => setEditOpen(false)}>Cancel</Button>
-          <Button onClick={onEditSave}>Save Changes</Button>
-        </>}
-      >
-        <form className="flex flex-col gap-4 text-left font-sans" onSubmit={onEditSave}>
-          <Input label="Project title" required value={editValues.title} onChange={(e) => setEditValues((v) => ({ ...v, title: e.target.value }))} error={errors.title} />
-          <Textarea label="Business challenge & scope" required rows={4} value={editValues.scope} onChange={(e) => setEditValues((v) => ({ ...v, scope: e.target.value }))} error={errors.scope} />
-          <FileUpload
-            label="Project brief / reference documents"
-            hint="Briefs, wireframes, screenshots — our BA team will turn this into the formal BRD/SRS/FRS"
-            multiple
-            initialFiles={editValues.files}
-            onChange={(uploaded) => setEditValues((v) => ({ ...v, files: uploaded }))}
-          />
-        </form>
+      {/* Progress modal */}
+      <Modal open={!!progress} onClose={() => setProgress(null)} title={progress?.title || "Progress"} size="lg"
+        footer={<Button variant="secondary" onClick={() => setProgress(null)}>Close</Button>}>
+        {progressLoading ? (
+          <p className="text-sm text-ink-400 py-8 text-center">Loading…</p>
+        ) : progress ? (
+          <div className="flex flex-col gap-4 text-left">
+            <div className="w-full">
+              <ProgressBar value={progress.milestoneCompletion} tone="primary" showValue label="Milestone completion" />
+            </div>
+            {progress.burndown.length === 0 ? (
+              <p className="text-sm text-ink-400">No sprints planned for this project's batch yet.</p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-cream-100/90 border-b border-border">
+                    <tr>
+                      <th className="px-3 py-2 font-semibold">Sprint</th>
+                      <th className="px-3 py-2 font-semibold">Status</th>
+                      <th className="px-3 py-2 font-semibold">Planned pts</th>
+                      <th className="px-3 py-2 font-semibold">Completed pts</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {progress.burndown.map((s) => (
+                      <tr key={s.sprintId}>
+                        <td className="px-3 py-2">#{s.sprintNumber}</td>
+                        <td className="px-3 py-2">{s.status}</td>
+                        <td className="px-3 py-2">{s.plannedPoints}</td>
+                        <td className="px-3 py-2">{s.completedPoints}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        ) : null}
       </Modal>
     </div>
   );

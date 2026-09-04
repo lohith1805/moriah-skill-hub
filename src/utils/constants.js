@@ -115,6 +115,17 @@ export const FE_PLAN_TO_BACKEND = Object.fromEntries(
   Object.entries(PLAN_CODE_TO_FE).map(([backend, fe]) => [fe, backend])
 );
 
+// Cohort tracks — the string values match batches.track_code on the backend.
+// Used to scope video lessons and resource-library entries to a track (a blank
+// value / "" means "all tracks").
+export const TRACKS = [
+  { value: "FULL_STACK", label: "Full-Stack Development" },
+  { value: "DATA_ANALYTICS", label: "Data Analytics" },
+  { value: "PRODUCT_DESIGN", label: "Product Design" },
+  { value: "BACKEND_ENGINEERING", label: "Backend Engineering" },
+];
+export const TRACK_LABELS = Object.fromEntries(TRACKS.map((t) => [t.value, t.label]));
+
 // Self-paced video curriculum (MSH-FR-STU-07 / MSH-FR-STU-08). Each module
 export const SUBSCRIPTION_PLANS = [
   {

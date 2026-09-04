@@ -11,6 +11,7 @@ import FileUpload from "../../components/ui/FileUpload";
 import { Input, Select, Textarea } from "../../components/ui/FormField";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required } from "../../utils/validators";
+import { TRACKS, TRACK_LABELS } from "../../utils/constants";
 import {
   getDevVideoLessons,
   createVideoLesson,
@@ -22,7 +23,7 @@ import {
   extractYouTubeId,
 } from "../../services/developerService";
 
-const emptyLessonForm = { title: "", module: "", description: "", videoUrl: "", duration: "" };
+const emptyLessonForm = { title: "", module: "", track: "", description: "", videoUrl: "", duration: "" };
 const emptyQForm = { question: "", option1: "", option2: "", option3: "", option4: "", correctIndex: "0" };
 
 export default function DeveloperVideoLessons() {
@@ -74,6 +75,7 @@ export default function DeveloperVideoLessons() {
       await createVideoLesson({
         title: values.title,
         module: values.module,
+        track: values.track || undefined,
         description: values.description,
         videoType: sourceType,
         videoId: sourceType === "youtube" ? extractYouTubeId(values.videoUrl) : "",
@@ -177,7 +179,12 @@ export default function DeveloperVideoLessons() {
             data={lessons}
             columns={[
               { key: "title", header: "Lesson", className: "text-left" },
-              { key: "module", header: "Module", className: "text-left", render: (r) => <Badge tone="neutral">{r.module}</Badge> },
+              { key: "module", header: "Module", className: "text-left", render: (r) => (
+                <span className="flex flex-wrap items-center gap-1">
+                  <Badge tone="neutral">{r.module}</Badge>
+                  {r.track && <Badge tone="primary">{TRACK_LABELS[r.track] || r.track}</Badge>}
+                </span>
+              ) },
               { key: "duration", header: "Duration", className: "text-left" },
               { key: "quiz", header: "Questions", className: "text-left", render: (r) => r.quiz.length },
               { key: "status", header: "Status", className: "text-left", render: (r) => <Badge tone={r.status === "Published" ? "success" : "neutral"}>{r.status}</Badge> },
@@ -211,6 +218,15 @@ export default function DeveloperVideoLessons() {
         <form className="flex flex-col gap-4 text-left font-sans" onSubmit={onCreate}>
           <Input label="Title" name="title" value={values.title} onChange={onChange} error={errors.title} required placeholder="e.g. CSS Layout: Flexbox & Grid" />
           <Input label="Module" name="module" value={values.module} onChange={onChange} error={errors.module} required placeholder="e.g. Web Fundamentals" />
+          <Select
+            label="Track"
+            name="track"
+            value={values.track}
+            onChange={onChange}
+            placeholder="All tracks (every student sees it)"
+            options={TRACKS}
+            hint="Scope this lesson to one cohort track, or leave blank for everyone."
+          />
           <Textarea label="Description" name="description" value={values.description} onChange={onChange} rows={2} placeholder="What this lesson covers" />
 
           <div className="flex flex-col gap-2">

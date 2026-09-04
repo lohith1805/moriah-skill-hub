@@ -1,10 +1,6 @@
-import { mockRequest, apiClient } from "./apiClient";
+import { apiClient } from "./apiClient";
 
 const DEFAULT_EMPLOYEES = [];
-
-const DEFAULT_LEAVE_REQUESTS = [];
-
-const DEFAULT_CHECKINS = [];
 
 // Rough skill sets per graduation track — used only to give a recruiting
 // client something concrete to scan on a Talent Pool card. Matches the same
@@ -503,39 +499,110 @@ export async function verifyHrDocument(id, feDecision, rejectionReason = "") {
   return toFeHrDocument(res);
 }
 
-export async function getClockinLogs() {
-  try {
-    const raw = localStorage.getItem("msh_attendance_logs");
-    if (raw) return mockRequest(JSON.parse(raw));
-  } catch (e) {}
-  localStorage.setItem("msh_attendance_logs", JSON.stringify(DEFAULT_CHECKINS));
-  return mockRequest(DEFAULT_CHECKINS);
+// --- Staff attendance (WIRED, V36) ---------------------------------------
+// GET /api/v1/hr/attendance (list), POST /checkin, POST /checkout,
+// PUT /mark (HR status override), GET /summary?month=YYYY-MM.
+// An employee sees only their own rows; HR_MANAGER/ADMIN see all.
+
+const STAFF_ATT_STATUS_TO_FE = {
+  PRESENT: "Present", LATE: "Late", ABSENT: "Absent", HALF_DAY: "Half Day", ON_LEAVE: "On Leave",
+};
+const FE_STAFF_ATT_STATUS = {
+  Present: "PRESENT", Late: "LATE", Absent: "ABSENT", "Half Day": "HALF_DAY", "On Leave": "ON_LEAVE",
+};
+const fmtTime = (iso) =>
+  iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "--";
+
+// Returns the "Live Biometric / Web Check-ins" row shape. Role/department are
+// enriched client-side from the employee directory (the attendance row itself
+// doesn't carry them).
+export async function getClockinLogs({ from, to, userUuid } = {}) {
+  const params = { size: 200 };
+  if (from) params.from = from;
+  if (to) params.to = to;
+  if (userUuid) params.userUuid = userUuid;
+
+  const [attRes, employees] = await Promise.all([
+    apiClient.get("/hr/attendance", params),
+    getEmployees().catch(() => []),
+  ]);
+  const roleByUuid = Object.fromEntries(employees.map((e) => [e.userUuid, e.designation || e.department || "Staff"]));
+
+  return asRows(attRes).map((a) => ({
+    id: a.id,
+    userUuid: a.userUuid,
+    name: a.userFullName || "",
+    role: roleByUuid[a.userUuid] || "Staff",
+    date: a.workDate,
+    workDate: a.workDate,
+    checkIn: fmtTime(a.checkedInAt),
+    checkOut: fmtTime(a.checkedOutAt),
+    deviceId: a.device || "—",
+    status: STAFF_ATT_STATUS_TO_FE[a.status] || a.status,
+    markedByPm: !!a.markedByUuid,
+  }));
 }
 
-export async function logCheckin(payload) {
-  const logs = await (async () => {
-    try {
-      const raw = localStorage.getItem("msh_attendance_logs");
-      if (raw) return JSON.parse(raw);
-    } catch (e) {}
-    return DEFAULT_CHECKINS;
-  })();
-
-  const entry = {
-    id: `c_${Date.now()}`,
-    name: payload.name,
-    role: payload.role || "Staff",
-    date: new Date().toISOString().slice(0, 10),
-    checkIn: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-    checkOut: "--",
-    hours: 0,
-    deviceId: payload.deviceId || "WEB-AUTH-PORTAL",
-    status: payload.status || "Present"
+// POST /api/v1/hr/attendance/checkin — { userUuid?, device }. Omitting userUuid
+// (or passing your own) is a self check-in; HR passes another staff member's uuid
+// to log a terminal check-in on their behalf.
+export async function logCheckin({ userUuid, device } = {}) {
+  const res = await apiClient.post("/hr/attendance/checkin", {
+    userUuid: userUuid || null,
+    device: device || "WEB-AUTH-PORTAL",
+  });
+  return {
+    id: res.id,
+    userUuid: res.userUuid,
+    status: STAFF_ATT_STATUS_TO_FE[res.status] || res.status,
   };
+}
 
-  const updated = [entry, ...logs];
-  localStorage.setItem("msh_attendance_logs", JSON.stringify(updated));
-  return mockRequest(entry);
+// POST /api/v1/hr/attendance/checkout — own, or (HR) ?userUuid=.
+export async function clockOut(userUuid) {
+  return apiClient.post(`/hr/attendance/checkout${userUuid ? `?userUuid=${encodeURIComponent(userUuid)}` : ""}`);
+}
+
+// The caller's own attendance row for today (for the dashboard clock-in widget).
+// null = they haven't checked in yet. A non-HR caller is auto-scoped server-side.
+export async function getMyStaffAttendanceToday(myUuid) {
+  const today = new Date().toISOString().slice(0, 10);
+  const res = await apiClient.get("/hr/attendance", { from: today, to: today, size: 20 });
+  const rows = asRows(res);
+  const mine = myUuid ? rows.find((r) => r.userUuid === myUuid) : rows[0];
+  if (!mine) return null;
+  return {
+    checkIn: fmtTime(mine.checkedInAt) === "--" ? null : fmtTime(mine.checkedInAt),
+    checkOut: fmtTime(mine.checkedOutAt) === "--" ? null : fmtTime(mine.checkedOutAt),
+    status: STAFF_ATT_STATUS_TO_FE[mine.status] || mine.status,
+  };
+}
+
+// PUT /api/v1/hr/attendance/mark — HR override. feStatus is a UI label.
+export async function markStaffAttendance({ userUuid, workDate, feStatus, notes }) {
+  const res = await apiClient.put("/hr/attendance/mark", {
+    userUuid,
+    workDate,
+    status: FE_STAFF_ATT_STATUS[feStatus] || feStatus,
+    notes: notes || null,
+  });
+  return { id: res.id, status: STAFF_ATT_STATUS_TO_FE[res.status] || res.status };
+}
+
+// GET /api/v1/hr/attendance/summary?month=YYYY-MM — per-employee monthly roll-up.
+export async function getStaffAttendanceSummary(month) {
+  const res = await apiClient.get("/hr/attendance/summary", month ? { month } : undefined);
+  return (Array.isArray(res) ? res : []).map((r) => ({
+    userUuid: r.userUuid,
+    name: r.userFullName,
+    department: r.department || "",
+    presentDays: r.presentDays ?? 0,
+    lateDays: r.lateDays ?? 0,
+    absentDays: r.absentDays ?? 0,
+    halfDays: r.halfDays ?? 0,
+    onLeaveDays: r.onLeaveDays ?? 0,
+    attendancePct: r.attendancePct ?? null,
+  }));
 }
 
 // --- Payroll (WIRED, B1.10) --------------------------------------------

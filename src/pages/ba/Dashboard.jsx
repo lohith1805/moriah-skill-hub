@@ -21,12 +21,15 @@ export default function BaDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([getDocuments(), getSprintResourcePlan(), getMeetings()]).then(([d, p, m]) => {
+    Promise.all([
+      getDocuments().catch(() => []),
+      getSprintResourcePlan().catch(() => []),
+      getMeetings().catch(() => []),
+    ]).then(([d, p, m]) => {
       setDocs(d);
       setPlans(p);
       setMeetings(m);
-      setLoading(false);
-    });
+    }).finally(() => setLoading(false));
   }, []);
 
   if (loading) return <div className="flex justify-center py-24"><LoadingSpinner label="Loading BA command dashboard…" /></div>;

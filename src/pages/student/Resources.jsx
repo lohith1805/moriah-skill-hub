@@ -5,13 +5,19 @@ import Card from "../../components/ui/Card";
 import Table from "../../components/ui/Table";
 import Badge from "../../components/ui/Badge";
 import { getResourceLibrary } from "../../services/developerService";
+import { getMyBatch } from "../../services/studentService";
 
 export default function StudentResources() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getResourceLibrary().then((d) => { setItems(d); setLoading(false); });
+    getMyBatch()
+      .catch(() => null)
+      .then((batch) => getResourceLibrary(batch?.trackCode))
+      .then((d) => setItems(d))
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false));
   }, []);
 
   return (

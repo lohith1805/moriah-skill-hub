@@ -1,128 +1,104 @@
 import { useEffect, useState } from "react";
-import { Bug, Plus, Edit, Trash2 } from "lucide-react";
+import { Bug, Plus, Edit, Trash2, Download, FileCode2 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
-import ProgressBar from "../../components/ui/ProgressBar";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import Modal from "../../components/ui/Modal";
+import EmptyState from "../../components/ui/EmptyState";
+import FileUpload from "../../components/ui/FileUpload";
 import { Input, Select, Textarea } from "../../components/ui/FormField";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required } from "../../utils/validators";
 import {
-  getDevBugChallenges,
-  createBugChallenge,
-  updateBugChallenge,
-  deleteBugChallenge,
+  getProjects,
+  getProjectChallenges,
+  createChallenge,
+  updateChallenge,
+  deleteChallenge,
 } from "../../services/developerService";
 
 const DIFFICULTIES = ["Beginner", "Intermediate", "Advanced"].map((d) => ({ value: d, label: d }));
-
-const emptyForm = {
-  title: "",
-  project: "",
-  difficulty: "",
-  description: "",
-  functionName: "",
-  starterCode: "",
-  tc1Name: "", tc1Args: "", tc1Expected: "",
-  tc2Name: "", tc2Args: "", tc2Expected: "",
-};
+const emptyForm = { title: "", expectedBehaviour: "", difficulty: "" };
 
 export default function DeveloperBugChallenges() {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [projectsList, setProjectsList] = useState([]);
+  const { notify } = useToast();
+  const [projects, setProjects] = useState([]);
+  const [projectId, setProjectId] = useState("");
+  const [challenges, setChallenges] = useState([]);
+  const [loadingProjects, setLoadingProjects] = useState(true);
+  const [loadingChallenges, setLoadingChallenges] = useState(false);
 
   // Create
   const [modalOpen, setModalOpen] = useState(false);
   const [values, setValues] = useState(emptyForm);
+  const [brokenFile, setBrokenFile] = useState([]);
+  const [testFile, setTestFile] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState({});
 
   // Edit
-  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editValues, setEditValues] = useState(emptyForm);
+  const [savingEdit, setSavingEdit] = useState(false);
 
-  const [errors, setErrors] = useState({});
-  const { notify } = useToast();
+  useEffect(() => {
+    getProjects()
+      .then((p) => {
+        setProjects(p);
+        if (p.length) setProjectId(String(p[0].id));
+      })
+      .catch(() => notify("Couldn't load projects.", { type: "error" }))
+      .finally(() => setLoadingProjects(false));
+  }, [notify]);
 
-  const load = () => {
-    setLoading(true);
-    getDevBugChallenges().then((data) => { setItems(data); setLoading(false); });
+  const loadChallenges = (id) => {
+    if (!id) return;
+    setLoadingChallenges(true);
+    getProjectChallenges(id)
+      .then(setChallenges)
+      .catch(() => notify("Couldn't load this project's challenges.", { type: "error" }))
+      .finally(() => setLoadingChallenges(false));
   };
 
   useEffect(() => {
-    load();
-    const savedProjects = localStorage.getItem("msh_developer_projects");
-    if (savedProjects) setProjectsList(JSON.parse(savedProjects));
-  }, []);
+    loadChallenges(projectId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
-  const projectOptions = [
-    { value: "NimbusCart", label: "NimbusCart" },
-    { value: "FinLedger", label: "FinLedger" },
-    { value: "PulseCRM", label: "PulseCRM" },
-    ...projectsList.map((p) => ({ value: p.title, label: p.title })),
-  ];
+  const projectName = projects.find((p) => String(p.id) === String(projectId))?.title || "";
 
-  const parseJsonField = (raw, fallback) => {
-    if (!raw || !raw.trim()) return fallback;
-    try { return JSON.parse(raw); } catch (e) { return undefined; }
-  };
-
-  // Builds the testCases array from the raw form fields, or sets a form
-  // error and returns null if a JSON field doesn't parse.
-  const buildTestCases = (form, setErrs) => {
-    const testCases = [];
-    const tc1Args = parseJsonField(form.tc1Args, undefined);
-    const tc1Expected = parseJsonField(form.tc1Expected, undefined);
-    if (tc1Args === undefined || tc1Expected === undefined) {
-      setErrs((e) => ({ ...e, tc1Args: "Must be valid JSON, e.g. [5, 3] or [\"Save\", true]" }));
-      return null;
-    }
-    testCases.push({ name: form.tc1Name, args: tc1Args, expected: tc1Expected });
-
-    if (form.tc2Name.trim()) {
-      const tc2Args = parseJsonField(form.tc2Args, undefined);
-      const tc2Expected = parseJsonField(form.tc2Expected, undefined);
-      if (tc2Args === undefined || tc2Expected === undefined) {
-        setErrs((e) => ({ ...e, tc2Args: "Must be valid JSON, e.g. [2, 0] or [\"Submit\", false]" }));
-        return null;
-      }
-      testCases.push({ name: form.tc2Name, args: tc2Args, expected: tc2Expected });
-    }
-    return testCases;
+  const openCreate = () => {
+    setValues(emptyForm);
+    setBrokenFile([]);
+    setTestFile([]);
+    setErrors({});
+    setModalOpen(true);
   };
 
   const submit = async (e) => {
     e.preventDefault();
-    const validation = validateForm(values, {
-      title: [required], project: [required], difficulty: [required],
-      functionName: [required], starterCode: [required],
-      tc1Name: [required], tc1Args: [required], tc1Expected: [required],
-    });
-    setErrors(validation);
-    if (Object.keys(validation).length) return;
-
-    const testCases = buildTestCases(values, setErrors);
-    if (!testCases) return;
+    const v = validateForm(values, { title: [required], expectedBehaviour: [required], difficulty: [required] });
+    if (!(brokenFile[0] instanceof File)) v.brokenFile = "Attach the broken-code file students will fix.";
+    setErrors(v);
+    if (Object.keys(v).length) return;
 
     setSaving(true);
     try {
-      await createBugChallenge({
-        title: values.title,
-        project: values.project,
+      await createChallenge(projectId, {
+        title: values.title.trim(),
+        expectedBehaviour: values.expectedBehaviour.trim(),
         difficulty: values.difficulty,
-        description: values.description,
-        functionName: values.functionName,
-        starterCode: values.starterCode,
-        testCases,
+        brokenCodeFile: brokenFile[0],
+        testScriptFile: testFile[0] instanceof File ? testFile[0] : undefined,
       });
-      notify("Bug challenge created — real broken code, auto-graded on the Student side.", { type: "success", title: "Challenge Created" });
+      notify("Bug challenge added to this project.", { type: "success" });
       setModalOpen(false);
-      setValues(emptyForm);
-      load();
+      loadChallenges(projectId);
+    } catch (err) {
+      notify(err?.message || "Couldn't create the challenge.", { type: "error" });
     } finally {
       setSaving(false);
     }
@@ -130,124 +106,107 @@ export default function DeveloperBugChallenges() {
 
   const openEdit = (c) => {
     setEditingId(c.id);
-    setEditValues({
-      title: c.title,
-      project: c.project,
-      difficulty: c.difficulty,
-      description: c.description || "",
-      functionName: c.functionName || "",
-      starterCode: c.starterCode || "",
-      tc1Name: c.testCases?.[0]?.name || "",
-      tc1Args: c.testCases?.[0] ? JSON.stringify(c.testCases[0].args) : "",
-      tc1Expected: c.testCases?.[0] ? JSON.stringify(c.testCases[0].expected) : "",
-      tc2Name: c.testCases?.[1]?.name || "",
-      tc2Args: c.testCases?.[1] ? JSON.stringify(c.testCases[1].args) : "",
-      tc2Expected: c.testCases?.[1] ? JSON.stringify(c.testCases[1].expected) : "",
-    });
-    setErrors({});
-    setEditModalOpen(true);
+    setEditValues({ title: c.title, expectedBehaviour: c.expectedBehaviour || "", difficulty: c.difficulty || "" });
+    setEditOpen(true);
   };
 
-  const onEditSave = async (e) => {
+  const saveEdit = async (e) => {
     e.preventDefault();
-    const validation = validateForm(editValues, {
-      title: [required], project: [required], difficulty: [required],
-      functionName: [required], starterCode: [required],
-      tc1Name: [required], tc1Args: [required], tc1Expected: [required],
-    });
-    setErrors(validation);
-    if (Object.keys(validation).length) return;
-
-    const testCases = buildTestCases(editValues, setErrors);
-    if (!testCases) return;
-
-    await updateBugChallenge(editingId, {
-      title: editValues.title,
-      project: editValues.project,
-      difficulty: editValues.difficulty,
-      description: editValues.description,
-      functionName: editValues.functionName,
-      starterCode: editValues.starterCode,
-      testCases,
-    });
-    notify("Bug challenge updated successfully.", { type: "success", title: "Challenge Updated" });
-    setEditModalOpen(false);
-    setEditingId(null);
-    load();
+    setSavingEdit(true);
+    try {
+      await updateChallenge(editingId, {
+        title: editValues.title.trim(),
+        expectedBehaviour: editValues.expectedBehaviour.trim(),
+        difficulty: editValues.difficulty || undefined,
+      });
+      notify("Challenge updated.", { type: "success" });
+      setEditOpen(false);
+      loadChallenges(projectId);
+    } catch (err) {
+      notify(err?.message || "Couldn't update the challenge.", { type: "error" });
+    } finally {
+      setSavingEdit(false);
+    }
   };
 
-  const handleDelete = async (id) => {
-    const target = items.find((c) => c.id === id);
-    await deleteBugChallenge(id);
-    notify(`Bug challenge "${target?.title}" deleted successfully.`, { type: "success", title: "Challenge Deleted" });
-    load();
+  const remove = async (c) => {
+    try {
+      await deleteChallenge(c.id);
+      notify(`"${c.title}" deleted.`, { type: "success" });
+      loadChallenges(projectId);
+    } catch (err) {
+      notify(err?.message || "Couldn't delete the challenge.", { type: "error" });
+    }
   };
-
-  const testCaseFields = (form, setForm) => (
-    <>
-      <div className="rounded-lg border border-border p-3 bg-cream-50 flex flex-col gap-3">
-        <p className="text-xs font-semibold text-ink-700">Test case 1 (required — defines when the bug is "fixed")</p>
-        <Input label="Name" value={form.tc1Name} onChange={(e) => setForm((v) => ({ ...v, tc1Name: e.target.value }))} error={errors.tc1Name} required placeholder="e.g. Handles empty cart" />
-        <div className="grid sm:grid-cols-2 gap-3">
-          <Input label="Arguments (JSON array)" value={form.tc1Args} onChange={(e) => setForm((v) => ({ ...v, tc1Args: e.target.value }))} error={errors.tc1Args} required placeholder="[[]]" />
-          <Input label="Expected result (JSON)" value={form.tc1Expected} onChange={(e) => setForm((v) => ({ ...v, tc1Expected: e.target.value }))} error={errors.tc1Expected} required placeholder="0" />
-        </div>
-      </div>
-      <div className="rounded-lg border border-border p-3 bg-cream-50 flex flex-col gap-3">
-        <p className="text-xs font-semibold text-ink-700">Test case 2 (optional)</p>
-        <Input label="Name" value={form.tc2Name} onChange={(e) => setForm((v) => ({ ...v, tc2Name: e.target.value }))} placeholder="e.g. Handles negative prices" />
-        <div className="grid sm:grid-cols-2 gap-3">
-          <Input label="Arguments (JSON array)" value={form.tc2Args} onChange={(e) => setForm((v) => ({ ...v, tc2Args: e.target.value }))} error={errors.tc2Args} placeholder='[[{"price":-5}]]' />
-          <Input label="Expected result (JSON)" value={form.tc2Expected} onChange={(e) => setForm((v) => ({ ...v, tc2Expected: e.target.value }))} placeholder="0" />
-        </div>
-      </div>
-    </>
-  );
 
   return (
     <div>
       <PageHeader
         title="Bug Fixing Challenges"
-        subtitle="Author real broken code and test cases — students fix it in a live editor and get auto-graded"
+        subtitle="Attach broken-code files to a project — students download, fix, and submit"
         breadcrumbs={[{ label: "Dashboard", to: "/developer/dashboard" }, { label: "Bug Challenges" }]}
-        action={<Button icon={Plus} onClick={() => { setErrors({}); setValues(emptyForm); setModalOpen(true); }}>New Challenge</Button>}
+        action={
+          <div className="flex items-center gap-2">
+            <Select
+              className="w-56"
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+              options={projects.map((p) => ({ value: String(p.id), label: `${p.title}${p.status === "Published" ? "" : " (draft)"}` }))}
+              placeholder={projects.length ? "Select a project" : "No projects"}
+            />
+            <Button icon={Plus} onClick={openCreate} disabled={!projectId}>New Challenge</Button>
+          </div>
+        }
       />
 
-      {loading ? (
+      {loadingProjects ? (
+        <div className="flex justify-center py-16"><LoadingSpinner label="Loading…" /></div>
+      ) : !projectId ? (
+        <EmptyState icon={Bug} title="No projects yet" description="Create a project first, then attach bug-fix challenges to it." />
+      ) : loadingChallenges ? (
         <div className="flex justify-center py-16"><LoadingSpinner label="Loading challenges…" /></div>
+      ) : challenges.length === 0 ? (
+        <EmptyState icon={Bug} title={`No challenges on ${projectName}`} description="Attach a broken-code file for students to fix." actionLabel="New Challenge" onAction={openCreate} />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {items.map((c) => (
+          {challenges.map((c) => (
             <Card key={c.id} className="flex flex-col justify-between min-h-[170px]">
               <div>
-                <div className="flex items-start justify-between">
+                <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-error-50 text-error-500"><Bug size={16} /></div>
-                    <div>
-                      <p className="font-medium text-ink-900 text-left">{c.title}</p>
-                      <p className="text-xs text-ink-500 text-left">{c.project} · <code>{c.functionName}</code></p>
-                    </div>
+                    <p className="font-medium text-ink-900 text-left">{c.title}</p>
                   </div>
-                  <Badge tone={c.difficulty === "Advanced" ? "error" : "success"}>{c.difficulty}</Badge>
+                  {c.difficulty && <Badge tone={c.difficulty === "Advanced" ? "error" : c.difficulty === "Intermediate" ? "warning" : "success"}>{c.difficulty}</Badge>}
                 </div>
-                <div className="mt-4">
-                  <ProgressBar value={c.attempts > 0 ? Math.round((c.solved / c.attempts) * 100) : 0} tone="primary" label={`${c.solved}/${c.attempts} solved · auto-tracked from student attempts`} />
+                {c.expectedBehaviour && <p className="text-xs text-ink-500 text-left mt-2">{c.expectedBehaviour}</p>}
+                <div className="flex flex-wrap gap-3 mt-3 text-xs">
+                  {c.brokenCodeUrl && (
+                    <a href={c.brokenCodeUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-primary-700 hover:underline">
+                      <FileCode2 size={12} /> Broken code
+                    </a>
+                  )}
+                  {c.testScriptUrl && (
+                    <a href={c.testScriptUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-primary-700 hover:underline">
+                      <Download size={12} /> Test script
+                    </a>
+                  )}
                 </div>
               </div>
               <div className="flex gap-2 mt-4 pt-3 border-t border-border/60 justify-end">
                 <Button size="sm" variant="secondary" icon={Edit} onClick={() => openEdit(c)}>Edit</Button>
-                <Button size="sm" variant="danger" icon={Trash2} onClick={() => handleDelete(c.id)}>Delete</Button>
+                <Button size="sm" variant="danger" icon={Trash2} onClick={() => remove(c)}>Delete</Button>
               </div>
             </Card>
           ))}
         </div>
       )}
 
-      {/* Create Modal */}
+      {/* Create */}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="Create Bug Challenge"
+        title={`New challenge — ${projectName}`}
         size="lg"
         footer={<>
           <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
@@ -255,37 +214,30 @@ export default function DeveloperBugChallenges() {
         </>}
       >
         <form className="flex flex-col gap-4 text-left font-sans" onSubmit={submit}>
-          <Input label="Challenge title" required value={values.title} onChange={(e) => setValues((v) => ({ ...v, title: e.target.value }))} error={errors.title} placeholder="e.g. Buffer overflow in parsing util" />
-          <Select label="Project" required placeholder="Select project" options={projectOptions} value={values.project} onChange={(e) => setValues((v) => ({ ...v, project: e.target.value }))} error={errors.project} />
+          <Input label="Challenge title" required value={values.title} onChange={(e) => setValues((v) => ({ ...v, title: e.target.value }))} error={errors.title} placeholder="e.g. calculateCartTotal returns NaN on empty cart" />
           <Select label="Difficulty" required placeholder="Select difficulty" options={DIFFICULTIES} value={values.difficulty} onChange={(e) => setValues((v) => ({ ...v, difficulty: e.target.value }))} error={errors.difficulty} />
-          <Textarea label="Bug description (shown to student)" value={values.description} onChange={(e) => setValues((v) => ({ ...v, description: e.target.value }))} rows={2} placeholder="e.g. This function is supposed to total the cart, but returns NaN when the cart is empty." />
-          <Input label="Function name" required value={values.functionName} onChange={(e) => setValues((v) => ({ ...v, functionName: e.target.value }))} error={errors.functionName} placeholder="e.g. calculateCartTotal" />
-          <Textarea label="Starter code (the broken version students see)" required value={values.starterCode} onChange={(e) => setValues((v) => ({ ...v, starterCode: e.target.value }))} error={errors.starterCode} rows={5}
-            placeholder={"function calculateCartTotal(items) {\n  // Bug: crashes / returns wrong value — students fix this\n}"} />
-          {testCaseFields(values, setValues)}
+          <Textarea label="Expected behaviour (shown to the student)" required rows={3} value={values.expectedBehaviour} onChange={(e) => setValues((v) => ({ ...v, expectedBehaviour: e.target.value }))} error={errors.expectedBehaviour} placeholder="Describe what the code should do once fixed." />
+          <FileUpload label="Broken code file" hint="The buggy source the student downloads and fixes (max 10MB)" onChange={setBrokenFile} />
+          {errors.brokenFile && <p className="text-xs text-error-600 -mt-2">{errors.brokenFile}</p>}
+          <FileUpload label="Test script (optional)" hint="A script the student can run to check their fix" onChange={setTestFile} />
         </form>
       </Modal>
 
-      {/* Edit Modal */}
+      {/* Edit */}
       <Modal
-        open={editModalOpen}
-        onClose={() => setEditModalOpen(false)}
-        title="Edit Bug Challenge"
-        size="lg"
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        title="Edit challenge"
         footer={<>
-          <Button variant="secondary" onClick={() => setEditModalOpen(false)}>Cancel</Button>
-          <Button onClick={onEditSave}>Save Changes</Button>
+          <Button variant="secondary" onClick={() => setEditOpen(false)}>Cancel</Button>
+          <Button loading={savingEdit} onClick={saveEdit}>Save Changes</Button>
         </>}
       >
-        <form className="flex flex-col gap-4 text-left font-sans" onSubmit={onEditSave}>
-          <Input label="Challenge title" required value={editValues.title} onChange={(e) => setEditValues((v) => ({ ...v, title: e.target.value }))} error={errors.title} />
-          <Select label="Project" required placeholder="Select project" options={projectOptions} value={editValues.project} onChange={(e) => setEditValues((v) => ({ ...v, project: e.target.value }))} error={errors.project} />
-          <Select label="Difficulty" required placeholder="Select difficulty" options={DIFFICULTIES} value={editValues.difficulty} onChange={(e) => setEditValues((v) => ({ ...v, difficulty: e.target.value }))} error={errors.difficulty} />
-          <Textarea label="Bug description (shown to student)" value={editValues.description} onChange={(e) => setEditValues((v) => ({ ...v, description: e.target.value }))} rows={2} />
-          <Input label="Function name" required value={editValues.functionName} onChange={(e) => setEditValues((v) => ({ ...v, functionName: e.target.value }))} error={errors.functionName} />
-          <Textarea label="Starter code (the broken version students see)" required value={editValues.starterCode} onChange={(e) => setEditValues((v) => ({ ...v, starterCode: e.target.value }))} error={errors.starterCode} rows={5} />
-          {testCaseFields(editValues, setEditValues)}
-          <p className="text-xs text-ink-400 -mt-1">Solved/attempts are tracked automatically from real student submissions and can no longer be edited here.</p>
+        <form className="flex flex-col gap-4 text-left font-sans" onSubmit={saveEdit}>
+          <Input label="Challenge title" required value={editValues.title} onChange={(e) => setEditValues((v) => ({ ...v, title: e.target.value }))} />
+          <Select label="Difficulty" placeholder="Select difficulty" options={DIFFICULTIES} value={editValues.difficulty} onChange={(e) => setEditValues((v) => ({ ...v, difficulty: e.target.value }))} />
+          <Textarea label="Expected behaviour" rows={3} value={editValues.expectedBehaviour} onChange={(e) => setEditValues((v) => ({ ...v, expectedBehaviour: e.target.value }))} />
+          <p className="text-xs text-ink-400 -mt-1">The broken-code and test-script files can't be changed after upload — delete and re-create the challenge to swap them.</p>
         </form>
       </Modal>
     </div>

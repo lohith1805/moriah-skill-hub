@@ -5,116 +5,102 @@ import Badge from "../ui/Badge";
 import Button from "../ui/Button";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
+import { getMyStaffAttendanceToday, logCheckin, clockOut } from "../../services/hrService";
 
-const todayStr = () => new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-const timeNow = () => new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
-
-// Self-service clock in/out for any non-student, non-admin, non-client
-// role (HR, Trainer, BA, Developer, Lead Gen...). Reads/writes the same
-// "msh_attendance_logs" store HR's Attendance & Leave → Live Biometric /
-// Web Check-ins and Staff Attendance Ledger tabs already use, so HR sees
-// exactly when this person clocked in and out today.
-export default function AttendanceCheckinWidget({ role }) {
+// Self-service clock in/out for any staff role (HR, Trainer, BA, Developer,
+// Lead Gen). Wired to the real staff-attendance API — POST /hr/attendance/checkin
+// and /checkout — so HR sees this on the Attendance & Leave screen. Needs the
+// caller to have an employees row; otherwise it shows a quiet "not set up" note.
+export default function AttendanceCheckinWidget() {
   const { user } = useAuth();
   const { notify } = useToast();
-  const [checkIn, setCheckIn] = useState(null);
-  const [checkOut, setCheckOut] = useState(null);
+  const [today, setToday] = useState(null); // { checkIn, checkOut, status } | null
+  const [loading, setLoading] = useState(true);
+  const [notEnrolled, setNotEnrolled] = useState(false);
   const [checkingIn, setCheckingIn] = useState(false);
   const [checkingOut, setCheckingOut] = useState(false);
 
   const load = () => {
-    if (!user?.name) return;
-    try {
-      const raw = localStorage.getItem("msh_attendance_logs") || "[]";
-      const logs = JSON.parse(raw);
-      const today = todayStr();
-      const mine = logs.find((l) => l.name === user.name && l.date === today);
-      setCheckIn(mine?.checkIn && mine.checkIn !== "--" ? mine.checkIn : null);
-      setCheckOut(mine?.checkOut && mine.checkOut !== "--" ? mine.checkOut : null);
-    } catch (e) {
-      console.warn("Failed to load today's attendance:", e);
-    }
+    setLoading(true);
+    getMyStaffAttendanceToday(user?.uuid)
+      .then((t) => setToday(t))
+      .catch(() => {})
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {
-    load();
+    if (user) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
-
-  const upsert = (patch) => {
-    const raw = localStorage.getItem("msh_attendance_logs") || "[]";
-    const logs = JSON.parse(raw);
-    const today = todayStr();
-    const idx = logs.findIndex((l) => l.name === user.name && l.date === today);
-    if (idx > -1) {
-      logs[idx] = { ...logs[idx], ...patch };
-    } else {
-      logs.unshift({
-        id: `log-${Date.now()}`,
-        name: user.name,
-        role: role || user.role || "Staff",
-        date: today,
-        checkIn: null,
-        checkOut: "--",
-        hours: 0,
-        deviceId: "WEB-AUTH-PORTAL",
-        status: "Present",
-        notes: "Self check-in",
-        loggedBy: "self",
-        ...patch,
-      });
-    }
-    localStorage.setItem("msh_attendance_logs", JSON.stringify(logs));
-  };
 
   const handleCheckIn = async () => {
     setCheckingIn(true);
-    await new Promise((r) => setTimeout(r, 500));
-    const timeStr = timeNow();
-    const now = new Date();
-    const status = now.getHours() > 9 || (now.getHours() === 9 && now.getMinutes() > 15) ? "Late" : "Present";
-    upsert({ checkIn: timeStr, status, loggedBy: "self" });
-    setCheckIn(timeStr);
-    setCheckingIn(false);
-    notify(`Checked in at ${timeStr}.`, { type: "success" });
+    try {
+      const res = await logCheckin({ device: "WEB-AUTH-PORTAL" });
+      notify(`Checked in — marked ${res.status}.`, { type: "success" });
+      load();
+    } catch (err) {
+      if (err?.status === 404) {
+        setNotEnrolled(true);
+      } else {
+        notify(err?.message || "Couldn't check in.", { type: "error" });
+      }
+    } finally {
+      setCheckingIn(false);
+    }
   };
 
   const handleCheckOut = async () => {
     setCheckingOut(true);
-    await new Promise((r) => setTimeout(r, 500));
-    const timeStr = timeNow();
-    upsert({ checkOut: timeStr });
-    setCheckOut(timeStr);
-    setCheckingOut(false);
-    notify(`Checked out at ${timeStr}.`, { type: "success" });
+    try {
+      await clockOut();
+      notify("Checked out.", { type: "success" });
+      load();
+    } catch (err) {
+      notify(err?.message || "Couldn't check out.", { type: "error" });
+    } finally {
+      setCheckingOut(false);
+    }
   };
+
+  if (notEnrolled) {
+    return (
+      <Card className="border-l-4 border-l-ink-300 bg-cream-50/40">
+        <h3 className="font-display font-bold text-ink-900 text-base">Today's Attendance</h3>
+        <p className="text-xs text-ink-500 mt-1">
+          No employee record is linked to your account yet — ask HR to add you before you can clock in.
+        </p>
+      </Card>
+    );
+  }
 
   return (
     <Card className="border-l-4 border-l-primary-600 bg-gradient-to-br from-cream-50/40 to-white">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h3 className="font-display font-bold text-ink-900 text-base">Today's Attendance</h3>
-          <p className="text-xs text-ink-500 mt-1">Clock in and out — HR tracks this on the Attendance & Leave screen.</p>
+          <p className="text-xs text-ink-500 mt-1">Clock in and out — HR tracks this on the Attendance &amp; Leave screen.</p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {checkIn ? (
-            <Badge tone="success" className="text-sm px-3 py-1 font-semibold flex items-center gap-1">
-              <CheckCircle2 size={14} /> Checked In at {checkIn}
+          {today?.checkIn ? (
+            <Badge tone={today.status === "Late" ? "warning" : "success"} className="text-sm px-3 py-1 font-semibold flex items-center gap-1">
+              <CheckCircle2 size={14} /> Checked In at {today.checkIn}{today.status === "Late" ? " (Late)" : ""}
             </Badge>
           ) : (
             <span className="text-xs font-semibold text-warning-600 bg-warning-50 px-2.5 py-1 rounded-md border border-warning-100 flex items-center gap-1">
               <Clock size={12} /> Pending Check-in
             </span>
           )}
-          {checkOut && (
+          {today?.checkOut && (
             <Badge tone="primary" className="text-sm px-3 py-1 font-semibold flex items-center gap-1">
-              <CheckCircle2 size={14} /> Checked Out at {checkOut}
+              <CheckCircle2 size={14} /> Checked Out at {today.checkOut}
             </Badge>
           )}
-          {!checkIn && (
+          {!loading && !today?.checkIn && (
             <Button size="sm" icon={LogIn} loading={checkingIn} onClick={handleCheckIn}>Check In</Button>
           )}
-          {checkIn && !checkOut && (
+          {!loading && today?.checkIn && !today?.checkOut && (
             <Button size="sm" variant="secondary" icon={LogOut} loading={checkingOut} onClick={handleCheckOut}>Check Out</Button>
           )}
         </div>

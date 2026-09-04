@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ListChecks, Percent, AlertTriangle, Trophy, GitFork, ArrowRight, Search, PlayCircle, CalendarDays, CheckCircle2, Clock, Check, FileText, UploadCloud, RefreshCw, Eye, Briefcase } from "lucide-react";
+import { ListChecks, Percent, AlertTriangle, Trophy, GitFork, ArrowRight, Search, PlayCircle, CalendarDays, CheckCircle2, Clock, Check, FileText, UploadCloud, RefreshCw, Eye, Briefcase, Video } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import StatCard from "../../components/widgets/StatCard";
 import Card, { CardHeader } from "../../components/ui/Card";
@@ -11,7 +11,7 @@ import FileUpload from "../../components/ui/FileUpload";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
-import { getPerformanceSummary, getMyTasks, getMyPipStatus, getVideoLessons, getResumeStatus, saveResumeFile, getMySubscription, getMyBatch } from "../../services/studentService";
+import { getPerformanceSummary, getMyTasks, getMyPipStatus, getVideoLessons, getResumeStatus, saveResumeFile, getMySubscription, getMyBatch, getMyStandups, getMyAttendance, checkInToStandup } from "../../services/studentService";
 import { loadRecruitments, stageTone, stageMessage, REJECTED } from "../../utils/placementPipeline";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { Input } from "../../components/ui/FormField";
@@ -54,20 +54,44 @@ export default function StudentDashboard() {
     getMyBatch().then(setMyBatch).catch(() => setMyBatch(null));
   }, []);
 
-  const [hasCheckedIn, setHasCheckedIn] = useState(false);
-  const [checkinTime, setCheckinTime] = useState("");
-  const [hasCheckedOut, setHasCheckedOut] = useState(false);
-  const [checkoutTime, setCheckoutTime] = useState("");
-  const [blockerNote, setBlockerNote] = useState("");
-  const [checkingIn, setCheckingIn] = useState(false);
-  const [checkingOut, setCheckingOut] = useState(false);
-  // True when today's row was created/marked by the trainer (e.g. from the
-  // Standups & Attendance roster) rather than by the student themselves —
-  // in that case we still show the student their own "Clock In" button so
-  // they can submit today's standup note instead of being locked out.
-  const [trainerMarked, setTrainerMarked] = useState(false);
-  const [trainerMarkedTime, setTrainerMarkedTime] = useState("");
-  const [trainerMarkedStatus, setTrainerMarkedStatus] = useState("");
+  // Today's standup + the caller's attendance for it — real, from
+  // /api/v1/standups and /api/v1/attendance/me. The full history and the
+  // join/check-in flow also live on /student/attendance.
+  const [todayStandup, setTodayStandup] = useState(null);
+  const [standupMark, setStandupMark] = useState(null); // { status, markedByPm, autoMarked } | null
+  const [standupNote, setStandupNote] = useState("");
+  const [standupCheckingIn, setStandupCheckingIn] = useState(false);
+
+  const loadStandup = () => {
+    const today = new Date().toISOString().slice(0, 10);
+    Promise.all([getMyStandups(today), getMyAttendance()])
+      .then(([standups, att]) => {
+        const s = standups.find((x) => x.status !== "CANCELLED") || null;
+        setTodayStandup(s);
+        setStandupMark(s ? att.find((a) => String(a.standupId) === String(s.id)) || null : null);
+      })
+      .catch(() => {
+        setTodayStandup(null);
+        setStandupMark(null);
+      });
+  };
+  useEffect(() => {
+    loadStandup();
+  }, []);
+
+  const handleStandupCheckIn = async () => {
+    if (!todayStandup) return;
+    setStandupCheckingIn(true);
+    try {
+      const res = await checkInToStandup(todayStandup.id, standupNote.trim());
+      notify(`Checked in — marked ${res.status}.`, { type: "success" });
+      loadStandup();
+    } catch (err) {
+      notify(err.message || "Could not check in to the standup.", { type: "error" });
+    } finally {
+      setStandupCheckingIn(false);
+    }
+  };
 
   // Resume upload — required before the student becomes eligible for
   // client job opportunities (see HR Exit → Client Talent Pool handoff).
@@ -96,172 +120,9 @@ export default function StudentDashboard() {
         }
       }
 
-      if (user) {
-        try {
-          const rawLogs = localStorage.getItem("msh_attendance_logs");
-          const logs = rawLogs ? JSON.parse(rawLogs) : [];
-          const todayStr = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-          const myLog = logs.find((l) => l.name === user.name && l.date === todayStr);
-          if (myLog) {
-            const inTime = myLog.checkIn || myLog.time; // `time` kept for older saved logs
-            // Older/legacy self check-ins never wrote a `loggedBy` field, so
-            // fall back to the WEB-AUTH-PORTAL device id (only ever used by
-            // the student's own Clock In button) to recognize them as self.
-            const isSelfCheckin = myLog.loggedBy === "student" || (!myLog.loggedBy && myLog.deviceId === "WEB-AUTH-PORTAL");
-            if (inTime && inTime !== "--" && isSelfCheckin) {
-              setHasCheckedIn(true);
-              setCheckinTime(inTime);
-              setBlockerNote(myLog.notes);
-            } else if (inTime && inTime !== "--") {
-              // Trainer (or HR) logged this row on the student's behalf —
-              // don't treat it as the student's own check-in, but let them
-              // know and still offer the Clock In button below.
-              setTrainerMarked(true);
-              setTrainerMarkedTime(inTime);
-              setTrainerMarkedStatus(myLog.status);
-            }
-            if (myLog.checkOut && myLog.checkOut !== "--") {
-              setHasCheckedOut(true);
-              setCheckoutTime(myLog.checkOut);
-            }
-          }
-        } catch (e) {
-          console.warn("Failed to load today check-in log:", e);
-        }
-      }
-
       setLoading(false);
     });
   }, [user]);
-
-  const handleCheckIn = async () => {
-    setCheckingIn(true);
-    await new Promise((r) => setTimeout(r, 800));
-    setCheckingIn(false);
-
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
-    const todayStr = now.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-
-    let status = "Present";
-    const hours = now.getHours();
-    const minutes = now.getMinutes();
-    if (hours > 9 || (hours === 9 && minutes > 15)) {
-      status = "Late";
-    }
-
-    // Written in the same shape HR's Attendance & Leave "Live Biometric /
-    // Web Check-ins" table reads (checkIn/checkOut/deviceId) — see
-    // hrService.getClockinLogs — so a student's self check-in actually
-    // shows up there with a real check-in time instead of being invisible.
-    // `loggedBy: "student"` marks this as the student's own submission so
-    // it isn't mistaken for a trainer-side manual mark on the next load.
-    const noteText = blockerNote.trim() || "None (On Track)";
-    const newLog = {
-      id: `log-${Date.now()}`,
-      name: user?.name || "Student",
-      role: "Student",
-      date: todayStr,
-      checkIn: timeStr,
-      checkOut: "--",
-      hours: 0,
-      deviceId: "WEB-AUTH-PORTAL",
-      status,
-      notes: noteText,
-      loggedBy: "student"
-    };
-
-    try {
-      const rawLogs = localStorage.getItem("msh_attendance_logs") || "[]";
-      const logs = JSON.parse(rawLogs);
-      // If the trainer already created today's row (e.g. via Standups &
-      // Attendance), fill in the student's own check-in on that same row
-      // instead of adding a duplicate entry for the day.
-      const todayIdx = logs.findIndex((l) => l.name === (user?.name || "Student") && l.date === todayStr);
-      if (todayIdx > -1) {
-        logs[todayIdx] = { ...logs[todayIdx], ...newLog, id: logs[todayIdx].id };
-      } else {
-        logs.unshift(newLog);
-      }
-      localStorage.setItem("msh_attendance_logs", JSON.stringify(logs));
-
-      const rawUsers = localStorage.getItem("mORIAH_REGISTERED_USERS");
-      if (rawUsers && user) {
-        const users = JSON.parse(rawUsers);
-        const idx = users.findIndex((u) => u.id === user.id);
-        if (idx > -1) {
-          const u = users[idx];
-          const newAttendance = Math.min((u.attendance || 90) + 1, 100);
-          users[idx] = { ...u, attendance: newAttendance };
-          localStorage.setItem("mORIAH_REGISTERED_USERS", JSON.stringify(users));
-          localStorage.setItem("msh_user", JSON.stringify(users[idx]));
-          
-          setSummary((s) => s ? { ...s, attendance: newAttendance } : null);
-        }
-      }
-
-      setHasCheckedIn(true);
-      setCheckinTime(timeStr);
-      setBlockerNote(newLog.notes);
-      setTrainerMarked(false);
-      notify(`Successfully checked in! Clock-in logged as ${status}.`, { type: "success" });
-    } catch (e) {
-      notify("Failed to save check-in.", { type: "error" });
-    }
-  };
-
-  // Records the student's check-out time against today's existing log entry
-  // so HR sees both the check-in and check-out timing side by side before
-  // finalizing attendance for the day.
-  const handleCheckOut = async () => {
-    setCheckingOut(true);
-    await new Promise((r) => setTimeout(r, 500));
-    setCheckingOut(false);
-
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
-    const todayStr = now.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-
-    try {
-      const rawLogs = localStorage.getItem("msh_attendance_logs") || "[]";
-      const logs = JSON.parse(rawLogs);
-      const idx = logs.findIndex((l) => l.name === (user?.name || "Student") && l.date === todayStr);
-      if (idx === -1) {
-        notify("Please check in before checking out.", { type: "error" });
-        return;
-      }
-
-      const entry = logs[idx];
-      const inTime = entry.checkIn || entry.time;
-      let hoursWorked = entry.hours || 0;
-      if (inTime) {
-        const parseTime = (t) => {
-          const match = /(\d+):(\d+)\s*(am|pm)/i.exec(t);
-          if (!match) return null;
-          let [, h, m, period] = match;
-          h = parseInt(h, 10);
-          m = parseInt(m, 10);
-          if (/pm/i.test(period) && h !== 12) h += 12;
-          if (/am/i.test(period) && h === 12) h = 0;
-          return h * 60 + m;
-        };
-        const inMins = parseTime(inTime);
-        const outMins = parseTime(timeStr);
-        if (inMins !== null && outMins !== null && outMins > inMins) {
-          hoursWorked = Math.round(((outMins - inMins) / 60) * 10) / 10;
-        }
-      }
-
-      logs[idx] = { ...entry, checkIn: inTime, checkOut: timeStr, hours: hoursWorked };
-      localStorage.setItem("msh_attendance_logs", JSON.stringify(logs));
-
-      setHasCheckedOut(true);
-      setCheckoutTime(timeStr);
-      notify("Successfully checked out!", { type: "success" });
-    } catch (e) {
-      notify("Failed to save check-out.", { type: "error" });
-    }
-  };
 
   const openResumeModal = () => {
     setPendingResumeFile(resume?.name ? [new File([], resume.name, { type: "application/pdf" })] : []);
@@ -419,77 +280,61 @@ export default function StudentDashboard() {
         )}
       </Card>
 
-      {/* Daily Standup Check-in Card */}
+      {/* Today's Standup — real, from /api/v1/standups + /api/v1/attendance/me */}
       <Card className="mt-4 border-l-4 border-l-primary-600 bg-gradient-to-br from-cream-50/40 to-white">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <h3 className="font-display font-bold text-ink-900 text-base flex items-center gap-2">
-              <CalendarDays className="text-primary-600" size={18} /> Daily Standup Check-in
+              <CalendarDays className="text-primary-600" size={18} /> Today's Standup
             </h3>
             <p className="text-xs text-ink-500 mt-1">
-              Active check-in window: 09:00 AM – 10:00 AM. Log your daily blocker updates.
+              {todayStandup
+                ? `Starts ${new Date(todayStandup.scheduledAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })} · late after ${todayStandup.lateCutoffMinutes} min`
+                : "No standup scheduled for today."}
             </p>
           </div>
-          
-          {hasCheckedIn ? (
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge tone="success" className="text-sm px-3 py-1 font-semibold flex items-center gap-1">
-                <CheckCircle2 size={14} /> Checked In at {checkinTime}
-              </Badge>
-              {hasCheckedOut && (
-                <Badge tone="primary" className="text-sm px-3 py-1 font-semibold flex items-center gap-1">
-                  <CheckCircle2 size={14} /> Checked Out at {checkoutTime}
-                </Badge>
-              )}
-            </div>
-          ) : trainerMarked ? (
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge tone="warning" className="text-sm px-3 py-1 font-semibold flex items-center gap-1">
-                <Clock size={14} /> Marked {trainerMarkedStatus || "Present"} by Trainer at {trainerMarkedTime}
-              </Badge>
-            </div>
-          ) : (
+
+          {standupMark ? (
+            <Badge tone={standupMark.status === "Present" ? "success" : standupMark.status === "Late" ? "warning" : "error"} className="text-sm px-3 py-1 font-semibold flex items-center gap-1">
+              <CheckCircle2 size={14} /> {standupMark.markedByPm ? "Marked" : "Checked in"} — {standupMark.status}
+            </Badge>
+          ) : todayStandup ? (
             <span className="text-xs font-semibold text-warning-600 bg-warning-50 px-2.5 py-1 rounded-md border border-warning-100 flex items-center gap-1">
-              <Clock size={12} /> Pending Check-in
+              <Clock size={12} /> Not checked in
             </span>
-          )}
+          ) : null}
         </div>
 
-        {!hasCheckedIn ? (
+        {todayStandup && (
           <div className="mt-4 pt-4 border-t border-border/60 flex flex-col gap-3">
-            {trainerMarked && (
-              <p className="text-xs text-ink-600 bg-cream-50 p-3 rounded-lg border border-border/40">
-                Your trainer already logged an attendance entry for you today, but you haven't checked in yourself yet — clock in below to submit your own standup note.
-              </p>
+            {todayStandup.notes && (
+              <p className="text-xs text-ink-600 bg-cream-50 p-3 rounded-lg border border-border/40">{todayStandup.notes}</p>
             )}
-            <div className="flex flex-col gap-1.5 text-left">
-              <label className="text-xs font-semibold text-ink-700">What are you working on today? Any blockers?</label>
-              <textarea
-                value={blockerNote}
-                onChange={(e) => setBlockerNote(e.target.value)}
-                placeholder="e.g. Working on checkout flow. Blocked on Stripe API test tokens."
-                className="w-full text-sm rounded-lg border border-border p-3 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none placeholder:text-ink-300"
-                rows={2}
-              />
-            </div>
-            <div className="flex justify-end">
-              <Button onClick={handleCheckIn} loading={checkingIn} icon={Check}>
-                Clock In & Submit Standup
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="mt-4 pt-4 border-t border-border/60 flex flex-col gap-3 text-left">
-            <p className="text-xs text-ink-600 font-medium bg-cream-50 p-3 rounded-lg border border-border/40">
-              <strong className="text-ink-800">Your Blocker Note:</strong> {blockerNote || "None (On Track)"}
-            </p>
-            {!hasCheckedOut && (
-              <div className="flex justify-end">
-                <Button onClick={handleCheckOut} loading={checkingOut} icon={Check} variant="secondary">
-                  Clock Out
-                </Button>
+            {!standupMark && (
+              <div className="flex flex-col gap-1.5 text-left">
+                <label className="text-xs font-semibold text-ink-700">Anything blocking you today? <span className="font-normal text-ink-400">(optional)</span></label>
+                <textarea
+                  value={standupNote}
+                  onChange={(e) => setStandupNote(e.target.value)}
+                  placeholder="e.g. Working on checkout flow. Blocked on Stripe API test tokens."
+                  className="w-full text-sm rounded-lg border border-border p-3 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none placeholder:text-ink-300"
+                  rows={2}
+                />
               </div>
             )}
+            <div className="flex justify-end gap-2">
+              {todayStandup.meetingLink && (
+                <a href={todayStandup.meetingLink} target="_blank" rel="noreferrer">
+                  <Button icon={Video} variant={standupMark ? "primary" : "secondary"}>Join meet</Button>
+                </a>
+              )}
+              {!standupMark && (
+                <Button onClick={handleStandupCheckIn} loading={standupCheckingIn} icon={Check}>
+                  I've joined — check in
+                </Button>
+              )}
+              <Link to="/student/attendance"><Button variant="ghost">View history</Button></Link>
+            </div>
           </div>
         )}
       </Card>

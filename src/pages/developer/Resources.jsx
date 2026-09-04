@@ -8,6 +8,7 @@ import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
 import { Input, Select } from "../../components/ui/FormField";
 import { getResourceLibrary, createResource } from "../../services/developerService";
+import { TRACKS, TRACK_LABELS } from "../../utils/constants";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required } from "../../utils/validators";
 
@@ -24,7 +25,7 @@ export default function DeveloperResources() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [values, setValues] = useState({ title: "", type: "Cheat Sheet", link: "" });
+  const [values, setValues] = useState({ title: "", type: "Cheat Sheet", link: "", track: "" });
   const [errors, setErrors] = useState({});
   const { notify } = useToast();
 
@@ -49,7 +50,7 @@ export default function DeveloperResources() {
       await createResource(values);
       notify("Resource added to the shared library.", { type: "success" });
       setModalOpen(false);
-      setValues({ title: "", type: "Cheat Sheet", link: "" });
+      setValues({ title: "", type: "Cheat Sheet", link: "", track: "" });
       load();
     } finally {
       setSaving(false);
@@ -72,6 +73,7 @@ export default function DeveloperResources() {
           columns={[
             { key: "title", header: "Resource", render: (r) => <span className="flex items-center gap-2 text-ink-900 font-semibold"><FileCode2 size={14} className="text-primary-500" /> {r.title}</span> },
             { key: "type", header: "Type", render: (r) => <Badge tone="primary">{r.type}</Badge> },
+            { key: "track", header: "Track", render: (r) => r.track ? <Badge tone="neutral">{TRACK_LABELS[r.track] || r.track}</Badge> : <span className="text-xs text-ink-400">All</span> },
             { key: "updatedAt", header: "Updated" },
             { key: "action", header: "", render: (r) => (
               <a href={r.link} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-primary-700 hover:underline text-xs font-semibold">
@@ -105,15 +107,24 @@ export default function DeveloperResources() {
             name="title"
             error={errors.title}
           />
-          <Select 
-            label="Resource Type" 
+          <Select
+            label="Resource Type"
             name="type"
-            options={RESOURCE_TYPES} 
-            value={values.type} 
-            onChange={onChange} 
+            options={RESOURCE_TYPES}
+            value={values.type}
+            onChange={onChange}
           />
-          <Input 
-            label="Resource Reference URL" 
+          <Select
+            label="Track"
+            name="track"
+            value={values.track}
+            onChange={onChange}
+            placeholder="All tracks"
+            options={TRACKS}
+            hint="Scope this resource to one cohort track, or leave blank for everyone."
+          />
+          <Input
+            label="Resource Reference URL"
             required 
             placeholder="e.g. https://github.com/myorg/docker-boilerplate" 
             value={values.link} 

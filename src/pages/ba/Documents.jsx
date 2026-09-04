@@ -11,7 +11,6 @@ import Modal from "../../components/ui/Modal";
 import FileUpload from "../../components/ui/FileUpload";
 import { Input, Select, Textarea } from "../../components/ui/FormField";
 import { getDocuments, saveDocuments } from "../../services/baService";
-import { getDocReviews } from "../../services/developerService";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required } from "../../utils/validators";
 
@@ -90,11 +89,10 @@ export default function BaDocuments() {
 
   const load = () => {
     setLoading(true);
-    Promise.all([getDocuments(), getDocReviews()]).then(([d, r]) => {
-      setDocs(d);
-      setDevReviews(r);
-      setLoading(false);
-    });
+    getDocuments()
+      .then((d) => setDocs(d))
+      .catch(() => setDocs([]))
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {

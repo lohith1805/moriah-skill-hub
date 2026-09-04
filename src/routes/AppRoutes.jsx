@@ -36,6 +36,7 @@ import StudentPipStatus from "../pages/student/PipStatus";
 import StudentCertificates from "../pages/student/Certificates";
 import StudentResources from "../pages/student/Resources";
 import StudentInterviews from "../pages/student/Interviews";
+import StudentAttendance from "../pages/student/Attendance";
 
 // Trainer
 import TrainerDashboard from "../pages/trainer/Dashboard";
@@ -43,6 +44,7 @@ import TrainerBatches from "../pages/trainer/Batches";
 import TrainerSprintPlanning from "../pages/trainer/SprintPlanning";
 import TrainerStandups from "../pages/trainer/Standups";
 import TrainerCodeReview from "../pages/trainer/CodeReview";
+import TrainerAssessments from "../pages/trainer/Assessments";
 import TrainerAnalytics from "../pages/trainer/Analytics";
 import TrainerPipManagement from "../pages/trainer/PIPManagement";
 import TrainerGraduation from "../pages/trainer/Graduation";
@@ -53,7 +55,6 @@ import DeveloperDashboard from "../pages/developer/Dashboard";
 import DeveloperProjects from "../pages/developer/Projects";
 import DeveloperClientRequirements from "../pages/developer/ClientRequirements";
 import DeveloperBugChallenges from "../pages/developer/BugChallenges";
-import DeveloperAssessments from "../pages/developer/Assessments";
 import DeveloperAssessmentBank from "../pages/developer/AssessmentBank";
 import DeveloperVideoLessons from "../pages/developer/VideoLessons";
 import DeveloperResources from "../pages/developer/Resources";
@@ -120,6 +121,7 @@ export default function AppRoutes() {
           <Route path="/student/profile" element={<StudentProfile />} />
           <Route path="/student/subscription" element={<StudentSubscription />} />
           <Route path="/student/tasks" element={<StudentTasks />} />
+          <Route path="/student/attendance" element={<StudentAttendance />} />
           <Route path="/student/projects" element={<StudentProjects />} />
           <Route path="/student/submissions" element={<StudentSubmissions />} />
           <Route path="/student/learning" element={<StudentLearning />} />
@@ -140,6 +142,7 @@ export default function AppRoutes() {
           <Route path="/trainer/sprints" element={<TrainerSprintPlanning />} />
           <Route path="/trainer/standups" element={<TrainerStandups />} />
           <Route path="/trainer/code-review" element={<TrainerCodeReview />} />
+          <Route path="/trainer/assessments" element={<TrainerAssessments />} />
           <Route path="/trainer/analytics" element={<TrainerAnalytics />} />
           <Route path="/trainer/pip" element={<TrainerPipManagement />} />
           <Route path="/trainer/graduation" element={<TrainerGraduation />} />
@@ -157,7 +160,6 @@ export default function AppRoutes() {
           <Route path="/developer/client-requirements" element={<DeveloperClientRequirements />} />
           <Route path="/developer/bug-challenges" element={<DeveloperBugChallenges />} />
           <Route path="/developer/video-lessons" element={<DeveloperVideoLessons />} />
-          <Route path="/developer/assessments" element={<DeveloperAssessments />} />
           <Route path="/developer/assessment-bank" element={<DeveloperAssessmentBank />} />
           <Route path="/developer/resources" element={<DeveloperResources />} />
           <Route path="/developer/profile" element={<SharedProfile />} />

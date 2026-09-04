@@ -25,15 +25,28 @@ import { logAudit, AUDIT_CATEGORIES } from "../utils/auditLog";
 
 export async function getExecutiveMetrics() {
   const o = await apiClient.get("/admin/metrics/overview");
-  const recent = o.recentRevenue || [];
-  const lastMonth = recent.length ? recent[recent.length - 1] : null;
-  const mrr = lastMonth ? Number(lastMonth.total ?? lastMonth.amount ?? 0) : 0;
 
-  const funnel = o.leadFunnel || [];
-  const funnelTotal = funnel.reduce((s, f) => s + Number(f.count || 0), 0);
-  const enrolled = funnel
-    .filter((f) => /ENROLLED/i.test(f.stage || f.status || ""))
-    .reduce((s, f) => s + Number(f.count || 0), 0);
+  // v_revenue_monthly rows: { revenueMonth, currency, totalCaptured }. The
+  // overview endpoint returns them newest-first — flip to chronological for the
+  // trend chart. MRR = the most recent month's captured total.
+  const recentRevenue = (o.recentRevenue || [])
+    .map((r) => ({
+      month: r.revenueMonth,
+      currency: r.currency || "INR",
+      total: Number(r.totalCaptured ?? 0),
+    }))
+    .sort((a, b) => String(a.month).localeCompare(String(b.month)));
+  const mrr = recentRevenue.length ? recentRevenue[recentRevenue.length - 1].total : 0;
+
+  // v_lead_funnel rollup rows: { status, leadCount }.
+  const leadFunnel = (o.leadFunnel || []).map((f) => ({
+    stage: f.status,
+    count: Number(f.leadCount ?? 0),
+  }));
+  const funnelTotal = leadFunnel.reduce((s, f) => s + f.count, 0);
+  const enrolled = leadFunnel
+    .filter((f) => /ENROLLED|WON|CONVERT/i.test(f.stage || ""))
+    .reduce((s, f) => s + f.count, 0);
 
   return {
     mrr,
@@ -43,14 +56,12 @@ export async function getExecutiveMetrics() {
     avgTaskCompletion: Number(o.avgTaskCompletionPercent || 0),
     avgQuizAverage: Number(o.avgQuizAveragePercent || 0),
     batchPassRate: Number(o.avgTaskCompletionPercent || 0),
-    // The overview endpoint doesn't expose an on-PIP ratio; left at 0 until a
-    // dedicated metric exists (or Dashboard.jsx drops the tile).
-    pipRatio: 0,
     crmConversion: funnelTotal ? Math.round((enrolled / funnelTotal) * 100) : 0,
     velocityRatio: Number(o.overallVelocityRatio || 0),
-    recentRevenue: recent,
-    leadFunnel: funnel,
-    serverStatus: "Operational",
+    plannedPoints: Number(o.totalPlannedPoints || 0),
+    completedPoints: Number(o.totalCompletedPoints || 0),
+    recentRevenue,
+    leadFunnel,
   };
 }
 
@@ -156,12 +167,52 @@ export async function getPlans() {
   return (Array.isArray(list) ? list : []).map(toFePlan);
 }
 
+const PLAN_FEATURE_LABELS = [
+  ["allowsBatch", "Batch enrolment"],
+  ["allowsSprints", "Sprint board & reviews"],
+  ["allowsPip", "PIP tracking"],
+  ["mentorSupport", "Mentor support"],
+  ["allowsInternshipLetter", "Internship letter"],
+  ["allowsClientProject", "Client projects"],
+];
+
+// GET /api/v1/admin/plans (B1.13) — every plan (active + deactivated) WITH its
+// numeric id, which the PUT/DELETE routes key off. Keeps the backend UPPER_SNAKE
+// `code` as the shown identifier; `features` is derived from the entitlement flags.
+function toFeAdminPlan(p) {
+  return {
+    id: p.id,
+    code: p.code,
+    name: p.name,
+    price: Number(p.priceInr ?? 0),
+    tierRank: p.tierRank,
+    durationDays: p.durationDays,
+    maxProjects: p.maxProjects ?? null,
+    mentorSupport: !!p.mentorSupport,
+    allowsBatch: !!p.allowsBatch,
+    allowsSprints: !!p.allowsSprints,
+    allowsPip: !!p.allowsPip,
+    allowsInternshipLetter: !!p.allowsInternshipLetter,
+    allowsClientProject: !!p.allowsClientProject,
+    active: !!p.active,
+    features: PLAN_FEATURE_LABELS.filter(([k]) => p[k]).map(([, label]) => label),
+  };
+}
+
+export async function getAdminPlans() {
+  const list = await apiClient.get("/admin/plans");
+  return (Array.isArray(list) ? list : []).map(toFeAdminPlan);
+}
+
+// The backend UpdatePlanRequest / CreatePlanRequest are full-field replaces — the
+// caller passes a complete plan object (see admin/Plans.jsx), we forward it. Both
+// return the public PlanResponse shape (no id); the page reloads via getAdminPlans().
 export async function createPlan(payload) {
-  return toFePlan(await apiClient.post("/admin/plans", payload));
+  return apiClient.post("/admin/plans", payload);
 }
 
 export async function updatePlan(id, payload) {
-  return toFePlan(await apiClient.put(`/admin/plans/${id}`, payload));
+  return apiClient.put(`/admin/plans/${id}`, payload);
 }
 
 export async function deletePlan(id) {

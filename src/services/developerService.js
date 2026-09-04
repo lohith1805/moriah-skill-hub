@@ -1,8 +1,5 @@
 import { mockRequest, apiClient } from "./apiClient";
 
-const BANK_KEY = "msh_assessment_bank";
-const PUBLISHED_KEY = "msh_dev_assessments";
-
 // ---------------------------------------------------------------------------
 // Projects — real backend (feature 15). GET/POST/PUT /api/v1/projects,
 // POST /projects/{id}/publish, GET /projects/{id}/challenges.
@@ -173,63 +170,53 @@ export async function markDocReviewed(docId) {
   return { reviewed: true, reviewedBy: d.devReviewedByFullName, reviewedAt: (d.devReviewedAt || "").slice(0, 10) };
 }
 
+// ---------------------------------------------------------------------------
+// Bug Challenges (feature 15 / gap B1.15) — a challenge is a child of a real
+// PROJECT: /api/v1/projects/{id}/challenges (list + multipart create),
+// GET/PUT/DELETE /api/v1/challenges/{id}. brokenCode is a required file, test
+// script optional; both come back as fresh presigned download URLs. This is
+// the same catalogue the Projects screen reads — no more separate localStorage
+// store, no more in-browser test runner.
+// ---------------------------------------------------------------------------
+
+// Every bug challenge across every project the caller can see — for dashboard
+// counts and any "all challenges" view. Fans out over the project list.
 export async function getBugChallenges() {
-  return mockRequest([]);
+  const projects = await getProjects().catch(() => []);
+  const perProject = await Promise.all(
+    projects.map((p) =>
+      getProjectChallenges(p.id)
+        .then((list) => list.map((c) => ({ ...c, project: p.title, projectId: p.id })))
+        .catch(() => [])
+    )
+  );
+  return perProject.flat();
 }
 
-// ---------------------------------------------------------------------------
-// Bug Challenges (Developer > Bug Challenges) — a challenge is real,
-// auto-graded broken code, not just a label: starterCode is the buggy
-// function the student edits, and testCases (functionName + args +
-// expected, same shape as Assessment Bank's Code questions) decide whether
-// their fix actually works. studentService.getBugChallengeDetails
-// reconstructs the same new Function(...) test runner used for Assessments,
-// and attemptBugChallenge() is what actually increments solved/attempts —
-// they're no longer hand-typed numbers.
-// ---------------------------------------------------------------------------
-
-const BUG_CHALLENGES_KEY = "msh_bug_challenges";
-
-export async function getDevBugChallenges() {
-  return mockRequest(readJSON(BUG_CHALLENGES_KEY));
+// POST /api/v1/projects/{id}/challenges — multipart (form fields + files).
+export async function createChallenge(projectId, { title, expectedBehaviour, difficulty, brokenCodeFile, testScriptFile }) {
+  const fields = { title, expectedBehaviour };
+  if (difficulty) fields.difficulty = DIFFICULTY_TO_API[difficulty] || difficulty;
+  const files = { brokenCode: brokenCodeFile };
+  if (testScriptFile) files.testScript = testScriptFile;
+  const res = await apiClient.requestMultipart(`/projects/${projectId}/challenges`, { method: "POST", fields, files });
+  return toFeChallenge(res);
 }
 
-// payload = { title, project, difficulty, description, functionName, starterCode, testCases }
-// testCases = [{ name, args, expected }] — same shape as Assessment Bank's Code questions.
-export async function createBugChallenge(payload) {
-  const challenges = readJSON(BUG_CHALLENGES_KEY);
-  const challenge = {
-    id: `bc_${Date.now()}`,
-    solved: 0,
-    attempts: 0,
-    ...payload,
-    testCases: (payload.testCases || []).map((tc, i) => ({ id: tc.id || i + 1, ...tc })),
-    createdAt: new Date().toISOString(),
-  };
-  challenges.unshift(challenge);
-  writeJSON(BUG_CHALLENGES_KEY, challenges);
-  return mockRequest(challenge, { delay: 400 });
+// PUT /api/v1/challenges/{id} — title / expectedBehaviour / difficulty only
+// (the broken-code and test-script files are immutable after upload).
+export async function updateChallenge(challengeId, { title, expectedBehaviour, difficulty }) {
+  const res = await apiClient.put(`/challenges/${challengeId}`, {
+    title,
+    expectedBehaviour,
+    difficulty: difficulty ? DIFFICULTY_TO_API[difficulty] || difficulty : undefined,
+  });
+  return toFeChallenge(res);
 }
 
-export async function updateBugChallenge(id, payload) {
-  const challenges = readJSON(BUG_CHALLENGES_KEY);
-  const idx = challenges.findIndex((c) => c.id === id);
-  if (idx === -1) throw new Error("Bug challenge not found.");
-  challenges[idx] = {
-    ...challenges[idx],
-    ...payload,
-    testCases: payload.testCases
-      ? payload.testCases.map((tc, i) => ({ id: tc.id || i + 1, ...tc }))
-      : challenges[idx].testCases,
-  };
-  writeJSON(BUG_CHALLENGES_KEY, challenges);
-  return mockRequest(challenges[idx], { delay: 300 });
-}
-
-export async function deleteBugChallenge(id) {
-  const challenges = readJSON(BUG_CHALLENGES_KEY).filter((c) => c.id !== id);
-  writeJSON(BUG_CHALLENGES_KEY, challenges);
-  return mockRequest(null);
+export async function deleteChallenge(challengeId) {
+  await apiClient.del(`/challenges/${challengeId}`);
+  return { id: challengeId };
 }
 
 // ---------------------------------------------------------------------------
@@ -268,6 +255,7 @@ function toFeResource(r) {
     description: r.description || "",
     type,
     category: r.category,
+    track: r.track || "",
     link: r.url,
     active: r.active !== false,
     updatedAt: (r.updatedAt || r.createdAt || "").slice(0, 10),
@@ -275,29 +263,32 @@ function toFeResource(r) {
   };
 }
 
-export async function getResourceLibrary() {
-  const res = await apiClient.get("/resources", { size: 100 });
+// `track` (optional) scopes the feed to that cohort track + the all-track rows.
+export async function getResourceLibrary(track) {
+  const res = await apiClient.get("/resources", track ? { size: 100, track } : { size: 100 });
   return (res && res.content ? res.content : []).map(toFeResource);
 }
 
-export async function createResource({ title, type, link, description }) {
+export async function createResource({ title, type, link, description, track }) {
   const category = RESOURCE_CATEGORY_FOR_TYPE[String(type || "").toLowerCase()] || "OTHER";
   const created = await apiClient.post("/resources", {
     title,
     description: description || undefined,
     category,
+    track: track || undefined,
     url: link,
     tags: type ? [type] : undefined,
   });
   return toFeResource(created);
 }
 
-export async function updateResource(id, { title, type, link, description, active }) {
+export async function updateResource(id, { title, type, link, description, active, track }) {
   const category = RESOURCE_CATEGORY_FOR_TYPE[String(type || "").toLowerCase()] || "OTHER";
   const updated = await apiClient.put(`/resources/${id}`, {
     title,
     description: description || undefined,
     category,
+    track: track || undefined,
     url: link,
     tags: type ? [type] : undefined,
     active: active !== false,
@@ -449,52 +440,9 @@ export async function bulkAddQuestionsToBank(bankId, questions) {
   return added;
 }
 
-export async function getPublishedAssessments() {
-  return mockRequest(readJSON(PUBLISHED_KEY));
-}
-
-// batchIds: [] means visible to every batch/student (no roster restriction
-// exists in this data model yet, so an empty list is the honest default —
-// see studentService.getAssessments for how this is consumed).
-export async function publishAssessment({ bankId, title, durationMinutes, passingScore, batchIds }) {
-  const banks = readJSON(BANK_KEY);
-  const bank = banks.find((b) => b.id === bankId);
-  if (!bank) throw new Error("Select a question bank first.");
-  if (!bank.questions.length) throw new Error("This question bank has no questions yet — add at least one.");
-
-  const published = readJSON(PUBLISHED_KEY);
-  const assessment = {
-    id: `asmt_${Date.now()}`,
-    bankId,
-    title: title || bank.title,
-    type: bank.type,
-    duration: `${durationMinutes} mins`,
-    passingScore: Number(passingScore) || 60,
-    batchIds: batchIds || [],
-    status: "Published",
-    questions: bank.questions, // snapshot
-    publishedAt: new Date().toISOString(),
-  };
-  published.unshift(assessment);
-  writeJSON(PUBLISHED_KEY, published);
-  return mockRequest(assessment, { delay: 500 });
-}
-
-export async function deletePublishedAssessment(id) {
-  const published = readJSON(PUBLISHED_KEY).filter((a) => a.id !== id);
-  writeJSON(PUBLISHED_KEY, published);
-  return mockRequest(null);
-}
-
-export async function getAssessmentAttempts() {
-  return mockRequest(readJSON("msh_assessment_attempts"));
-}
-
-// Lightweight read of Trainer's real batch list, so "Publish Assessment"
-// can optionally target specific batches instead of everyone.
-export async function getBatchesForAssignment() {
-  return mockRequest(readJSON("msh_batches"));
-}
+// Publishing a bank as a live assessment, and reading results, now live on the
+// TRAINER side (trainerService: publishAssessmentFromBank / getAssessmentResults)
+// — the developer only authors reusable banks here.
 
 // ---------------------------------------------------------------------------
 // Video Lesson authoring (MSH-FR-DEV-04) — Developer creates and publishes
@@ -535,6 +483,7 @@ function toFeLesson(l, quiz = []) {
     id: l.id,
     title: l.title,
     module: l.moduleName,
+    track: l.track || "",
     description: l.description || "",
     videoType: isYt ? "youtube" : "upload",
     videoId: isYt ? extractYouTubeId(url) : "",
@@ -568,7 +517,7 @@ export async function getDevVideoLessons() {
   return Promise.all(lessons.map(async (l) => toFeLesson(l, await fetchLessonQuiz(l.id))));
 }
 
-export async function createVideoLesson({ title, module, description, videoId, videoUrl, videoType = "youtube", duration }) {
+export async function createVideoLesson({ title, module, track, description, videoId, videoUrl, videoType = "youtube", duration }) {
   const finalUrl =
     videoType === "youtube"
       ? `https://www.youtube.com/watch?v=${extractYouTubeId(videoId || videoUrl)}`
@@ -577,6 +526,7 @@ export async function createVideoLesson({ title, module, description, videoId, v
     title,
     description: description || undefined,
     moduleName: module,
+    track: track || undefined,
     videoUrl: finalUrl,
     durationSeconds: clockToSeconds(duration),
     sortOrder: 0,
@@ -585,7 +535,7 @@ export async function createVideoLesson({ title, module, description, videoId, v
   return toFeLesson(created, []);
 }
 
-export async function updateVideoLesson(id, { title, module, description, videoId, videoUrl, videoType, duration, published }) {
+export async function updateVideoLesson(id, { title, module, track, description, videoId, videoUrl, videoType, duration, published }) {
   const finalUrl =
     videoType === "youtube"
       ? `https://www.youtube.com/watch?v=${extractYouTubeId(videoId || videoUrl)}`
@@ -594,6 +544,7 @@ export async function updateVideoLesson(id, { title, module, description, videoI
     title,
     description: description || undefined,
     moduleName: module,
+    track: track || undefined,
     videoUrl: finalUrl,
     durationSeconds: clockToSeconds(duration),
     sortOrder: 0,
@@ -632,6 +583,7 @@ export async function publishVideoLesson(id) {
     title: lesson.title,
     description: lesson.description || undefined,
     moduleName: lesson.moduleName,
+    track: lesson.track || undefined,
     videoUrl: lesson.videoUrl,
     durationSeconds: lesson.durationSeconds ?? undefined,
     sortOrder: lesson.sortOrder ?? 0,
