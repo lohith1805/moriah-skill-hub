@@ -2,6 +2,7 @@ package com.moriah.skillhub.common.audit;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.moriah.skillhub.common.security.ClientIpResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -26,6 +27,15 @@ import java.util.Optional;
  * triggered it (code-standards.md "Transactions") — an audited attempt that failed for an
  * unrelated reason later in the same transaction should still be visible in the trail, not
  * silently disappear with it.
+ * <p>
+ * <b>Security audit (2026-09-05):</b> {@code ipAddress} now goes through {@link ClientIpResolver}
+ * — the same trusted-proxy-aware resolution {@code RateLimitFilter} already uses — instead of a
+ * bare {@code request.getRemoteAddr()}. Behind any real reverse proxy or load balancer, the raw
+ * remote address is the proxy's own IP, not the caller's; every audit row this service has ever
+ * written was recording the wrong IP address in that topology (NFR-03: "audit... security login
+ * events" implies a real client IP, not the LB's). {@code AuthController} already used the
+ * resolver correctly for its own directly-written rows; this closes the gap for every other
+ * mutation this service audits.
  */
 @Service
 @RequiredArgsConstructor
@@ -34,6 +44,7 @@ public class AuditLogService {
 
     private final AuditLogRepository auditLogRepository;
     private final ObjectMapper objectMapper;
+    private final ClientIpResolver clientIpResolver;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(Long userId, String action, String entityType, Long entityId, Object oldValue, Object newValue) {
@@ -46,7 +57,7 @@ public class AuditLogService {
         auditLog.setNewValue(toJson(newValue));
 
         currentRequest().ifPresent(request -> {
-            auditLog.setIpAddress(request.getRemoteAddr());
+            auditLog.setIpAddress(clientIpResolver.resolve(request));
             auditLog.setUserAgent(request.getHeader("User-Agent"));
         });
 
@@ -71,7 +82,7 @@ public class AuditLogService {
      */
     public void recordAfterCommit(Long userId, String action, String entityType, Long entityId,
                                    Object oldValue, Object newValue) {
-        String ipAddress = currentRequest().map(HttpServletRequest::getRemoteAddr).orElse(null);
+        String ipAddress = currentRequest().map(clientIpResolver::resolve).orElse(null);
         String userAgent = currentRequest().map(r -> r.getHeader("User-Agent")).orElse(null);
 
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {

@@ -1,5 +1,6 @@
 package com.moriah.skillhub.admin;
 
+import com.moriah.skillhub.admin.dto.ExportFormat;
 import com.moriah.skillhub.admin.dto.ExportReport;
 import com.moriah.skillhub.admin.dto.ExportResult;
 import lombok.extern.slf4j.Slf4j;
@@ -16,7 +17,10 @@ import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.io.Writer;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Timestamp;
@@ -30,9 +34,11 @@ import java.util.concurrent.CompletableFuture;
  * proxy entirely, silently running synchronously. {@code ExportService} (a different bean) calls
  * across the proxy correctly.
  * <p>
- * build-plan.md feature 22: "Exports run {@code @Async} via {@code SXSSFWorkbook}". Runs on the
- * dedicated {@code exportExecutor} pool (audit 2026-08-31, H1) so a slow export can't starve
- * invoice generation.
+ * build-plan.md feature 22: "Exports run {@code @Async} via {@code SXSSFWorkbook}" — now joined by
+ * a CSV path (FRS MSH-FR-ADM-05) that reuses the exact same {@link ReportSpec} (SQL, headers, row
+ * mapper) per report, so the two formats can never drift into showing different columns or rows
+ * for what's nominally "the same export." Runs on the dedicated {@code exportExecutor} pool (audit
+ * 2026-08-31, H1) so a slow export can't starve invoice generation.
  * <p>
  * "target the read replica, so a 50,000-row XLSX export never touches the primary" — enforced by
  * construction: this class autowires only the {@code replicaJdbcTemplate}-qualified bean, never
@@ -43,8 +49,8 @@ import java.util.concurrent.CompletableFuture;
  * workbook, defeating {@code SXSSFWorkbook}'s streaming and — for the unbounded {@code audit_logs}
  * read — risking a multi-hundred-MB heap spike on an async thread. Rows now stream straight from
  * a forward-only, {@code fetchSize=Integer.MIN_VALUE} cursor into the {@code SXSSFSheet} (100 rows
- * live at a time on both the JDBC and POI sides), and every query is hard-capped at {@link
- * #MAX_EXPORT_ROWS}.
+ * live at a time on both the JDBC and POI sides) or straight into the CSV {@code Writer}, and every
+ * query is hard-capped at {@link #MAX_EXPORT_ROWS}.
  */
 @Service
 @Slf4j
@@ -66,34 +72,37 @@ public class ExportGenerationService {
      * future propagates to {@code ExportService}'s {@code .get()} as an {@code
      * ExecutionException}, which it converts to {@code EXPORT_GENERATION_FAILED}. */
     @Async("exportExecutor")
-    public CompletableFuture<ExportResult> generate(ExportReport report) {
+    public CompletableFuture<ExportResult> generate(ExportReport report, ExportFormat format) {
         try {
-            return CompletableFuture.completedFuture(buildWorkbook(report));
+            ReportSpec spec = specFor(report);
+            ExportResult result = format == ExportFormat.CSV ? buildCsv(spec) : buildWorkbook(report, spec);
+            if (report == ExportReport.AUDIT && result.rowCount() == MAX_EXPORT_ROWS) {
+                log.warn("[admin/export] AUDIT export truncated at the {}-row cap — older audit_logs rows "
+                        + "are not included; add a date-range filter to this endpoint if full history is needed",
+                        MAX_EXPORT_ROWS);
+            }
+            return CompletableFuture.completedFuture(result);
         } catch (Exception e) {
-            log.error("[admin/export] failed to generate {} export", report, e);
+            log.error("[admin/export] failed to generate {} {} export", report, format, e);
             CompletableFuture<ExportResult> failed = new CompletableFuture<>();
             failed.completeExceptionally(e);
             return failed;
         }
     }
 
-    private ExportResult buildWorkbook(ExportReport report) throws IOException {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        int rowCount;
-        try (SXSSFWorkbook workbook = new SXSSFWorkbook(100)) {
-            rowCount = switch (report) {
-                case USERS -> writeUsersSheet(workbook);
-                case REVENUE -> writeRevenueSheet(workbook);
-                case AUDIT -> writeAuditSheet(workbook);
-            };
-            workbook.write(out);
-            // try-with-resources calls close(), which disposes the streaming temp files in
-            // POI 5.x — the old explicit dispose() is deprecated.
-        }
-        return new ExportResult(out.toByteArray(), rowCount);
+    // ---------------------------------------------------------------------------------------
+    // Per-report query specs — the single source of truth both formats stream from.
+    // ---------------------------------------------------------------------------------------
+
+    private ReportSpec specFor(ExportReport report) {
+        return switch (report) {
+            case USERS -> usersSpec();
+            case REVENUE -> revenueSpec();
+            case AUDIT -> auditSpec();
+        };
     }
 
-    private int writeUsersSheet(SXSSFWorkbook workbook) {
+    private ReportSpec usersSpec() {
         String sql = """
                 SELECT u.uuid, u.full_name, u.email, u.status, u.created_at,
                        COALESCE(GROUP_CONCAT(r.code ORDER BY r.code SEPARATOR ','), '') AS roles
@@ -104,30 +113,30 @@ public class ExportGenerationService {
                  ORDER BY u.id
                  LIMIT %d
                 """.formatted(MAX_EXPORT_ROWS);
-        return streamSheet(workbook, "Users",
-                new String[] { "UUID", "Full Name", "Email", "Status", "Created At", "Roles" }, -1, sql,
+        return new ReportSpec("Users", new String[] { "UUID", "Full Name", "Email", "Status", "Created At", "Roles" },
+                -1, sql,
                 rs -> new Object[] {
                         rs.getString("uuid"), rs.getString("full_name"), rs.getString("email"),
                         rs.getString("status"), rs.getTimestamp("created_at"), rs.getString("roles") });
     }
 
-    private int writeRevenueSheet(SXSSFWorkbook workbook) {
+    private ReportSpec revenueSpec() {
         String sql = """
                 SELECT revenue_month, currency, total_captured
                   FROM v_revenue_monthly
                  ORDER BY revenue_month
                  LIMIT %d
                 """.formatted(MAX_EXPORT_ROWS);
-        return streamSheet(workbook, "Revenue", new String[] { "Month", "Currency", "Total Captured" }, 2, sql,
+        return new ReportSpec("Revenue", new String[] { "Month", "Currency", "Total Captured" }, 2, sql,
                 rs -> new Object[] {
                         rs.getString("revenue_month"), rs.getString("currency"), rs.getBigDecimal("total_captured") });
     }
 
-    private int writeAuditSheet(SXSSFWorkbook workbook) {
+    private ReportSpec auditSpec() {
         // old_value/new_value JSON blobs are deliberately excluded — a cell holding an
-        // arbitrary-length JSON document is a poor fit for a spreadsheet column; the full detail
-        // is available through GET /admin/audit for any one row. "Entity Ref" is the target
-        // user's uuid when entity_type = 'User', otherwise entity_id — never a raw users.id.
+        // arbitrary-length JSON document is a poor fit for a spreadsheet/CSV column; the full
+        // detail is available through GET /admin/audit for any one row. "Entity Ref" is the
+        // target user's uuid when entity_type = 'User', otherwise entity_id — never a raw users.id.
         String sql = """
                 SELECT a.id, actor.uuid AS actor_uuid, a.action, a.entity_type,
                        CASE WHEN a.entity_type = 'User' THEN target.uuid ELSE CAST(a.entity_id AS CHAR) END AS entity_ref,
@@ -138,31 +147,40 @@ public class ExportGenerationService {
                  ORDER BY a.created_at DESC
                  LIMIT %d
                 """.formatted(MAX_EXPORT_ROWS);
-        int written = streamSheet(workbook, "Audit",
+        return new ReportSpec("Audit",
                 new String[] { "ID", "Actor UUID", "Action", "Entity Type", "Entity Ref", "IP Address", "Created At" },
                 -1, sql,
                 rs -> new Object[] {
                         rs.getLong("id"), rs.getString("actor_uuid"), rs.getString("action"),
                         rs.getString("entity_type"), rs.getString("entity_ref"), rs.getString("ip_address"),
                         rs.getTimestamp("created_at") });
-        if (written == MAX_EXPORT_ROWS) {
-            log.warn("[admin/export] AUDIT export truncated at the {}-row cap — older audit_logs rows "
-                    + "are not included; add a date-range filter to this endpoint if full history is needed",
-                    MAX_EXPORT_ROWS);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // XLSX
+    // ---------------------------------------------------------------------------------------
+
+    private ExportResult buildWorkbook(ExportReport report, ReportSpec spec) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        int rowCount;
+        try (SXSSFWorkbook workbook = new SXSSFWorkbook(100)) {
+            rowCount = streamSheet(workbook, spec);
+            workbook.write(out);
+            // try-with-resources calls close(), which disposes the streaming temp files in
+            // POI 5.x — the old explicit dispose() is deprecated.
         }
-        return written;
+        return new ExportResult(out.toByteArray(), rowCount);
     }
 
     /**
-     * Streams {@code sql} straight into a new sheet, one row at a time, without ever holding the
-     * full result set in memory. Returns the number of data rows written.
+     * Streams {@code spec.sql} straight into a new sheet, one row at a time, without ever holding
+     * the full result set in memory. Returns the number of data rows written.
      */
-    private int streamSheet(SXSSFWorkbook workbook, String sheetName, String[] headers, int moneyColumnIndex,
-            String sql, RowMapper rowMapper) {
-        SXSSFSheet sheet = workbook.createSheet(sheetName);
+    private int streamSheet(SXSSFWorkbook workbook, ReportSpec spec) {
+        SXSSFSheet sheet = workbook.createSheet(spec.sheetName());
         Row headerRow = sheet.createRow(0);
-        for (int c = 0; c < headers.length; c++) {
-            headerRow.createCell(c).setCellValue(headers[c]);
+        for (int c = 0; c < spec.headers().length; c++) {
+            headerRow.createCell(c).setCellValue(spec.headers()[c]);
         }
 
         CellStyle moneyStyle = workbook.createCellStyle();
@@ -170,23 +188,17 @@ public class ExportGenerationService {
 
         int[] rowNum = { 0 };
         RowCallbackHandler intoSheet = rs -> {
-            Object[] values = rowMapper.map(rs);
+            Object[] values = spec.rowMapper().map(rs);
             Row row = sheet.createRow(++rowNum[0]);
             for (int c = 0; c < values.length; c++) {
                 Cell cell = row.createCell(c);
                 setCellValue(cell, values[c]);
-                if (c == moneyColumnIndex) {
+                if (c == spec.moneyColumnIndex()) {
                     cell.setCellStyle(moneyStyle);
                 }
             }
         };
-        replicaJdbcTemplate.query(connection -> {
-            PreparedStatement ps = connection.prepareStatement(sql, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
-            // MySQL Connector/J: row-by-row streaming instead of buffering the whole result set
-            // client-side.
-            ps.setFetchSize(Integer.MIN_VALUE);
-            return ps;
-        }, intoSheet);
+        streamQuery(spec.sql(), intoSheet);
         return rowNum[0];
     }
 
@@ -200,9 +212,87 @@ public class ExportGenerationService {
         }
     }
 
+    // ---------------------------------------------------------------------------------------
+    // CSV — same spec, same streaming-cursor approach, RFC 4180 quoting.
+    // ---------------------------------------------------------------------------------------
+
+    private ExportResult buildCsv(ReportSpec spec) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        // UTF-8 BOM so Excel (still the most common opener for a "download as CSV" link) detects
+        // the encoding instead of mis-rendering non-ASCII names/emails as mojibake.
+        out.write(0xEF);
+        out.write(0xBB);
+        out.write(0xBF);
+        int[] rowNum = { 0 };
+        try (Writer writer = new OutputStreamWriter(out, StandardCharsets.UTF_8)) {
+            writeCsvRow(writer, (Object[]) spec.headers());
+            RowCallbackHandler intoCsv = rs -> {
+                Object[] values = spec.rowMapper().map(rs);
+                Object[] formatted = new Object[values.length];
+                for (int c = 0; c < values.length; c++) {
+                    formatted[c] = formatCsvValue(values[c]);
+                }
+                // RowCallbackHandler#processRow only declares SQLException — writeCsvRow's
+                // IOException (an in-memory ByteArrayOutputStream/Writer, so realistically never
+                // actually thrown) is rethrown unchecked rather than silently swallowed.
+                try {
+                    writeCsvRow(writer, formatted);
+                } catch (IOException e) {
+                    throw new java.io.UncheckedIOException(e);
+                }
+                rowNum[0]++;
+            };
+            streamQuery(spec.sql(), intoCsv);
+        }
+        return new ExportResult(out.toByteArray(), rowNum[0]);
+    }
+
+    private Object formatCsvValue(Object value) {
+        return switch (value) {
+            case null -> "";
+            case BigDecimal bigDecimal -> bigDecimal.toPlainString();
+            case Timestamp timestamp -> timestamp.toInstant().toString();
+            default -> sanitiseCell(value.toString());
+        };
+    }
+
+    private void writeCsvRow(Writer writer, Object[] values) throws IOException {
+        for (int c = 0; c < values.length; c++) {
+            if (c > 0) {
+                writer.write(',');
+            }
+            writer.write(csvEscape(String.valueOf(values[c])));
+        }
+        writer.write("\r\n");
+    }
+
+    /** RFC 4180: a field is quoted (with internal quotes doubled) whenever it contains a comma,
+     * quote, or line break — quoting everything else too would be legal but noisier to read raw. */
+    private String csvEscape(String value) {
+        if (value.indexOf(',') >= 0 || value.indexOf('"') >= 0 || value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0) {
+            return "\"" + value.replace("\"", "\"\"") + "\"";
+        }
+        return value;
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Shared streaming cursor
+    // ---------------------------------------------------------------------------------------
+
+    private void streamQuery(String sql, RowCallbackHandler handler) {
+        replicaJdbcTemplate.query(connection -> {
+            PreparedStatement ps = connection.prepareStatement(sql, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+            // MySQL Connector/J: row-by-row streaming instead of buffering the whole result set
+            // client-side.
+            ps.setFetchSize(Integer.MIN_VALUE);
+            return ps;
+        }, handler);
+    }
+
     /** Audit 2026-08-31 (L6): neutralise spreadsheet/CSV formula injection (CWE-1236) — a value
      * starting with =, +, -, @, or a control char is prefixed with an apostrophe so Excel and
-     * downstream CSV tools treat it as literal text. */
+     * downstream CSV tools treat it as literal text. Shared by both formats — the CSV path is
+     * exactly the "downstream CSV tools" this guard already names. */
     private String sanitiseCell(String value) {
         if (value.isEmpty()) {
             return value;
@@ -217,5 +307,11 @@ public class ExportGenerationService {
     @FunctionalInterface
     private interface RowMapper {
         Object[] map(ResultSet rs) throws java.sql.SQLException;
+    }
+
+    /** One report's shape, independent of output format: sheet/file name, column headers, which
+     * column (if any) gets money formatting in XLSX, the query, and how a result-set row becomes a
+     * row of cell values. */
+    private record ReportSpec(String sheetName, String[] headers, int moneyColumnIndex, String sql, RowMapper rowMapper) {
     }
 }

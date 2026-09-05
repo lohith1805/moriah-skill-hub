@@ -20,6 +20,7 @@ public enum ErrorCode {
     FILE_TOO_LARGE(HttpStatus.BAD_REQUEST, "This file exceeds the maximum upload size."),
     INVALID_PR_URL(HttpStatus.BAD_REQUEST, "This does not look like a valid GitHub pull request URL."),
     EXPORT_REPORT_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "This export report type is not supported."),
+    EXPORT_FORMAT_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "This export format is not supported."),
     ROLE_NOT_STAFF_ASSIGNABLE(HttpStatus.BAD_REQUEST, "STUDENT and CLIENT are self-service roles and cannot be assigned to a staff invite."),
 
     // 401 — missing or expired credential

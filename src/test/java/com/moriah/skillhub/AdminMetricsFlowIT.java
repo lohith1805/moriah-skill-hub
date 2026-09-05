@@ -291,6 +291,36 @@ class AdminMetricsFlowIT extends IntegrationTestBase {
     }
 
     @Test
+    void exportUsersAsCsv_returnsPresignedCsvUrlWithCorrectRowCount() {
+        String adminToken = registerVerifyGrantRoleAndLogin("Admin Export Csv", "ADMIN");
+        long usersBefore = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM users", Long.class);
+
+        given()
+                .header("Authorization", "Bearer " + adminToken)
+            .when()
+                .post("/api/v1/admin/exports/users?format=csv")
+            .then()
+                .statusCode(200)
+                .body("data.report", equalTo("USERS"))
+                .body("data.format", equalTo("CSV"))
+                .body("data.rowCount", equalTo((int) usersBefore))
+                .body("data.downloadUrl", org.hamcrest.Matchers.containsString(".csv"));
+    }
+
+    @Test
+    void exportUnsupportedFormat_returns400() {
+        String adminToken = registerVerifyGrantRoleAndLogin("Admin Export Bad Format", "ADMIN");
+
+        given()
+                .header("Authorization", "Bearer " + adminToken)
+            .when()
+                .post("/api/v1/admin/exports/users?format=pdf")
+            .then()
+                .statusCode(400)
+                .body("error.code", equalTo("EXPORT_FORMAT_NOT_SUPPORTED"));
+    }
+
+    @Test
     void exportUnsupportedReport_returns400() {
         String adminToken = registerVerifyGrantRoleAndLogin("Admin Export Bad", "ADMIN");
 

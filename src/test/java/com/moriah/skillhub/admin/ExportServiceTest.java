@@ -1,5 +1,6 @@
 package com.moriah.skillhub.admin;
 
+import com.moriah.skillhub.admin.dto.ExportFormat;
 import com.moriah.skillhub.admin.dto.ExportReport;
 import com.moriah.skillhub.admin.dto.ExportResponse;
 import com.moriah.skillhub.admin.dto.ExportResult;
@@ -58,14 +59,15 @@ class ExportServiceTest {
     @Test
     void export_smallResult_deliveredInlineTrueAndPresigned() throws Exception {
         byte[] bytes = { 1, 2, 3 };
-        when(exportGenerationService.generate(ExportReport.USERS))
+        when(exportGenerationService.generate(ExportReport.USERS, ExportFormat.XLSX))
                 .thenReturn(CompletableFuture.completedFuture(new ExportResult(bytes, 5)));
         when(storageService.presignedGetUrl(eq("caller-uuid"), anyString(), any(Duration.class)))
                 .thenReturn(URI.create("https://example.com/presigned").toURL());
 
-        ExportResponse response = exportService.export("users", "caller-uuid");
+        ExportResponse response = exportService.export("users", "xlsx", "caller-uuid");
 
         assertThat(response.report()).isEqualTo("USERS");
+        assertThat(response.format()).isEqualTo("XLSX");
         assertThat(response.rowCount()).isEqualTo(5);
         assertThat(response.deliveredInline()).isTrue();
         assertThat(response.downloadUrl()).isEqualTo("https://example.com/presigned");
@@ -73,13 +75,40 @@ class ExportServiceTest {
     }
 
     @Test
+    void export_csvFormat_usesCsvContentTypeAndExtension() throws Exception {
+        byte[] bytes = { 4, 5, 6 };
+        when(exportGenerationService.generate(ExportReport.USERS, ExportFormat.CSV))
+                .thenReturn(CompletableFuture.completedFuture(new ExportResult(bytes, 3)));
+        when(storageService.presignedGetUrl(eq("caller-uuid"), anyString(), any(Duration.class)))
+                .thenReturn(URI.create("https://example.com/presigned.csv").toURL());
+
+        ExportResponse response = exportService.export("users", "csv", "caller-uuid");
+
+        assertThat(response.format()).isEqualTo("CSV");
+        verify(storageService).uploadTrusted(
+                org.mockito.ArgumentMatchers.contains(".csv"), eq(bytes), eq("text/csv;charset=UTF-8"));
+    }
+
+    @Test
+    void export_defaultFormat_isXlsx() throws Exception {
+        when(exportGenerationService.generate(ExportReport.USERS, ExportFormat.XLSX))
+                .thenReturn(CompletableFuture.completedFuture(new ExportResult(new byte[0], 0)));
+        when(storageService.presignedGetUrl(anyString(), anyString(), any(Duration.class)))
+                .thenReturn(URI.create("https://example.com/presigned").toURL());
+
+        ExportResponse response = exportService.export("users", "xlsx", "caller-uuid");
+
+        assertThat(response.format()).isEqualTo("XLSX");
+    }
+
+    @Test
     void export_largeResult_deliveredInlineFalse() throws Exception {
-        when(exportGenerationService.generate(ExportReport.AUDIT))
+        when(exportGenerationService.generate(ExportReport.AUDIT, ExportFormat.XLSX))
                 .thenReturn(CompletableFuture.completedFuture(new ExportResult(new byte[0], 50_000)));
         when(storageService.presignedGetUrl(anyString(), anyString(), any(Duration.class)))
                 .thenReturn(URI.create("https://example.com/presigned-large").toURL());
 
-        ExportResponse response = exportService.export("audit", "caller-uuid");
+        ExportResponse response = exportService.export("audit", "xlsx", "caller-uuid");
 
         assertThat(response.rowCount()).isEqualTo(50_000);
         assertThat(response.deliveredInline()).isFalse();
@@ -87,18 +116,25 @@ class ExportServiceTest {
 
     @Test
     void export_unsupportedReport_throwsBusinessException() {
-        assertThatThrownBy(() -> exportService.export("not-a-report", "caller-uuid"))
+        assertThatThrownBy(() -> exportService.export("not-a-report", "xlsx", "caller-uuid"))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EXPORT_REPORT_NOT_SUPPORTED);
+    }
+
+    @Test
+    void export_unsupportedFormat_throwsBusinessException() {
+        assertThatThrownBy(() -> exportService.export("users", "pdf", "caller-uuid"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EXPORT_FORMAT_NOT_SUPPORTED);
     }
 
     @Test
     void export_generationFails_throwsExportGenerationFailed() {
         CompletableFuture<ExportResult> failed = new CompletableFuture<>();
         failed.completeExceptionally(new RuntimeException("boom"));
-        when(exportGenerationService.generate(ExportReport.REVENUE)).thenReturn(failed);
+        when(exportGenerationService.generate(ExportReport.REVENUE, ExportFormat.XLSX)).thenReturn(failed);
 
-        assertThatThrownBy(() -> exportService.export("revenue", "caller-uuid"))
+        assertThatThrownBy(() -> exportService.export("revenue", "xlsx", "caller-uuid"))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EXPORT_GENERATION_FAILED);
     }

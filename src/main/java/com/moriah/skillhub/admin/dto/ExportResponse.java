@@ -14,6 +14,7 @@ import java.time.Instant;
  */
 public record ExportResponse(
         String report,
+        String format,
         long rowCount,
         boolean deliveredInline,
         String downloadUrl,
