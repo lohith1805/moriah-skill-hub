@@ -10,17 +10,23 @@ import com.moriah.skillhub.common.exception.ResourceNotFoundException;
 import com.moriah.skillhub.sprint.dto.CreateSprintRequest;
 import com.moriah.skillhub.sprint.dto.SprintProgressProjection;
 import com.moriah.skillhub.sprint.dto.SprintResponse;
+import com.moriah.skillhub.sprint.dto.SprintTaskStatusCount;
 import com.moriah.skillhub.sprint.dto.UpdateSprintRequest;
 import com.moriah.skillhub.sprint.dto.VelocityProjection;
 import com.moriah.skillhub.sprint.entity.Sprint;
 import com.moriah.skillhub.sprint.entity.SprintStatus;
+import com.moriah.skillhub.sprint.entity.TaskStatus;
 import com.moriah.skillhub.sprint.repository.SprintRepository;
+import com.moriah.skillhub.sprint.repository.TaskRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * code-standards.md's own canonical {@code SprintService} example, verbatim in shape — this is
@@ -39,6 +45,7 @@ public class SprintService {
     private final SprintRepository sprintRepository;
     private final BatchRepository batchRepository;
     private final BatchService batchService;
+    private final TaskRepository taskRepository;
 
     @Transactional
     public SprintResponse create(Long callerUserId, CreateSprintRequest request) {
@@ -147,6 +154,22 @@ public class SprintService {
     @Transactional(readOnly = true)
     public List<SprintProgressProjection> progressForBatch(Long batchId) {
         return sprintRepository.findProgressForBatch(batchId);
+    }
+
+    /** FRS MSH-FR-PM-02/MSH-FR-BA-03 task-level detail alongside {@link #progressForBatch}'s
+     * story-point burndown — {@code ClientProjectService#progress}'s companion data source, same
+     * cross-module boundary as {@link #progressForBatch} (never {@code TaskRepository} directly
+     * from {@code client/}). Keyed by sprint id, then status; a status with zero tasks in a given
+     * sprint is simply absent from that sprint's inner map (the backing {@code GROUP BY} never
+     * produces a zero-count row) — callers read it with {@code getOrDefault(status, 0L)}. */
+    @Transactional(readOnly = true)
+    public Map<Long, Map<TaskStatus, Long>> taskStatusCountsForBatch(Long batchId) {
+        Map<Long, Map<TaskStatus, Long>> bySprintId = new HashMap<>();
+        for (SprintTaskStatusCount row : taskRepository.countTaskStatusesForBatch(batchId)) {
+            bySprintId.computeIfAbsent(row.sprintId(), id -> new EnumMap<>(TaskStatus.class))
+                    .put(row.status(), row.count());
+        }
+        return bySprintId;
     }
 
     /**

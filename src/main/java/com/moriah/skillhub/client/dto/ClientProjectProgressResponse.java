@@ -1,6 +1,7 @@
 package com.moriah.skillhub.client.dto;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * {@code GET /api/v1/clients/projects/{id}/progress} — build-plan.md feature 21: "burndown and
@@ -30,13 +31,17 @@ public record ClientProjectProgressResponse(
     /** {@code sprintStatus} is a plain {@code String} ({@code SprintStatus.name()}), not the
      * {@code sprint} module's own enum type — this response contract stays independent of
      * {@code sprint}'s internal types, the same decoupling every other cross-module response in
-     * this codebase already follows. */
+     * this codebase already follows. {@code taskStatusCounts} (FRS MSH-FR-PM-02/MSH-FR-BA-03) is
+     * keyed by {@code TaskStatus.name()} for the same reason; a status absent from the map means
+     * zero tasks in that state for this sprint, not an error — callers should read it with a
+     * default of 0, not assume every status key is present. */
     public record SprintBurndown(
             Long sprintId,
             Integer sprintNumber,
             String sprintStatus,
             int plannedPoints,
-            int completedPoints
+            int completedPoints,
+            Map<String, Long> taskStatusCounts
     ) {
     }
 

@@ -18,6 +18,7 @@ import com.moriah.skillhub.common.security.AuthenticatedPrincipal;
 import com.moriah.skillhub.sprint.SprintService;
 import com.moriah.skillhub.sprint.dto.SprintProgressProjection;
 import com.moriah.skillhub.sprint.entity.SprintStatus;
+import com.moriah.skillhub.sprint.entity.TaskStatus;
 import com.moriah.skillhub.user.entity.RoleCode;
 import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.repository.UserRoleRepository;
@@ -31,6 +32,7 @@ import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -188,6 +190,7 @@ class ClientProjectServiceTest {
         when(sprintService.progressForBatch(200L)).thenReturn(List.of(
                 new SprintProgressProjection(1L, 1, SprintStatus.COMPLETED, 10, 10),
                 new SprintProgressProjection(2L, 2, SprintStatus.ACTIVE, 8, 3)));
+        when(sprintService.taskStatusCountsForBatch(200L)).thenReturn(Map.of());
         authenticateAs(50L, List.of("CLIENT"));
 
         ClientProjectProgressResponse response = clientProjectService.progress(10L, 50L);
@@ -198,6 +201,31 @@ class ClientProjectServiceTest {
         assertThat(response.burndown().get(0).sprintStatus()).isEqualTo("COMPLETED");
         assertThat(response.burndown().get(0).completedPoints()).isEqualTo(10);
         assertThat(response.burndown().get(1).completedPoints()).isEqualTo(3);
+    }
+
+    /** FRS MSH-FR-PM-02/MSH-FR-BA-03: task-status counts merged in alongside the story-point
+     * burndown, keyed by sprint id. A sprint absent from the task-counts map (sprint 2 here) gets
+     * an empty map, not null or a missing field. */
+    @Test
+    void progress_ownerClient_mergesTaskStatusCountsBySprintId() {
+        Client client = client(1L, 50L);
+        Batch batch = new Batch();
+        batch.setId(200L);
+        ClientProject project = project(10L, client, batch);
+        when(clientProjectRepository.findWithClientById(10L)).thenReturn(Optional.of(project));
+        when(sprintService.progressForBatch(200L)).thenReturn(List.of(
+                new SprintProgressProjection(1L, 1, SprintStatus.COMPLETED, 10, 10),
+                new SprintProgressProjection(2L, 2, SprintStatus.ACTIVE, 8, 3)));
+        when(sprintService.taskStatusCountsForBatch(200L)).thenReturn(Map.of(
+                1L, Map.of(TaskStatus.COMPLETED, 4L, TaskStatus.REJECTED, 1L)));
+        authenticateAs(50L, List.of("CLIENT"));
+
+        ClientProjectProgressResponse response = clientProjectService.progress(10L, 50L);
+
+        assertThat(response.burndown().get(0).taskStatusCounts())
+                .containsEntry("COMPLETED", 4L)
+                .containsEntry("REJECTED", 1L);
+        assertThat(response.burndown().get(1).taskStatusCounts()).isEmpty();
     }
 
     @Test

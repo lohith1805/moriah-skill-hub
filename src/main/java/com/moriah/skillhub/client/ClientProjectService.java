@@ -22,6 +22,7 @@ import com.moriah.skillhub.common.security.SecurityUtils;
 import com.moriah.skillhub.sprint.SprintService;
 import com.moriah.skillhub.sprint.dto.SprintProgressProjection;
 import com.moriah.skillhub.sprint.entity.SprintStatus;
+import com.moriah.skillhub.sprint.entity.TaskStatus;
 import com.moriah.skillhub.user.entity.RoleCode;
 import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.repository.UserRepository;
@@ -33,7 +34,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -58,9 +61,11 @@ public class ClientProjectService {
 
     /** Resolves the caller's own {@code client_id} via {@code clients.user_id = callerUserId}
      * (build-plan.md feature 21 decision). A CLIENT user with no linked {@code clients} row is a
-     * data-integrity impossibility given {@code ClientService#create}'s provisioning flow — every
-     * portal login it creates is linked in the same transaction — but this guards it anyway with
-     * a clear {@link ErrorCode#CLIENT_NOT_FOUND}, not an NPE. */
+     * data-integrity gap that shouldn't happen given {@code ClientService#create}'s provisioning
+     * flow — every portal login it creates is linked in the same transaction — but a CLIENT role
+     * granted some other way (direct role grant, a legacy account, an OAuth signup) can still hit
+     * it; see {@link #resolveOrCreateClient}, which self-heals a minimal row rather than
+     * dead-ending the submission with {@link ErrorCode#CLIENT_NOT_FOUND}. */
     @Transactional
     public ClientProjectResponse create(CreateClientProjectRequest request, Long callerUserId) {
         Client client = resolveOrCreateClient(callerUserId);
@@ -171,17 +176,42 @@ public class ClientProjectService {
         long completedSprints = sprints.stream().filter(s -> s.status() == SprintStatus.COMPLETED).count();
         double milestoneCompletion = totalSprints == 0 ? 0.0 : (double) completedSprints / totalSprints;
 
+        // FRS MSH-FR-PM-02/MSH-FR-BA-03: task-level detail (counts per status) alongside the
+        // existing story-point burndown — a second cross-module call, same boundary as
+        // progressForBatch (never TaskRepository directly from this module).
+        Map<Long, Map<TaskStatus, Long>> taskCountsBySprint = sprintService.taskStatusCountsForBatch(targetBatch.getId());
+
         List<SprintBurndown> burndown = sprints.stream()
                 .map(s -> new SprintBurndown(
                         s.sprintId(),
                         s.sprintNumber(),
                         s.status().name(),
                         s.plannedPoints() == null ? 0 : s.plannedPoints(),
-                        s.completedPoints() == null ? 0 : s.completedPoints()))
+                        s.completedPoints() == null ? 0 : s.completedPoints(),
+                        toTaskStatusCountsResponse(taskCountsBySprint.get(s.sprintId()))))
                 .toList();
 
         return new ClientProjectProgressResponse(project.getId(), project.getTitle(), targetBatch.getId(),
                 milestoneCompletion, burndown);
+    }
+
+    /** {@code null} (no row at all for this sprint in {@code taskCountsBySprint} — a sprint with
+     * zero tasks) becomes an empty map, not a null field on the response; a status with zero
+     * tasks is simply absent from the map either way, per {@link SprintBurndown}'s own Javadoc.
+     * {@link LinkedHashMap} keeps {@code TaskStatus} declaration order in the JSON output rather
+     * than whatever order {@code EnumMap} iteration happens to produce vs. a plain sort. */
+    private Map<String, Long> toTaskStatusCountsResponse(Map<TaskStatus, Long> countsByStatus) {
+        if (countsByStatus == null || countsByStatus.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Long> result = new LinkedHashMap<>();
+        for (TaskStatus status : TaskStatus.values()) {
+            Long count = countsByStatus.get(status);
+            if (count != null) {
+                result.put(status.name(), count);
+            }
+        }
+        return result;
     }
 
     /** No ownership check at all for {@code BUSINESS_ANALYST}/{@code ADMIN} — staff oversight is

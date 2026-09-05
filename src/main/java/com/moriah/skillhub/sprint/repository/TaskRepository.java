@@ -1,5 +1,6 @@
 package com.moriah.skillhub.sprint.repository;
 
+import com.moriah.skillhub.sprint.dto.SprintTaskStatusCount;
 import com.moriah.skillhub.sprint.entity.Task;
 import com.moriah.skillhub.sprint.entity.TaskStatus;
 import org.springframework.data.domain.Page;
@@ -61,4 +62,18 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
              WHERE t.assignedTo.id = :userId AND t.status = 'COMPLETED' AND t.projectId IS NOT NULL
             """)
     List<Long> findDistinctCompletedProjectIds(@Param("userId") Long userId);
+
+    /** {@code SprintService#taskStatusCountsForBatch}'s backing query — FRS MSH-FR-PM-02/
+     * MSH-FR-BA-03: task-level progress (counts per status), not just the story-point rollup
+     * {@code SprintProgressProjection} already carries. Aggregate counts only — no task title,
+     * assignee, or due date leaves this query, same privacy boundary {@code
+     * ClientProjectProgressResponse}'s own Javadoc already establishes for burndown data. */
+    @Query("""
+            SELECT new com.moriah.skillhub.sprint.dto.SprintTaskStatusCount(
+                t.sprint.id, t.status, COUNT(t))
+            FROM Task t
+            WHERE t.sprint.batch.id = :batchId
+            GROUP BY t.sprint.id, t.status
+            """)
+    List<SprintTaskStatusCount> countTaskStatusesForBatch(@Param("batchId") Long batchId);
 }

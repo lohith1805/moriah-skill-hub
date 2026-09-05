@@ -10,9 +10,12 @@ import com.moriah.skillhub.sprint.dto.CreateSprintRequest;
 import com.moriah.skillhub.sprint.dto.SprintResponse;
 import com.moriah.skillhub.sprint.dto.UpdateSprintRequest;
 import com.moriah.skillhub.sprint.dto.VelocityProjection;
+import com.moriah.skillhub.sprint.dto.SprintTaskStatusCount;
 import com.moriah.skillhub.sprint.entity.Sprint;
 import com.moriah.skillhub.sprint.entity.SprintStatus;
+import com.moriah.skillhub.sprint.entity.TaskStatus;
 import com.moriah.skillhub.sprint.repository.SprintRepository;
+import com.moriah.skillhub.sprint.repository.TaskRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -47,6 +50,8 @@ class SprintServiceTest {
     private BatchRepository batchRepository;
     @Mock
     private BatchService batchService;
+    @Mock
+    private TaskRepository taskRepository;
 
     @InjectMocks
     private SprintService sprintService;
@@ -247,5 +252,29 @@ class SprintServiceTest {
         sprint.setEndDate(LocalDate.now().plusDays(7));
         sprint.setCompletedPoints(0);
         return sprint;
+    }
+
+    // ---- taskStatusCountsForBatch ----
+
+    @Test
+    void taskStatusCountsForBatch_groupsCountsBySprintThenStatus() {
+        when(taskRepository.countTaskStatusesForBatch(100L)).thenReturn(List.of(
+                new SprintTaskStatusCount(1L, TaskStatus.COMPLETED, 5L),
+                new SprintTaskStatusCount(1L, TaskStatus.IN_PROGRESS, 2L),
+                new SprintTaskStatusCount(2L, TaskStatus.BACKLOG, 3L)));
+
+        var result = sprintService.taskStatusCountsForBatch(100L);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(1L)).containsEntry(TaskStatus.COMPLETED, 5L).containsEntry(TaskStatus.IN_PROGRESS, 2L);
+        assertThat(result.get(2L)).containsEntry(TaskStatus.BACKLOG, 3L);
+        assertThat(result.get(2L)).doesNotContainKey(TaskStatus.COMPLETED);
+    }
+
+    @Test
+    void taskStatusCountsForBatch_noTasks_returnsEmptyMap() {
+        when(taskRepository.countTaskStatusesForBatch(100L)).thenReturn(List.of());
+
+        assertThat(sprintService.taskStatusCountsForBatch(100L)).isEmpty();
     }
 }
