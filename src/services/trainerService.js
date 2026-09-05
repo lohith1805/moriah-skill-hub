@@ -426,22 +426,24 @@ export async function reviewSubmission(taskId, { submissionId, score, decision, 
 }
 
 // Analytics is fully derived from real records — real Sprints/Tasks for
-// velocity, real per-student Assessment attempts (written by the Developer's
-// Assessment engine, see developerService/studentService) for the quiz
-// trend, and the real registered-student roster for the performance table.
-// Nothing here is hardcoded demo data: every chart starts empty and fills
-// in as batches run sprints, students submit tasks, and students take
-// assessments — same philosophy as the rest of this app.
-// Derived client-side from real sprints + tasks + roster + PIP for one batch —
-// there is no aggregate analytics endpoint. `quiz` per student stays 0: a PM
-// has no endpoint for another user's assessment scores. Pass a batchId.
+// velocity, real per-student Assessment attempts (the same GET
+// /assessments/results the Assessments page's own "Results" tab reads, see
+// getAssessmentResults below) for the quiz trend, and the real
+// registered-student roster for the performance table. Nothing here is
+// hardcoded demo data: every chart starts empty and fills in as batches run
+// sprints, students submit tasks, and students take assessments — same
+// philosophy as the rest of this app.
+// Derived client-side from real sprints + tasks + roster + PIP + assessment
+// results for one batch — there is no single aggregate analytics endpoint.
+// Pass a batchId.
 export async function getAnalytics(batchId) {
   if (!batchId) return { velocity: [], quizTrend: [], studentRows: [] };
 
-  const [sprints, roster, pipCases] = await Promise.all([
+  const [sprints, roster, pipCases, results] = await Promise.all([
     getSprints(batchId),
     getStudentsForBatch(batchId).catch(() => []),
     getPipCases({ batchId }).catch(() => []),
+    getAssessmentResults({ batchId }).catch(() => []),
   ]);
   const sprintsAsc = sprints.slice().sort((a, b) => new Date(a.startDate || 0) - new Date(b.startDate || 0));
 
@@ -458,6 +460,38 @@ export async function getAnalytics(batchId) {
       .reduce((sum, t) => sum + (Number(t.points) || 0), 0),
   }));
 
+  // Only graded attempts (percentage != null excludes IN_PROGRESS/PENDING_MANUAL_GRADING)
+  // have anything meaningful to average.
+  const graded = results.filter((r) => r.percentage != null && r.submittedAt);
+
+  // Weekly average across the batch — bucketed to each attempt's Monday-start week so the
+  // trend reads as calendar weeks, not an arbitrary attempt-by-attempt line.
+  const weekBuckets = new Map();
+  graded.forEach((r) => {
+    const submitted = new Date(r.submittedAt);
+    const day = submitted.getDay();
+    const monday = new Date(submitted);
+    monday.setDate(submitted.getDate() + (day === 0 ? -6 : 1 - day));
+    monday.setHours(0, 0, 0, 0);
+    const key = monday.getTime();
+    if (!weekBuckets.has(key)) weekBuckets.set(key, []);
+    weekBuckets.get(key).push(r.percentage);
+  });
+  const quizTrend = [...weekBuckets.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([key, scores]) => ({
+      week: new Date(key).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }),
+      avg: Math.round(scores.reduce((sum, v) => sum + v, 0) / scores.length),
+    }));
+
+  // Per-student average, keyed by the same userUuid the roster and task assignee both use.
+  const quizByStudent = new Map();
+  graded.forEach((r) => {
+    if (!r.studentUuid) return;
+    if (!quizByStudent.has(r.studentUuid)) quizByStudent.set(r.studentUuid, []);
+    quizByStudent.get(r.studentUuid).push(r.percentage);
+  });
+
   const onPipUuids = new Set(
     pipCases.filter((p) => p.backendStatus === "TRIGGERED" || p.backendStatus === "IN_PROGRESS").map((p) => p.studentUuid)
   );
@@ -469,17 +503,21 @@ export async function getAnalytics(batchId) {
       const completion = mine.length
         ? Math.round((mine.filter((t) => t.status === "Completed").length / mine.length) * 100)
         : 0;
+      const quizScores = quizByStudent.get(s.userUuid) || [];
+      const quiz = quizScores.length
+        ? Math.round(quizScores.reduce((sum, v) => sum + v, 0) / quizScores.length)
+        : 0;
       return {
         name: s.name,
         completion,
-        quiz: 0,
+        quiz,
         onPip: onPipUuids.has(s.userUuid) || s.status === "ON_PIP",
         hasTasks: mine.length > 0,
-        hasQuizzes: false,
+        hasQuizzes: quizScores.length > 0,
       };
     });
 
-  return { velocity, quizTrend: [], studentRows };
+  return { velocity, quizTrend, studentRows };
 }
 
 // --- PIP (WIRED, read + day-15 review) --------------------------------
