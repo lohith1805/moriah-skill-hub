@@ -142,7 +142,14 @@ export default function AssessmentBank() {
     if (!bulkPreview?.questions?.length) return;
     setBulkImporting(true);
     try {
-      const toImport = bulkPreview.questions.map(({ question, options, correctAnswer }) => ({ text: question, options, correctAnswer }));
+      // questionFileParser.js resolves the correct answer to its OPTION TEXT (it only knows the
+      // source file's A/B/C/D letter) — addQuestionToBank needs a 0-based index instead, same
+      // contract the manual "Add a question" form already sends via mcqForm.correctIndex.
+      const toImport = bulkPreview.questions.map(({ question, options, correctAnswer }) => ({
+        text: question,
+        options,
+        correctAnswer: options.findIndex((o) => o === correctAnswer),
+      }));
       await bulkAddQuestionsToBank(activeBank.id, toImport);
       notify(`Imported ${toImport.length} question${toImport.length === 1 ? "" : "s"} from "${bulkFile.name}".`, { type: "success", title: "Bulk import complete" });
       setBulkFile(null);
