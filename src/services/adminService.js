@@ -320,9 +320,12 @@ export async function getAuditLogs({ page = 0, size = 50, action, entityType, us
 
 // ---- exports -----------------------------------------------------
 
-export async function exportReport(report) {
-  // Returns { downloadUrl, ... } from the backend.
-  return apiClient.post(`/admin/exports/${report}`);
+// format: "xlsx" (default) | "csv" | "pdf" — all three are real on the backend now (FRS
+// MSH-FR-ADM-05). No screen calls this yet; kept in parity with the API so whichever one does
+// doesn't have to guess at the param name.
+export async function exportReport(report, format = "xlsx") {
+  // Returns { report, format, rowCount, deliveredInline, downloadUrl, urlExpiresAt } from the backend.
+  return apiClient.post(`/admin/exports/${report}`, undefined, { format });
 }
 
 // ---- coupons (B1.12) -------------------------------------------
