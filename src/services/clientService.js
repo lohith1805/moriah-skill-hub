@@ -20,17 +20,29 @@ function toFeClientProject(p) {
     title: p.title,
     scope: p.scopeDescription || "",
     budgetRange: p.budgetRange || "",
+    additionalNotes: p.additionalNotes || "",
     targetBatchId: p.targetBatchId ?? null,
     allocated: p.targetBatchId != null,
     status: CP_STATUS_TO_FE[p.status] || p.status,
+    // Round-robin routing (auto-assigned; admin can override from the
+    // "Client Project Assignments" screen) — null until an active BA/
+    // developer exists to pick up the work.
+    assignedBaUuid: p.assignedBaUuid || null,
+    assignedBaName: p.assignedBaName || "",
+    assignedDeveloperUuid: p.assignedDeveloperUuid || null,
+    assignedDeveloperName: p.assignedDeveloperName || "",
     submittedAt: p.submittedAt ? String(p.submittedAt).slice(0, 10) : "",
   };
 }
 
 const asRows = (res) => (Array.isArray(res) ? res : res?.content ?? []);
 
-export async function getClientProjects({ status } = {}) {
-  const res = await apiClient.get("/clients/projects", status ? { status, size: 100 } : { size: 100 });
+export async function getClientProjects({ status, allProjects } = {}) {
+  const res = await apiClient.get("/clients/projects", {
+    status: status || undefined,
+    allProjects: allProjects || undefined,
+    size: 100,
+  });
   return asRows(res).map(toFeClientProject);
 }
 
@@ -39,12 +51,14 @@ export async function getMyRequirements() {
   return getClientProjects();
 }
 
-// POST /api/v1/clients/projects — { title, scopeDescription, budgetRange? }. Text only.
-export async function submitProjectRequirement({ title, scope, description, budgetRange }) {
+// POST /api/v1/clients/projects — { title, scopeDescription, budgetRange?, additionalNotes? }.
+// Text only — no file upload.
+export async function submitProjectRequirement({ title, scope, description, budgetRange, additionalNotes }) {
   const res = await apiClient.post("/clients/projects", {
     title: (title || "").trim(),
     scopeDescription: (scope || description || "").trim(),
     budgetRange: budgetRange || undefined,
+    additionalNotes: additionalNotes ? additionalNotes.trim() : undefined,
   });
   return toFeClientProject(res);
 }

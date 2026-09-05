@@ -55,6 +55,7 @@ const emptyForm = {
   budget: "",
   targetLeads: "",
   template: "",
+  leadIds: [],
 };
 
 export default function LeadCampaigns() {
@@ -72,13 +73,16 @@ export default function LeadCampaigns() {
   const [saving, setSaving] = useState(false);
   const { notify } = useToast();
 
+  // Whole lead list — loaded once, used by both the audience picker on
+  // Create/Edit and the Send modal's picker.
+  const [leads, setLeads] = useState([]);
+  const [leadsLoading, setLeadsLoading] = useState(true);
+
   // Send Campaign modal — client-side helper: opens a WhatsApp (wa.me) or
   // Email (mailto) compose window per selected lead and logs it on that lead's
   // interaction timeline. Purely a convenience layered over the campaign record.
   const [sendModalOpen, setSendModalOpen] = useState(false);
   const [sendCampaign, setSendCampaign] = useState(null);
-  const [leads, setLeads] = useState([]);
-  const [leadsLoading, setLeadsLoading] = useState(false);
   const [selectedLeadIds, setSelectedLeadIds] = useState(new Set());
   const [sending, setSending] = useState(false);
 
@@ -95,11 +99,27 @@ export default function LeadCampaigns() {
 
   useEffect(() => {
     load();
+    setLeadsLoading(true);
+    getLeads()
+      .then(setLeads)
+      .catch(() => setLeads([]))
+      .finally(() => setLeadsLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const toggleLeadIdIn = (setter) => (id) => {
+    setter((v) => ({
+      ...v,
+      leadIds: v.leadIds.includes(id) ? v.leadIds.filter((x) => x !== id) : [...v.leadIds, id],
+    }));
+  };
+  const toggleFormLead = toggleLeadIdIn(setValues);
+  const toggleEditLead = toggleLeadIdIn(setEditValues);
 
   const handleCreate = async (e) => {
     e.preventDefault();
     const validation = validateForm(values, { name: [required], channel: [required] });
+    if (!values.leadIds.length) validation.leadIds = "Select at least one lead for this campaign's audience.";
     setErrors(validation);
     if (Object.keys(validation).length) return;
 
@@ -107,7 +127,7 @@ export default function LeadCampaigns() {
     try {
       const created = await createCampaign(values);
       if (values.template) saveTemplate(created.id, values.template);
-      notify(`Campaign "${created.name}" created.`, { type: "success" });
+      notify(`Campaign "${created.name}" created for ${values.leadIds.length} lead(s).`, { type: "success" });
       setModalOpen(false);
       setValues(emptyForm);
       load();
@@ -130,6 +150,7 @@ export default function LeadCampaigns() {
       targetLeads: c.targetLeads ?? "",
       status: c.status || "PLANNED",
       template: c.template || "",
+      leadIds: c.leadIds || [],
     });
     setErrors({});
     setEditModalOpen(true);
@@ -184,7 +205,10 @@ export default function LeadCampaigns() {
     try {
       const allLeads = await getLeads();
       setLeads(allLeads);
-      setSelectedLeadIds(new Set(allLeads.map((l) => l.id)));
+      // Default to the audience picked when the campaign was created/edited; an
+      // older campaign with none saved falls back to everyone, same as before.
+      const savedAudience = campaign.leadIds && campaign.leadIds.length ? new Set(campaign.leadIds) : null;
+      setSelectedLeadIds(savedAudience || new Set(allLeads.map((l) => l.id)));
     } finally {
       setLeadsLoading(false);
     }
@@ -265,7 +289,7 @@ export default function LeadCampaigns() {
 
   const channelOptions = CAMPAIGN_CHANNELS.map((c) => ({ value: c.value, label: c.label }));
 
-  const formFields = (v, set) => (
+  const formFields = (v, set, toggleLead) => (
     <>
       <Input
         label="Campaign name"
@@ -330,6 +354,51 @@ export default function LeadCampaigns() {
         value={v.template}
         onChange={(e) => set((s) => ({ ...s, template: e.target.value }))}
       />
+
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-sm font-medium text-ink-900">
+            Audience <span className="text-error-500">*</span>
+          </span>
+          <span className="text-xs text-ink-500">{v.leadIds.length} selected</span>
+        </div>
+        {errors.leadIds && <p className="text-xs text-error-500 mb-1.5">{errors.leadIds}</p>}
+        {leadsLoading ? (
+          <p className="text-xs text-ink-400 py-3 text-center">Loading leads…</p>
+        ) : leads.length === 0 ? (
+          <p className="text-xs text-ink-400 py-3 text-center border border-border rounded-lg">
+            No leads in your pipeline yet — capture some first.
+          </p>
+        ) : (
+          <div className="flex flex-col divide-y divide-border border border-border rounded-xl max-h-[200px] overflow-y-auto bg-white">
+            <label className="flex items-center gap-3 px-3 py-2 bg-cream-50/60 cursor-pointer sticky top-0">
+              <input
+                type="checkbox"
+                checked={v.leadIds.length === leads.length}
+                onChange={() =>
+                  set((s) => ({ ...s, leadIds: s.leadIds.length === leads.length ? [] : leads.map((l) => l.id) }))
+                }
+                className="accent-primary-700"
+              />
+              <span className="text-xs font-semibold text-ink-700">Select all</span>
+            </label>
+            {leads.map((lead) => (
+              <label key={lead.id} className="flex items-center gap-3 px-3 py-2 hover:bg-cream-50/60 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={v.leadIds.includes(lead.id)}
+                  onChange={() => toggleLead(lead.id)}
+                  className="accent-primary-700"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-ink-900 truncate">{lead.name}</p>
+                  <p className="text-xs text-ink-400 truncate">{lead.phone || lead.email || "No contact on file"}</p>
+                </div>
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
     </>
   );
 
@@ -442,6 +511,7 @@ export default function LeadCampaigns() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         title="Create Campaign"
+        size="lg"
         footer={
           <>
             <Button variant="secondary" onClick={() => setModalOpen(false)} disabled={saving}>
@@ -454,7 +524,7 @@ export default function LeadCampaigns() {
         }
       >
         <form className="flex flex-col gap-4 text-left font-sans" onSubmit={handleCreate}>
-          {formFields(values, setValues)}
+          {formFields(values, setValues, toggleFormLead)}
         </form>
       </Modal>
 
@@ -463,6 +533,7 @@ export default function LeadCampaigns() {
         open={editModalOpen}
         onClose={() => setEditModalOpen(false)}
         title="Edit Campaign"
+        size="lg"
         footer={
           <>
             <Button variant="secondary" onClick={() => setEditModalOpen(false)} disabled={saving}>
@@ -475,7 +546,7 @@ export default function LeadCampaigns() {
         }
       >
         <form className="flex flex-col gap-4 text-left font-sans" onSubmit={handleEditSave}>
-          {formFields(editValues, setEditValues)}
+          {formFields(editValues, setEditValues, toggleEditLead)}
           <div className="flex flex-col gap-1.5">
             <span className="text-sm font-medium text-ink-900">Campaign status</span>
             <select

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   MoreVertical, Ban, CheckCircle2, Edit, UserPlus,
-  Building2, Copy, Check, XCircle, Mail, VolumeX, Trash2
+  Building2, Copy, Check, XCircle, Mail, VolumeX, Trash2, Users2, Shuffle
 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
@@ -15,8 +15,9 @@ import Tabs from "../../components/ui/Tabs";
 import EmptyState from "../../components/ui/EmptyState";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { Input, Select } from "../../components/ui/FormField";
-import { getAllUsers, updateUserRecord, deleteUserRecord } from "../../services/adminService";
+import { getAllUsers, updateUserRecord, deleteUserRecord, getStaffWorkload, assignClientProjectStaff } from "../../services/adminService";
 import { getPendingClients, setClientApproval, inviteStaffMember } from "../../services/authService";
+import { getClientProjects } from "../../services/clientService";
 import { ROLES, ROLE_LABELS } from "../../utils/constants";
 import { useToast } from "../../context/ToastContext";
 import { useDebounce } from "../../hooks/useDebounce";
@@ -49,6 +50,57 @@ export default function AdminUserManagement() {
   const [pendingClients, setPendingClients] = useState([]);
   const [pendingLoading, setPendingLoading] = useState(true);
   const [decidingId, setDecidingId] = useState(null);
+
+  // Client Project Assignments (BA/developer round-robin oversight)
+  const [assignProjects, setAssignProjects] = useState([]);
+  const [assignLoading, setAssignLoading] = useState(true);
+  const [baWorkload, setBaWorkload] = useState([]);
+  const [devWorkload, setDevWorkload] = useState([]);
+  const [assigningProject, setAssigningProject] = useState(null); // the project row being (re)assigned
+  const [assignValues, setAssignValues] = useState({ baUuid: "", developerUuid: "" });
+  const [assignSaving, setAssignSaving] = useState(false);
+
+  const loadAssignmentData = () => {
+    setAssignLoading(true);
+    Promise.all([
+      getClientProjects(),
+      getStaffWorkload("BUSINESS_ANALYST").catch(() => []),
+      getStaffWorkload("DEVELOPER").catch(() => []),
+    ])
+      .then(([projects, ba, dev]) => {
+        setAssignProjects(projects);
+        setBaWorkload(ba);
+        setDevWorkload(dev);
+      })
+      .catch((e) => notify(e?.message || "Couldn't load client project assignments.", { type: "error" }))
+      .finally(() => setAssignLoading(false));
+  };
+
+  useEffect(() => {
+    loadAssignmentData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const openAssign = (project) => {
+    setAssigningProject(project);
+    setAssignValues({ baUuid: project.assignedBaUuid || "", developerUuid: project.assignedDeveloperUuid || "" });
+  };
+
+  const saveAssignment = async (e) => {
+    e.preventDefault();
+    if (!assigningProject) return;
+    setAssignSaving(true);
+    try {
+      await assignClientProjectStaff(assigningProject.id, assignValues);
+      notify(`Assignment updated for "${assigningProject.title}".`, { type: "success" });
+      setAssigningProject(null);
+      loadAssignmentData();
+    } catch (err) {
+      notify(err?.message || "Couldn't update this assignment.", { type: "error" });
+    } finally {
+      setAssignSaving(false);
+    }
+  };
 
   // Invite Staff modal
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -232,6 +284,7 @@ export default function AdminUserManagement() {
           tabs={[
             { key: "all", label: `All Users (${users.length})` },
             { key: "pending", label: `Pending Client Approvals${pendingClients.length ? ` (${pendingClients.length})` : ""}` },
+            { key: "assignments", label: "Client Project Assignments" },
           ]}
         >
           {(active) => active === "all" ? (
@@ -282,7 +335,7 @@ export default function AdminUserManagement() {
                 ]}
               />
             </div>
-          ) : (
+          ) : active === "pending" ? (
             <div>
               {pendingLoading ? (
                 <p className="text-sm text-ink-400 py-8 text-center">Loading pending requests…</p>
@@ -314,6 +367,64 @@ export default function AdminUserManagement() {
                   ))}
                 </div>
               )}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <p className="text-sm text-ink-500">
+                A client project auto-assigns the least-busy active BA the moment it's submitted, and the
+                least-busy active developer the moment a BA first signs off a BRD/FRS. Override either pick
+                here — a BA out sick, nobody active yet, a developer better suited to the stack, etc.
+              </p>
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="rounded-lg border border-border p-3">
+                  <p className="text-xs font-semibold text-ink-700 mb-2 flex items-center gap-1.5"><Users2 size={13} /> Business Analyst workload</p>
+                  {baWorkload.length === 0 ? (
+                    <p className="text-xs text-ink-400">No active Business Analysts yet.</p>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      {baWorkload.map((w) => (
+                        <div key={w.uuid} className="flex items-center justify-between text-xs">
+                          <span className="text-ink-800">{w.name}</span>
+                          <Badge tone={w.tone}>{w.label} · {w.openProjectCount} open</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="rounded-lg border border-border p-3">
+                  <p className="text-xs font-semibold text-ink-700 mb-2 flex items-center gap-1.5"><Users2 size={13} /> Developer workload</p>
+                  {devWorkload.length === 0 ? (
+                    <p className="text-xs text-ink-400">No active Developers yet.</p>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      {devWorkload.map((w) => (
+                        <div key={w.uuid} className="flex items-center justify-between text-xs">
+                          <span className="text-ink-800">{w.name}</span>
+                          <Badge tone={w.tone}>{w.label} · {w.openProjectCount} open</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <Table
+                loading={assignLoading}
+                data={assignProjects}
+                emptyTitle="No client projects yet"
+                columns={[
+                  { key: "title", header: "Project", className: "text-left font-medium text-ink-900", render: (r) => (
+                    <div><p className="font-semibold text-ink-900">{r.title}</p><p className="text-xs text-ink-500">{r.clientName}</p></div>
+                  ) },
+                  { key: "assignedBaName", header: "Assigned BA", className: "text-left text-xs", render: (r) => r.assignedBaName || <span className="text-ink-400">Unassigned</span> },
+                  { key: "assignedDeveloperName", header: "Assigned Developer", className: "text-left text-xs", render: (r) => r.assignedDeveloperName || <span className="text-ink-400">Unassigned</span> },
+                  { key: "status", header: "Status", className: "text-left", render: (r) => <Badge tone={r.status === "Completed" ? "success" : r.status === "In Progress" ? "primary" : "warning"}>{r.status}</Badge> },
+                  { key: "action", header: "", className: "text-right", render: (r) => (
+                    <Button size="sm" variant="secondary" icon={Shuffle} onClick={() => openAssign(r)}>Reassign</Button>
+                  ) },
+                ]}
+              />
             </div>
           )}
         </Tabs>
@@ -377,6 +488,37 @@ export default function AdminUserManagement() {
             <Select label="Role" required options={Object.entries(ROLE_LABELS).map(([value, label]) => ({ value, label }))} value={editValues.role} onChange={(e) => setEditValues((v) => ({ ...v, role: e.target.value }))} />
             <Select label="Status" options={[{ value: "Active", label: "Active" }, { value: "Muted", label: "Muted (Read-Only)" }, { value: "Suspended", label: "Suspended" }]} value={editValues.status} onChange={(e) => setEditValues((v) => ({ ...v, status: e.target.value }))} />
           </div>
+        </form>
+      </Modal>
+
+      {/* Reassign BA/Developer */}
+      <Modal
+        open={!!assigningProject}
+        onClose={() => setAssigningProject(null)}
+        title={`Reassign — ${assigningProject?.title || ""}`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setAssigningProject(null)}>Cancel</Button>
+            <Button loading={assignSaving} icon={Shuffle} onClick={saveAssignment}>Save Assignment</Button>
+          </>
+        }
+      >
+        <form className="flex flex-col gap-4 text-left font-sans" onSubmit={saveAssignment}>
+          <Select
+            label="Business Analyst"
+            placeholder="Leave unassigned"
+            options={baWorkload.map((w) => ({ value: w.uuid, label: `${w.name} — ${w.label} (${w.openProjectCount} open)` }))}
+            value={assignValues.baUuid}
+            onChange={(e) => setAssignValues((v) => ({ ...v, baUuid: e.target.value }))}
+          />
+          <Select
+            label="Developer"
+            placeholder="Leave unassigned"
+            options={devWorkload.map((w) => ({ value: w.uuid, label: `${w.name} — ${w.label} (${w.openProjectCount} open)` }))}
+            value={assignValues.developerUuid}
+            onChange={(e) => setAssignValues((v) => ({ ...v, developerUuid: e.target.value }))}
+          />
+          <p className="text-xs text-ink-400">Leaving a field on its current value keeps that assignment untouched.</p>
         </form>
       </Modal>
 

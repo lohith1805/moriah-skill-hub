@@ -341,3 +341,34 @@ export async function deleteCoupon(code) {
   await apiClient.del(`/admin/coupons/${code}`);
   return { code };
 }
+
+// ---- client project assignment (BA/developer round-robin) --------
+//   GET /api/v1/admin/staff-workload?role=BUSINESS_ANALYST|DEVELOPER
+//   PUT /api/v1/admin/client-projects/{id}/assignment  { baUuid?, developerUuid? }
+// A project auto-assigns the least-busy BA at submission, and the least-busy
+// developer the moment a BA first signs off a BRD/FRS — this screen is only
+// for admin oversight/override (a BA out sick, nobody active yet, etc).
+
+const WORKLOAD_LABEL_TONE = { Available: "success", Busy: "warning", "High workload": "error" };
+
+function toFeStaffWorkload(w) {
+  return {
+    uuid: w.userUuid,
+    name: w.fullName,
+    openProjectCount: w.openProjectCount,
+    label: w.label,
+    tone: WORKLOAD_LABEL_TONE[w.label] || "neutral",
+  };
+}
+
+export async function getStaffWorkload(role) {
+  const res = await apiClient.get("/admin/staff-workload", { role });
+  return (Array.isArray(res) ? res : []).map(toFeStaffWorkload);
+}
+
+export async function assignClientProjectStaff(clientProjectId, { baUuid, developerUuid } = {}) {
+  return apiClient.put(`/admin/client-projects/${clientProjectId}/assignment`, {
+    baUuid: baUuid || undefined,
+    developerUuid: developerUuid || undefined,
+  });
+}

@@ -22,6 +22,7 @@ import NotFound from "../pages/shared/NotFound";
 import Unauthorized from "../pages/shared/Unauthorized";
 import SharedProfile from "../pages/shared/Profile";
 import SharedSettings from "../pages/shared/Settings";
+import ClientProjectDocuments from "../pages/shared/ClientProjectDocuments";
 
 // Student
 import StudentDashboard from "../pages/student/Dashboard";
@@ -158,6 +159,7 @@ export default function AppRoutes() {
           <Route path="/developer/dashboard" element={<DeveloperDashboard />} />
           <Route path="/developer/projects" element={<DeveloperProjects />} />
           <Route path="/developer/client-requirements" element={<DeveloperClientRequirements />} />
+          <Route path="/developer/project-documents" element={<ClientProjectDocuments />} />
           <Route path="/developer/bug-challenges" element={<DeveloperBugChallenges />} />
           <Route path="/developer/video-lessons" element={<DeveloperVideoLessons />} />
           <Route path="/developer/assessment-bank" element={<DeveloperAssessmentBank />} />
@@ -198,6 +200,7 @@ export default function AppRoutes() {
         <Route element={<DashboardLayout />}>
           <Route path="/ba/dashboard" element={<BaDashboard />} />
           <Route path="/ba/documents" element={<BaDocuments />} />
+          <Route path="/ba/project-documents" element={<ClientProjectDocuments />} />
           <Route path="/ba/resource-planning" element={<BaResourcePlanning />} />
           <Route path="/ba/client-review" element={<BaClientReview />} />
           <Route path="/ba/meetings" element={<BaMeetings />} />
@@ -225,6 +228,7 @@ export default function AppRoutes() {
         <Route element={<DashboardLayout />}>
           <Route path="/client/dashboard" element={<ClientDashboard />} />
           <Route path="/client/projects" element={<ClientProjects />} />
+          <Route path="/client/project-documents" element={<ClientProjectDocuments />} />
           <Route path="/client/talent-pool" element={<ClientTalentPool />} />
           <Route path="/client/demos" element={<ClientDemos />} />
           <Route path="/client/profile" element={<SharedProfile />} />

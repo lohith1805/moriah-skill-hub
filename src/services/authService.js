@@ -307,9 +307,26 @@ export async function resetPassword(token, newPassword) {
 
 // ---- admin: client approval queue -----------------------------------
 
+// ClientRequestResponse comes back as { uuid, fullName, email, phone,
+// companyName, industry, status, submittedAt } — normalize to the { id, name,
+// company } shape the User Management "Pending Client Approvals" tab renders
+// and posts back for approve/reject.
+function toFeClientRequest(r) {
+  return {
+    id: r.uuid,
+    name: r.fullName,
+    email: r.email,
+    phone: r.phone || "",
+    company: r.companyName,
+    industry: r.industry || "",
+    status: r.status,
+    createdAt: r.submittedAt,
+  };
+}
+
 export async function getPendingClients(status = "PENDING_APPROVAL") {
   const page = await apiClient.get("/admin/client-requests", { status });
-  return page && page.content ? page.content : [];
+  return (page && page.content ? page.content : []).map(toFeClientRequest);
 }
 
 export async function setClientApproval(uuid, approve, reason) {

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import {
   Plus, Phone, MessageCircle, Mail, Edit, Trash2, Link2, Copy, Check,
   Search, Filter, Upload, Clock, Calendar, CheckCircle2, Video, AlertCircle,
-  FileSpreadsheet, Sparkles, Send, UserCheck, ShieldAlert
+  FileSpreadsheet, Sparkles, Send, UserCheck, ShieldAlert, Download, AlertTriangle
 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
@@ -10,12 +10,14 @@ import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
 import Badge from "../../components/ui/Badge";
 import KanbanBoard from "../../components/widgets/KanbanBoard";
+import FileUpload from "../../components/ui/FileUpload";
 import { Input, Select, Textarea } from "../../components/ui/FormField";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import {
   getLeads, createLead, updateLead, updateLeadStage, deleteLead,
   logInteraction, checkDuplicateLead, bulkImportLeads, getLeadActivities,
-  isBackwardStage, PREAPPROVED_WHATSAPP_TEMPLATES
+  isBackwardStage, PREAPPROVED_WHATSAPP_TEMPLATES,
+  downloadLeadImportTemplate, parseLeadImportFile
 } from "../../services/crmService";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required, isPhone, isEmail } from "../../utils/validators";
@@ -63,6 +65,10 @@ export default function LeadPipeline() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState("");
   const [bulkResult, setBulkResult] = useState(null);
+  const [bulkFile, setBulkFile] = useState(null);
+  const [bulkParsing, setBulkParsing] = useState(false);
+  const [bulkPreview, setBulkPreview] = useState(null); // { rows, problems }
+  const [bulkImporting, setBulkImporting] = useState(false);
 
   // Edit Modal
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -182,34 +188,60 @@ export default function LeadPipeline() {
     }
   };
 
-  // Bulk Ingest Process
-  const handleBulkImport = async () => {
-    if (!bulkText.trim()) return;
-    const lines = bulkText.trim().split("\n");
-    const parsed = [];
+  // File selected in the bulk modal — parse it (.csv/.xlsx/.xls/.txt) and show
+  // a preview before anything actually hits the pipeline.
+  const handleBulkFileSelected = async (files) => {
+    const file = files?.[0];
+    setBulkFile(file || null);
+    setBulkPreview(null);
+    if (!file) return;
+    setBulkParsing(true);
+    try {
+      const { rows, problems } = await parseLeadImportFile(file);
+      setBulkPreview({ rows, problems });
+    } catch (err) {
+      notify(err.message || "Couldn't read that file.", { type: "error" });
+    } finally {
+      setBulkParsing(false);
+    }
+  };
 
-    for (const line of lines) {
-      const parts = line.split(",").map((s) => s.trim());
-      if (parts.length >= 2) {
-        parsed.push({
-          name: parts[0],
-          phone: parts[1],
-          email: parts[2] || "",
-          type: parts[3] || "Student (B2C)",
-          source: "Bulk CSV Ingestion"
-        });
+  // Bulk Ingest Process — a parsed file takes priority; falls back to the
+  // pasted-text box if no file was picked (same "Name, Phone, Email, Type"
+  // per line format as before).
+  const handleBulkImport = async () => {
+    let parsed = bulkPreview?.rows || [];
+
+    if (!parsed.length && bulkText.trim()) {
+      const lines = bulkText.trim().split("\n");
+      for (const line of lines) {
+        const parts = line.split(",").map((s) => s.trim());
+        if (parts.length >= 2) {
+          parsed.push({
+            name: parts[0],
+            phone: parts[1],
+            email: parts[2] || "",
+            type: parts[3] || "Student (B2C)",
+            source: "Bulk Import",
+          });
+        }
       }
     }
 
     if (parsed.length === 0) {
-      notify("Invalid format. Please enter 'Name, Phone, Email, Type' per line.", { type: "error" });
+      notify("Upload a file or paste at least one 'Name, Phone, Email, Type' line.", { type: "error" });
       return;
     }
 
-    const res = await bulkImportLeads(parsed);
-    setBulkResult(res);
-    notify(`Bulk ingestion: ${res.added} leads added, ${res.skipped} duplicates merged/skipped.`, { type: "success" });
-    load();
+    setBulkImporting(true);
+    try {
+      const res = await bulkImportLeads(parsed);
+      setBulkResult(res);
+      notify(`Bulk ingestion: ${res.added} leads added, ${res.skipped} duplicates merged/skipped.`, { type: "success" });
+      load();
+    } finally {
+      setBulkImporting(false);
+    }
   };
 
   // WhatsApp Dialog Handlers
@@ -399,8 +431,18 @@ export default function LeadPipeline() {
         breadcrumbs={[{ label: "Dashboard", to: "/leads/dashboard" }, { label: "Pipeline" }]}
         action={
           <div className="flex gap-2">
-            <Button variant="secondary" icon={Upload} onClick={() => { setBulkText(""); setBulkResult(null); setBulkOpen(true); }}>
-              Bulk Ingest CSV
+            <Button
+              variant="secondary"
+              icon={Upload}
+              onClick={() => {
+                setBulkText("");
+                setBulkResult(null);
+                setBulkFile(null);
+                setBulkPreview(null);
+                setBulkOpen(true);
+              }}
+            >
+              Bulk Ingest Leads
             </Button>
             <Button icon={Plus} onClick={() => { setErrors({}); setDuplicateWarning(null); setModalOpen(true); }}>
               Capture Lead
@@ -643,32 +685,71 @@ export default function LeadPipeline() {
         </form>
       </Modal>
 
-      {/* MSH-FR-CRM-01: Bulk CSV / Multi-Source Ingestion Modal */}
+      {/* MSH-FR-CRM-01: Bulk Multi-Source Ingestion Modal */}
       <Modal
         open={bulkOpen}
         onClose={() => setBulkOpen(false)}
-        title="Bulk Lead Ingestion (CSV / Raw Text)"
-        description="Paste multiple leads at once. Moriah CRM automatically deduplicates records before saving."
+        title="Bulk Lead Ingestion"
+        description="Upload a file of leads at once — Moriah CRM automatically deduplicates records before saving."
+        size="lg"
         footer={
           <>
             <Button variant="secondary" onClick={() => setBulkOpen(false)}>Close</Button>
-            <Button icon={Upload} onClick={handleBulkImport}>Process & Ingest</Button>
+            <Button icon={Upload} loading={bulkImporting} onClick={handleBulkImport}>
+              {bulkPreview?.rows?.length ? `Ingest ${bulkPreview.rows.length} lead${bulkPreview.rows.length === 1 ? "" : "s"}` : "Process & Ingest"}
+            </Button>
           </>
         }
       >
         <div className="flex flex-col gap-4 text-left font-sans">
-          <div className="text-xs text-ink-600 bg-cream-50 p-2.5 rounded-lg border border-border">
-            <strong>Format:</strong> <code>Name, Phone, Email, Type</code> (One per line)
-            <br />
-            <strong>Example:</strong> <code>Arun Kumar, 9876543299, arun@gmail.com, Student (B2C), 14999</code>
+          <div className="rounded-lg border border-dashed border-primary-300 bg-primary-50/40 p-3">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <p className="text-xs font-semibold text-ink-700">Upload a file — .csv, .xlsx, .xls, or .txt</p>
+              <Button size="xs" variant="secondary" icon={Download} onClick={downloadLeadImportTemplate}>
+                Download template
+              </Button>
+            </div>
+            <p className="text-xs text-ink-500 mb-2">
+              Columns: <code>Name, Phone, Email, Type, Source</code> (Email and Source are optional; a header row is fine, it's skipped automatically).
+            </p>
+            <FileUpload
+              hint=".csv, .xlsx, .xls, or .txt"
+              accept=".csv,.xlsx,.xls,.txt"
+              initialFiles={bulkFile ? [bulkFile] : []}
+              onChange={handleBulkFileSelected}
+            />
+            {bulkParsing && <p className="text-xs text-ink-500 mt-2">Reading file…</p>}
+            {bulkPreview && (
+              <div className="mt-3 flex flex-col gap-2">
+                {bulkPreview.rows.length > 0 && (
+                  <p className="text-xs font-medium text-success-600">
+                    {bulkPreview.rows.length} lead{bulkPreview.rows.length === 1 ? "" : "s"} ready to ingest.
+                  </p>
+                )}
+                {bulkPreview.problems.length > 0 && (
+                  <div className="rounded-lg bg-warning-50 border border-warning-500/30 p-2.5 flex flex-col gap-1">
+                    <p className="text-xs font-semibold text-warning-600 flex items-center gap-1.5">
+                      <AlertTriangle size={13} /> {bulkPreview.problems.length} row{bulkPreview.problems.length === 1 ? "" : "s"} skipped
+                    </p>
+                    {bulkPreview.problems.slice(0, 5).map((p, i) => <p key={i} className="text-xs text-warning-600">{p}</p>)}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-          <Textarea
-            label="Paste CSV / Lead Stream Data"
-            rows={6}
-            placeholder={`Aarav Mehta, 9123456711, aarav@gmail.com, Student (B2C), 14999\nProf. Meenakshi, 9845112233, hod@svce.edu.in, College Tie-up, 150000\nNexus Software, 9900112233, hr@nexus.io, Enterprise / Corporate, 250000`}
-            value={bulkText}
-            onChange={(e) => setBulkText(e.target.value)}
-          />
+
+          <details className="text-xs text-ink-500">
+            <summary className="cursor-pointer font-semibold text-ink-700">…or paste raw text instead</summary>
+            <div className="mt-2 flex flex-col gap-2">
+              <p>Format: <code>Name, Phone, Email, Type</code> — one per line.</p>
+              <Textarea
+                rows={5}
+                placeholder={`Aarav Mehta, 9123456711, aarav@gmail.com, Student (B2C)\nProf. Meenakshi, 9845112233, hod@svce.edu.in, College Tie-up`}
+                value={bulkText}
+                onChange={(e) => setBulkText(e.target.value)}
+              />
+            </div>
+          </details>
 
           {bulkResult && (
             <div className="p-3 bg-success-50 border border-success-200 text-success-800 rounded-lg text-xs">

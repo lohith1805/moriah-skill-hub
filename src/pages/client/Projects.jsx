@@ -21,7 +21,7 @@ export default function ClientProjects() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [values, setValues] = useState({ title: "", scope: "", budgetRange: "" });
+  const [values, setValues] = useState({ title: "", scope: "", budgetRange: "", additionalNotes: "" });
   const [errors, setErrors] = useState({});
 
   const [progress, setProgress] = useState(null); // { title, milestoneCompletion, burndown }
@@ -47,7 +47,7 @@ export default function ClientProjects() {
       await submitProjectRequirement(values);
       notify("Project scope submitted — our BA team will review it.", { type: "success", title: "Submitted" });
       setModalOpen(false);
-      setValues({ title: "", scope: "", budgetRange: "" });
+      setValues({ title: "", scope: "", budgetRange: "", additionalNotes: "" });
       load();
     } catch (err) {
       notify(err?.message || "Couldn't submit. Please try again.", { type: "error" });
@@ -75,7 +75,7 @@ export default function ClientProjects() {
         title="My Project Requirements"
         subtitle="Submit a real-world business challenge for our BA team to scope and staff against a training batch"
         breadcrumbs={[{ label: "Dashboard", to: "/client/dashboard" }, { label: "Project Requirements" }]}
-        action={<Button icon={Plus} onClick={() => { setErrors({}); setValues({ title: "", scope: "", budgetRange: "" }); setModalOpen(true); }}>Submit New</Button>}
+        action={<Button icon={Plus} onClick={() => { setErrors({}); setValues({ title: "", scope: "", budgetRange: "", additionalNotes: "" }); setModalOpen(true); }}>Submit New</Button>}
       />
 
       <Card className="mb-4">
@@ -95,6 +95,7 @@ export default function ClientProjects() {
             { key: "title", header: "Project", className: "text-left font-medium text-ink-900" },
             { key: "scope", header: "Business Scope", className: "text-left max-w-md truncate", render: (r) => r.scope },
             { key: "budgetRange", header: "Budget", className: "text-left text-xs", render: (r) => r.budgetRange || "—" },
+            { key: "assignedBa", header: "Your BA", className: "text-left text-xs", render: (r) => r.assignedBaName || <span className="text-ink-400">Assigning…</span> },
             { key: "submittedAt", header: "Submitted", className: "text-left text-xs" },
             { key: "status", header: "Status", className: "text-left", render: (r) => (
               <Badge tone={r.status === "Completed" ? "success" : r.status === "In Progress" ? "primary" : "warning"}>
@@ -124,6 +125,13 @@ export default function ClientProjects() {
           <Input label="Project title" required placeholder="e.g. Inventory Management Portal" value={values.title} onChange={(e) => setValues((v) => ({ ...v, title: e.target.value }))} error={errors.title} />
           <Textarea label="Business challenge & scope" required rows={5} value={values.scope} onChange={(e) => setValues((v) => ({ ...v, scope: e.target.value }))} error={errors.scope} placeholder="What problem should this solve? Who are the users? Any must-have features or constraints?" />
           <Select label="Budget range" placeholder="Optional" options={BUDGETS} value={values.budgetRange} onChange={(e) => setValues((v) => ({ ...v, budgetRange: e.target.value }))} />
+          <Textarea
+            label="Anything else our BA should know?"
+            rows={3}
+            value={values.additionalNotes}
+            onChange={(e) => setValues((v) => ({ ...v, additionalNotes: e.target.value }))}
+            placeholder="Optional — company background, links, who to loop in, anything beyond the scope above"
+          />
         </form>
       </Modal>
 

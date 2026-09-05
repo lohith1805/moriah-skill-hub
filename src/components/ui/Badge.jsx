@@ -10,9 +10,9 @@ const TONES = {
   info: "bg-info-50 text-info-600",
 };
 
-export default function Badge({ children, tone = "neutral", className, dot = false }) {
+export default function Badge({ children, tone = "neutral", className, dot = false, ...rest }) {
   return (
-    <span className={clsx("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium", TONES[tone], className)}>
+    <span className={clsx("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium", TONES[tone], className)} {...rest}>
       {dot && <span className={clsx("h-1.5 w-1.5 rounded-full", tone === "neutral" ? "bg-ink-400" : "bg-current")} />}
       {children}
     </span>

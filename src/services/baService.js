@@ -5,12 +5,80 @@ const DEFAULT_REQUIREMENT_DOCS = [];
 const DEFAULT_RESOURCE_PLANS = [];
 
 // ---------------------------------------------------------------------------
-// Requirement docs + sprint resource plans are STILL the localStorage mock:
-// the backend BA-documents API takes plain-text `content` only (no file
-// attachments), and there is no resource-plan endpoint yet — both need a
-// Part B pass before their pages can migrate.
-// BA meetings (below) ARE wired to the backend (B1.14).
+// Sprint resource plans are STILL the localStorage mock — there is no
+// resource-plan endpoint yet. BA meetings ARE wired (B1.14). Requirement
+// documents (BRD/SRS/FRS/USER_STORY, below) are ALSO now wired to the real
+// backend — GET/POST /api/v1/ba/documents, GET /ba/documents/{id},
+// PUT /ba/documents/{id}/approve. The legacy getDocuments()/saveDocuments()
+// mock right below is kept only because ba/Dashboard.jsx and
+// ba/ResourcePlanning.jsx still read it for their own unrelated project
+// pickers — not used by the Requirements Authoring Studio anymore.
 // ---------------------------------------------------------------------------
+
+const REQ_DOC_STATUS_TO_FE = { IN_REVIEW: "In Review", APPROVED: "Approved" };
+const asRows = (res) => (Array.isArray(res) ? res : res?.content ?? []);
+
+function toFeRequirementDoc(d) {
+  return {
+    id: d.id,
+    clientProjectId: d.clientProjectId,
+    docType: d.docType, // BRD | SRS | FRS | USER_STORY
+    title: d.title,
+    version: d.version,
+    status: d.status,
+    statusLabel: REQ_DOC_STATUS_TO_FE[d.status] || d.status,
+    authoredByUuid: d.authoredByUuid || "",
+    authoredByName: d.authoredByFullName || "",
+    approvedByUuid: d.approvedByUuid || "",
+    approvedByName: d.approvedByFullName || "",
+    devReviewedByName: d.devReviewedByFullName || "",
+    devReviewedAt: d.devReviewedAt || null,
+    // One required sign-off slot per role this docType needs (CLIENT/BUSINESS_ANALYST/
+    // DEVELOPER for BRD/FRS; BUSINESS_ANALYST/DEVELOPER only for SRS/USER_STORY) —
+    // see RequirementDocumentApprovalService on the backend.
+    approvals: (d.approvals || []).map((a) => ({
+      role: a.approverRole,
+      approvedByUuid: a.approvedByUuid || null,
+      approvedByName: a.approvedByFullName || "",
+      approvedAt: a.approvedAt || null,
+      pending: !a.approvedByUuid,
+    })),
+  };
+}
+
+// GET /api/v1/ba/documents — optional clientProjectId / status ("IN_REVIEW" | "APPROVED") filters.
+export async function getRequirementDocuments({ clientProjectId, status } = {}) {
+  const res = await apiClient.get("/ba/documents", {
+    clientProjectId: clientProjectId || undefined,
+    status: status || undefined,
+    size: 100,
+  });
+  return asRows(res).map(toFeRequirementDoc);
+}
+
+// GET /api/v1/ba/documents/{id} — full content, for re-opening a document already authored.
+export async function getRequirementDocumentDetail(id) {
+  const d = await apiClient.get(`/ba/documents/${id}`);
+  return { ...toFeRequirementDoc(d), content: d.content || "" };
+}
+
+// POST /api/v1/ba/documents — always lands IN_REVIEW; version is server-computed
+// (max existing version for this clientProjectId+docType, +1).
+export async function createRequirementDocument({ clientProjectId, docType, title, content }) {
+  const d = await apiClient.post("/ba/documents", {
+    clientProjectId: Number(clientProjectId),
+    docType,
+    title,
+    content,
+  });
+  return toFeRequirementDoc(d);
+}
+
+// PUT /api/v1/ba/documents/{id}/approve — IN_REVIEW -> APPROVED.
+export async function approveRequirementDocument(id) {
+  const d = await apiClient.put(`/ba/documents/${id}/approve`, {});
+  return toFeRequirementDoc(d);
+}
 
 export async function getDocuments() {
   try {

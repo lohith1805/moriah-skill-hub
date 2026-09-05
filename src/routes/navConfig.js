@@ -42,6 +42,7 @@ export const NAV_CONFIG = {
   [ROLES.DEVELOPER]: [
     { to: "/developer/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/developer/client-requirements", label: "Client Requirements", icon: FilePenLine },
+    { to: "/developer/project-documents", label: "Client Project Documents", icon: FileText },
     { to: "/developer/projects", label: "Projects", icon: FolderKanban },
     { to: "/developer/bug-challenges", label: "Bug Challenges", icon: Bug },
     { to: "/developer/video-lessons", label: "Video Lessons", icon: PlayCircle },
@@ -71,6 +72,7 @@ export const NAV_CONFIG = {
   [ROLES.BUSINESS_ANALYST]: [
     { to: "/ba/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/ba/documents", label: "Requirements Authoring", icon: FilePenLine },
+    { to: "/ba/project-documents", label: "Client Project Documents", icon: FileText },
     { to: "/ba/resource-planning", label: "Sprint & Resource Planning", icon: BarChart3 },
     { to: "/ba/client-review", label: "Client Project Review", icon: MonitorCheck },
     { to: "/ba/meetings", label: "Meeting Coordination", icon: CalendarClock },
@@ -90,6 +92,7 @@ export const NAV_CONFIG = {
   [ROLES.CLIENT]: [
     { to: "/client/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/client/projects", label: "My Project Requirements", icon: Briefcase },
+    { to: "/client/project-documents", label: "Client Project Documents", icon: FileText },
     { to: "/client/talent-pool", label: "Talent Pool", icon: Users },
     { to: "/client/demos", label: "Sprint Demo Reviews", icon: MonitorCheck },
     { to: "/client/profile", label: "My Profile", icon: User },

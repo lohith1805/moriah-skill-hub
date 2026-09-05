@@ -1,3 +1,5 @@
+import Papa from "papaparse";
+import * as XLSX from "xlsx";
 import { apiClient } from "./apiClient";
 
 // ---------------------------------------------------------------------------
@@ -40,6 +42,7 @@ function toFeCampaign(c) {
     budget: c.budget != null ? Number(c.budget) : null,
     targetLeads: c.targetLeads ?? null,
     status: c.status || "PLANNED",
+    leadIds: Array.isArray(c.leadIds) ? c.leadIds : [],
     createdByUuid: c.createdByUuid || null,
     createdAt: c.createdAt || null,
     updatedAt: c.updatedAt || null,
@@ -57,6 +60,10 @@ function toCampaignRequest(v, { includeStatus = false } = {}) {
     endDate: v.endDate || null,
     budget: v.budget === "" || v.budget == null ? null : Number(v.budget),
     targetLeads: v.targetLeads === "" || v.targetLeads == null ? null : Number(v.targetLeads),
+    // The audience picked at creation (or re-picked on edit) — always sent as an explicit
+    // array, even empty, so an edit that didn't touch the audience field just re-sends the
+    // same set rather than silently clearing it.
+    leadIds: Array.isArray(v.leadIds) ? v.leadIds.map(Number) : [],
   };
   if (includeStatus) body.status = v.status || "PLANNED";
   return body;
@@ -259,6 +266,79 @@ export async function createLead(payload) {
   // POST /leads upserts on the email+phone dedupe hash — a second submit for the
   // same person updates that lead in place, it never creates a duplicate.
   return toFeLead(await apiClient.post("/leads", body));
+}
+
+// ---- Bulk lead ingestion: template download + multi-format file parsing ---
+// Previously the only way in was hand-typing "Name, Phone, Email, Type" lines
+// into a textarea. Columns: Name, Phone, Email, Type, Source (Source optional
+// — defaults to "Bulk Import" if blank).
+
+const BULK_LEAD_HEADERS = ["Name", "Phone", "Email", "Type", "Source"];
+const BULK_LEAD_EXAMPLE_ROWS = [
+  ["Arun Kumar", "9876543299", "arun@gmail.com", "Student (B2C)", "Landing Page"],
+  ["Prof. Meenakshi", "9845112233", "hod@svce.edu.in", "College Tie-up", "College Outreach"],
+];
+
+// Downloads a ready-to-fill .csv — opens fine in Excel/Sheets, and is one of
+// the formats parseLeadImportFile itself accepts back.
+export function downloadLeadImportTemplate() {
+  const esc = (c) => `"${String(c).replace(/"/g, '""')}"`;
+  const lines = [BULK_LEAD_HEADERS, ...BULK_LEAD_EXAMPLE_ROWS].map((row) => row.map(esc).join(","));
+  const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "moriah_lead_import_template.csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function normalizeLeadRows(rows) {
+  const parsed = [];
+  const problems = [];
+  rows.forEach((row, i) => {
+    if (!row || !row.length || row[0] == null || !String(row[0]).trim()) return;
+    // Skip an optional header row.
+    if (i === 0 && /^name$/i.test(String(row[0]).trim())) return;
+
+    const cells = row.map((v) => (v == null ? "" : String(v).trim()));
+    const [name, phone, email, type, source] = cells;
+    if (!name || !phone) {
+      problems.push(`Row ${i + 1}: needs at least a Name and Phone.`);
+      return;
+    }
+    parsed.push({
+      name,
+      phone,
+      email: email || "",
+      type: type || "Student (B2C)",
+      source: source || "Bulk Import",
+    });
+  });
+  return { rows: parsed, problems };
+}
+
+// Accepts .csv, .xlsx, .xls, or .txt — all parsed into the same
+// { rows: [{name, phone, email, type, source}], problems: [] } shape the
+// preview + bulkImportLeads both consume.
+export async function parseLeadImportFile(file) {
+  const name = file.name.toLowerCase();
+
+  if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array" });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    if (!sheet) return { rows: [], problems: ["The spreadsheet has no sheets."] };
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false, defval: "" });
+    return normalizeLeadRows(rows);
+  }
+
+  // .csv and .txt both parse as delimited text — PapaParse handles either.
+  const text = await file.text();
+  const result = Papa.parse(text.trim(), { skipEmptyLines: true });
+  return normalizeLeadRows(result.data);
 }
 
 export async function bulkImportLeads(leadList) {

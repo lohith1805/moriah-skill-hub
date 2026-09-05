@@ -1,524 +1,344 @@
 import { useEffect, useState } from "react";
-import {
-  Plus, Trash2, Eye, Download, ShieldCheck, CheckCircle2, FileText
-} from "lucide-react";
+import mammoth from "mammoth";
+import { Plus, Eye, ShieldCheck, FileText, UploadCloud } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
 import Table from "../../components/ui/Table";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
+import EmptyState from "../../components/ui/EmptyState";
+import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import FileUpload from "../../components/ui/FileUpload";
 import { Input, Select, Textarea } from "../../components/ui/FormField";
-import { getDocuments, saveDocuments } from "../../services/baService";
+import {
+  getRequirementDocuments,
+  getRequirementDocumentDetail,
+  createRequirementDocument,
+  approveRequirementDocument,
+} from "../../services/baService";
+import { getClientProjects } from "../../services/clientService";
 import { useToast } from "../../context/ToastContext";
+import { useAuth } from "../../context/AuthContext";
 import { validateForm, required } from "../../utils/validators";
 
 const DOC_TYPES = [
   { value: "BRD", label: "Business Requirements Document (BRD)" },
   { value: "SRS", label: "System Requirements Specification (SRS)" },
   { value: "FRS", label: "Functional Requirements Specification (FRS)" },
+  { value: "USER_STORY", label: "User Story" },
 ];
 
-// Client-attached briefs/wireframes arrive tagged "CLIENT_DOC" (see
-// clientService.submitProjectRequirement) — kept separate from BRD/SRS/FRS
-// so a client's raw attachment is never mistaken for a BA-authored spec.
-// It's shown for context in the inspector, but BA can't "upload" this type
-// — only client submissions create it.
-const CLIENT_DOC_TYPE = { value: "CLIENT_DOC", label: "Client-Submitted Brief" };
-
-function typeBadge(t) {
-  if (t === "CLIENT_DOC") return { label: "Client Brief", tone: "neutral" };
-  if (t === "BRD") return { label: "BRD", tone: "primary" };
-  if (t === "SRS") return { label: "SRS", tone: "gold" };
-  if (t === "FRS") return { label: "FRS", tone: "success" };
-  return { label: t, tone: "neutral" };
+function typeTone(t) {
+  if (t === "BRD") return "primary";
+  if (t === "SRS") return "gold";
+  if (t === "FRS") return "success";
+  return "neutral";
 }
 
-const emptyValues = () => ({
-  projectId: "",
-  title: "",
-  client: "",
-  summary: "",
-  filesByType: { BRD: [], SRS: [], FRS: [] },
-});
+const emptyValues = () => ({ docType: "BRD", title: "", content: "" });
 
-// Converts an uploaded File to a base64 data URL so it can be persisted in
-// localStorage — this is what lets Download keep working after a reload,
-// instead of only while the in-memory File blob from this session exists.
-function fileToDataURL(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+const APPROVAL_ROLE_ORDER = ["CLIENT", "BUSINESS_ANALYST", "DEVELOPER"];
+const APPROVAL_ROLE_LABEL = { CLIENT: "Client", BUSINESS_ANALYST: "BA", DEVELOPER: "Developer" };
+
+// One badge per required sign-off slot for this doc type — replaces a single
+// "Approved/In Review" flag now that BRD/FRS need CLIENT + BA + DEVELOPER
+// and SRS/USER_STORY need only BA + DEVELOPER (RequirementDocumentApprovalService).
+function ApprovalSlots({ approvals }) {
+  const ordered = [...(approvals || [])].sort(
+    (a, b) => APPROVAL_ROLE_ORDER.indexOf(a.role) - APPROVAL_ROLE_ORDER.indexOf(b.role)
+  );
+  if (!ordered.length) return <span className="text-xs text-ink-400">—</span>;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {ordered.map((a) => (
+        <Badge key={a.role} tone={a.pending ? "neutral" : "success"} title={a.pending ? "Pending" : `Approved by ${a.approvedByName}`}>
+          {APPROVAL_ROLE_LABEL[a.role] || a.role}{a.pending ? "" : " ✓"}
+        </Badge>
+      ))}
+    </div>
+  );
 }
 
-// A doc's files/fileData can come from an older single-file record
-// (fileData as a plain base64 string, files without a `type`) as well as
-// the current multi-type shape (fileData as { BRD, SRS, FRS }, each file
-// tagged with its type). This normalizes either shape into a flat list of
-// { type, name, size } so the table and inspector can treat them the same.
-function normalizedFiles(doc) {
-  return (doc?.files || []).map((f) => ({ ...f, type: f.type || doc.type || "BRD" }));
-}
-
-function getFileUrl(doc, type) {
-  if (!doc?.fileData) return null;
-  if (typeof doc.fileData === "string") {
-    // Legacy record: one file, implicitly whatever doc.type was.
-    return type === (doc.type || "BRD") ? doc.fileData : null;
+// Optional convenience: extract text from a .docx/.txt so a BA who already has
+// the spec written up elsewhere doesn't have to retype it — the backend itself
+// only ever stores plain text (`content`), there's no file-attachment column.
+async function extractTextFromFile(file) {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".docx")) {
+    const arrayBuffer = await file.arrayBuffer();
+    const { value } = await mammoth.extractRawText({ arrayBuffer });
+    return value.trim();
   }
-  return doc.fileData[type] || null;
+  return (await file.text()).trim();
 }
 
 export default function BaDocuments() {
+  const { notify } = useToast();
+  const { user } = useAuth();
+  const [projects, setProjects] = useState([]);
+  const [projectId, setProjectId] = useState("");
   const [docs, setDocs] = useState([]);
-  const [devReviews, setDevReviews] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [viewingDoc, setViewingDoc] = useState(null);
+  const [loadingProjects, setLoadingProjects] = useState(true);
+  const [loadingDocs, setLoadingDocs] = useState(false);
 
-  // Upload state
+  // Create
   const [modalOpen, setModalOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const [values, setValues] = useState(emptyValues());
   const [errors, setErrors] = useState({});
+  const [importing, setImporting] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const { notify } = useToast();
+  // View
+  const [viewingId, setViewingId] = useState(null);
+  const [viewingDoc, setViewingDoc] = useState(null);
+  const [loadingView, setLoadingView] = useState(false);
+  const [approvingId, setApprovingId] = useState(null);
 
-  const load = () => {
-    setLoading(true);
-    getDocuments()
-      .then((d) => setDocs(d))
-      .catch(() => setDocs([]))
-      .finally(() => setLoading(false));
+  useEffect(() => {
+    getClientProjects()
+      .then((p) => {
+        setProjects(p);
+        if (p.length) setProjectId(String(p[0].id));
+      })
+      .catch(() => notify("Couldn't load client projects.", { type: "error" }))
+      .finally(() => setLoadingProjects(false));
+  }, [notify]);
+
+  const loadDocs = (id) => {
+    if (!id) return;
+    setLoadingDocs(true);
+    getRequirementDocuments({ clientProjectId: id })
+      .then(setDocs)
+      .catch(() => notify("Couldn't load requirement documents.", { type: "error" }))
+      .finally(() => setLoadingDocs(false));
   };
 
   useEffect(() => {
-    load();
-  }, []);
+    loadDocs(projectId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
-  // Existing projects a BA can attach new files to, instead of typing a
-  // fresh title and accidentally creating a duplicate row for a requirement
-  // a client already submitted (e.g. "microsoft — inevnt" showing up twice).
-  const projectOptions = [
-    { value: "", label: "+ Create New Project" },
-    ...docs.map((d) => ({ value: d.id, label: `${d.title} — ${d.client}` })),
-  ];
+  const project = projects.find((p) => String(p.id) === String(projectId));
 
-  const handleProjectSelect = (e) => {
-    const id = e.target.value;
-    if (!id) {
-      setValues((v) => ({ ...v, projectId: "", title: "", client: "" }));
-      return;
+  const openCreate = () => {
+    setValues(emptyValues());
+    setErrors({});
+    setModalOpen(true);
+  };
+
+  const handleImport = async (files) => {
+    const file = files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const text = await extractTextFromFile(file);
+      setValues((v) => ({ ...v, content: text }));
+      notify(`Imported text from "${file.name}" — review it below before submitting.`, { type: "success" });
+    } catch (err) {
+      notify("Couldn't read that file — paste the content directly instead.", { type: "error" });
+    } finally {
+      setImporting(false);
     }
-    const proj = docs.find((d) => d.id === id);
-    setValues((v) => ({
-      ...v,
-      projectId: id,
-      title: proj?.title || "",
-      client: proj?.client || "",
-    }));
   };
 
-  // A doc that hasn't had any real file attached yet (e.g. a client
-  // submission) starts at v1.0 once one lands; re-uploads after that bump
-  // the minor version instead.
-  const bumpVersion = (doc) => {
-    const hasAnyFile = doc.fileData && (typeof doc.fileData === "string" || Object.keys(doc.fileData).length);
-    if (!hasAnyFile) return "1.0";
-    const [major, minor] = String(doc.version || "1.0").split(".");
-    return `${major || "1"}.${(parseInt(minor || "0", 10) + 1)}`;
-  };
-
-  const handleUpload = async (e) => {
+  const submit = async (e) => {
     e.preventDefault();
-    const isExisting = !!values.projectId;
-    const validation = isExisting ? {} : validateForm(values, { title: [required], client: [required] });
-    const pickedTypes = DOC_TYPES.filter(({ value }) => values.filesByType[value]?.length);
-    if (!pickedTypes.length) validation.files = "Upload at least one of the BRD, SRS, or FRS files.";
-    setErrors(validation);
-    if (Object.keys(validation).length) return;
+    const v = validateForm(values, { title: [required], content: [required] });
+    setErrors(v);
+    if (Object.keys(v).length) return;
 
     setSubmitting(true);
     try {
-      const uploadedEntries = await Promise.all(
-        pickedTypes.map(async ({ value: type }) => {
-          const file = values.filesByType[type][0];
-          const dataUrl = await fileToDataURL(file);
-          return { type, file, dataUrl };
-        })
-      );
-
-      let updated;
-      if (isExisting) {
-        const target = docs.find((d) => d.id === values.projectId);
-        updated = docs.map((d) => {
-          if (d.id !== values.projectId) return d;
-          const nextFiles = normalizedFiles(d);
-          const nextFileData = typeof d.fileData === "string"
-            ? { [d.type || "BRD"]: d.fileData }
-            : { ...(d.fileData || {}) };
-          uploadedEntries.forEach(({ type, file, dataUrl }) => {
-            const idx = nextFiles.findIndex((f) => f.type === type);
-            const entry = { type, name: file.name, size: file.size };
-            if (idx > -1) nextFiles[idx] = entry; else nextFiles.push(entry);
-            nextFileData[type] = dataUrl;
-          });
-          return {
-            ...d,
-            summary: values.summary || d.summary,
-            version: bumpVersion(d),
-            updatedAt: new Date().toISOString().slice(0, 10),
-            files: nextFiles,
-            fileData: nextFileData,
-          };
-        });
-        notify(`File${uploadedEntries.length > 1 ? "s" : ""} attached to "${target?.title}".`, { type: "success", title: "Document Uploaded" });
-      } else {
-        const files = uploadedEntries.map(({ type, file }) => ({ type, name: file.name, size: file.size }));
-        const fileData = {};
-        uploadedEntries.forEach(({ type, dataUrl }) => { fileData[type] = dataUrl; });
-        const newDoc = {
-          id: `doc_${Date.now()}`,
-          title: values.title,
-          client: values.client,
-          version: "1.0",
-          status: "Under Review",
-          summary: values.summary || "",
-          updatedAt: new Date().toISOString().slice(0, 10),
-          files,
-          fileData,
-        };
-        updated = [newDoc, ...docs];
-        notify("Document(s) uploaded and queued for verification.", { type: "success", title: "Document Uploaded" });
-      }
-
-      setDocs(updated);
-      await saveDocuments(updated);
-
+      await createRequirementDocument({ clientProjectId: projectId, ...values });
+      notify(`${values.docType} submitted for review.`, { type: "success", title: "Document created" });
       setModalOpen(false);
-      setValues(emptyValues());
+      loadDocs(projectId);
+    } catch (err) {
+      notify(err?.message || "Couldn't create this document.", { type: "error" });
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Marks a spec as reviewed and signed off — this is the BA's sign-off
-  // that unblocks the doc for sprint execution / client hand-off. It also
-  // upserts a matching "staffable" client project record (msh_client_projects)
-  // with batch left "Unassigned", which is the exact list Trainer's Sprint
-  // Planning "New Sprint" dropdown pulls its client/project options from —
-  // without this, an approved requirement never surfaces there.
-  const handleVerify = async (id) => {
-    const target = docs.find((d) => d.id === id);
-    const hasOfficialSpec = normalizedFiles(target).some((f) => f.type === "BRD" || f.type === "SRS" || f.type === "FRS");
-    if (!hasOfficialSpec) {
-      notify("Upload at least a BRD, SRS, or FRS before verifying — a client's brief alone isn't a signed-off spec.", { type: "warning", title: "Nothing to verify yet" });
-      return;
-    }
-    const updated = docs.map((d) => (d.id === id ? { ...d, status: "Approved", updatedAt: new Date().toISOString().slice(0, 10) } : d));
-    setDocs(updated);
-    await saveDocuments(updated);
+  const openView = (doc) => {
+    setViewingId(doc.id);
+    setViewingDoc(null);
+    setLoadingView(true);
+    getRequirementDocumentDetail(doc.id)
+      .then(setViewingDoc)
+      .catch((err) => notify(err?.message || "Couldn't load this document.", { type: "error" }))
+      .finally(() => setLoadingView(false));
+  };
 
+  const approve = async (doc) => {
+    setApprovingId(doc.id);
     try {
-      const raw = localStorage.getItem("msh_client_projects");
-      const projects = raw ? JSON.parse(raw) : [];
-      const projectId = `proj_${id}`;
-      const existingIdx = projects.findIndex((p) => p.id === projectId);
-      const projectRecord = {
-        id: projectId,
-        title: target?.title || "Untitled Requirement",
-        client: target?.client || "Unknown Client",
-        batch: existingIdx > -1 ? projects[existingIdx].batch : "Unassigned",
-        milestone: existingIdx > -1 ? projects[existingIdx].milestone : "Requirements Approved",
-        progress: existingIdx > -1 ? projects[existingIdx].progress : 0,
-        demoDate: existingIdx > -1 ? projects[existingIdx].demoDate : null,
-      };
-      if (existingIdx > -1) {
-        projects[existingIdx] = { ...projects[existingIdx], ...projectRecord };
-      } else {
-        projects.unshift(projectRecord);
-      }
-      localStorage.setItem("msh_client_projects", JSON.stringify(projects));
+      await approveRequirementDocument(doc.id);
+      notify(`"${doc.title}" approved.`, { type: "success" });
+      loadDocs(projectId);
+      if (viewingId === doc.id) openView(doc);
     } catch (err) {
-      console.warn("[BaDocuments] Could not sync approved doc to client projects:", err.message);
+      notify(err?.message || "Couldn't approve this document.", { type: "error" });
+    } finally {
+      setApprovingId(null);
     }
-
-    notify(`"${target?.title}" verified — now staffable from Trainer's Sprint Planning.`, { type: "success" });
-  };
-
-  const handleDelete = async (id) => {
-    const target = docs.find((d) => d.id === id);
-    const updated = docs.filter((d) => d.id !== id);
-    setDocs(updated);
-    await saveDocuments(updated);
-    notify(`Document "${target?.title}" removed.`, { type: "success" });
-  };
-
-  const downloadDoc = (doc, type) => {
-    const url = getFileUrl(doc, type);
-    if (!url) {
-      notify("No file attached to this document.", { type: "warning" });
-      return;
-    }
-    const fileMeta = normalizedFiles(doc).find((f) => f.type === type);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = fileMeta?.name || `${doc.title}-${type}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    notify("Document downloaded successfully.", { type: "success" });
   };
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Requirements Authoring Studio"
-        subtitle="Upload Business Requirements (BRD), System Architecture Specs (SRS), and Functional Specs (FRS), then verify them for sprint execution"
+        subtitle="Author the BRD / SRS / FRS / user stories for a client's submitted project, then approve them for the developer team"
         breadcrumbs={[{ label: "Dashboard", to: "/ba/dashboard" }, { label: "Authoring" }]}
         action={
-          <Button icon={Plus} onClick={() => { setErrors({}); setValues(emptyValues()); setModalOpen(true); }}>
-            Upload Document
-          </Button>
+          <div className="flex items-center gap-2">
+            <Select
+              className="w-64"
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+              options={projects.map((p) => ({ value: String(p.id), label: `${p.title} — ${p.clientName}` }))}
+              placeholder={projects.length ? "Select a client project" : "No client projects yet"}
+            />
+            <Button icon={Plus} onClick={openCreate} disabled={!projectId}>New Document</Button>
+          </div>
         }
       />
 
-      <Card>
-        <div className="px-4 py-3 border-b border-border text-left flex items-center justify-between">
-          <div>
-            <h3 className="font-display font-semibold text-ink-900">Authored Specifications Repository (MSH-FR-BA-01)</h3>
-            <p className="text-xs text-ink-500">Live documents bridging enterprise client briefs with sprint execution</p>
+      {loadingProjects ? (
+        <div className="flex justify-center py-16"><LoadingSpinner label="Loading client projects…" /></div>
+      ) : !projectId ? (
+        <EmptyState icon={FileText} title="No client projects yet" description="A client's submitted project shows up here once it's in Client Project Review." />
+      ) : (
+        <Card>
+          <div className="px-4 py-3 border-b border-border text-left">
+            <h3 className="font-display font-semibold text-ink-900">{project?.title}</h3>
+            <p className="text-xs text-ink-500 mt-0.5">{project?.clientName} · {project?.scope || "No scope description provided."}</p>
           </div>
-          <Badge tone="primary" dot>Version Controlled</Badge>
-        </div>
 
-        <Table
-          loading={loading}
-          data={docs}
-          emptyTitle="No documents uploaded yet"
-          emptyHint="Upload a BRD, SRS, or FRS file to get started."
-          columns={[
-            {
-              key: "title",
-              header: "Document Title",
-              className: "text-left font-medium text-ink-900",
-              render: (r) => {
-                const files = normalizedFiles(r);
-                return (
-                  <div>
-                    <p className="font-semibold text-ink-900">{r.title}</p>
-                    <p className="text-xs text-ink-500 line-clamp-1 mt-0.5">
-                      {r.summary || (files.length ? files.map((f) => f.name).join(", ") : "No files attached")}
-                    </p>
-                  </div>
-                );
-              }
-            },
-            {
-              key: "type",
-              header: "Spec Type",
-              className: "text-left",
-              render: (r) => {
-                const types = Array.from(new Set(normalizedFiles(r).map((f) => f.type)));
-                if (!types.length) return <span className="text-xs text-ink-400">—</span>;
-                const hasOfficialSpec = types.some((t) => t === "BRD" || t === "SRS" || t === "FRS");
-                return (
-                  <div className="flex flex-col gap-1 items-start">
-                    <div className="flex flex-wrap gap-1">
-                      {types.map((t) => {
-                        const { label, tone } = typeBadge(t);
-                        return <Badge key={t} tone={tone}>{label}</Badge>;
-                      })}
-                    </div>
-                    {!hasOfficialSpec && (
-                      <span className="text-[11px] text-warning-600 font-medium">Awaiting BA-authored BRD/SRS/FRS</span>
+          <Table
+            loading={loadingDocs}
+            data={docs}
+            emptyTitle="No requirement documents yet"
+            emptyHint="Author a BRD, SRS, FRS, or user story for this project."
+            columns={[
+              { key: "docType", header: "Type", className: "text-left", render: (r) => <Badge tone={typeTone(r.docType)}>{r.docType.replace("_", " ")}</Badge> },
+              { key: "title", header: "Title", className: "text-left font-medium text-ink-900" },
+              { key: "version", header: "Version", className: "text-left font-mono text-xs", render: (r) => <span className="bg-cream-100 px-2 py-0.5 rounded font-semibold text-ink-800">v{r.version}</span> },
+              { key: "status", header: "Sign-off", className: "text-left", render: (r) => <ApprovalSlots approvals={r.approvals} /> },
+              { key: "authoredByName", header: "Authored by", className: "text-left text-xs text-ink-500" },
+              {
+                key: "devReview", header: "Dev Check", className: "text-left",
+                render: (r) => r.devReviewedAt
+                  ? <Badge tone="success">Reviewed by {r.devReviewedByName}</Badge>
+                  : <Badge tone="neutral">Pending</Badge>,
+              },
+              {
+                key: "action", header: "", className: "text-right",
+                render: (r) => (
+                  <div className="flex gap-2 justify-end">
+                    <Button size="sm" variant="secondary" icon={Eye} onClick={() => openView(r)}>View</Button>
+                    {r.status !== "APPROVED" && r.authoredByUuid !== user?.uuid && (
+                      <Button size="sm" icon={ShieldCheck} loading={approvingId === r.id} onClick={() => approve(r)}>Sign off as BA</Button>
                     )}
                   </div>
-                );
-              }
-            },
-            { key: "client", header: "Client Partner", className: "text-left" },
-            {
-              key: "version",
-              header: "Version",
-              className: "text-left font-mono text-xs",
-              render: (r) => <span className="bg-cream-100 px-2 py-0.5 rounded font-semibold text-ink-800">v{r.version}</span>
-            },
-            {
-              key: "status",
-              header: "Status",
-              className: "text-left",
-              render: (r) => (
-                <Badge tone={r.status === "Approved" ? "success" : r.status === "Under Review" ? "warning" : "neutral"}>
-                  {r.status}
-                </Badge>
-              )
-            },
-            { key: "updatedAt", header: "Updated", className: "text-left font-mono text-xs" },
-            {
-              key: "devReview",
-              header: "Dev Check",
-              className: "text-left",
-              render: (r) =>
-                devReviews[r.id]?.reviewed ? (
-                  <Badge tone="success">Reviewed by {devReviews[r.id].reviewedBy}</Badge>
-                ) : (
-                  <Badge tone="neutral">Pending</Badge>
                 ),
-            },
-            {
-              key: "action",
-              header: "",
-              className: "text-right",
-              render: (r) => (
-                <div className="flex gap-2 justify-end">
-                  <Button size="sm" variant="secondary" icon={Eye} onClick={() => setViewingDoc(r)}>Inspect</Button>
-                  {r.status !== "Approved" && (
-                    <Button size="sm" icon={ShieldCheck} onClick={() => handleVerify(r.id)}>Verify</Button>
-                  )}
-                  <Button size="sm" variant="danger" icon={Trash2} onClick={() => handleDelete(r.id)}>Delete</Button>
-                </div>
-              )
-            }
-          ]}
-        />
-      </Card>
+              },
+            ]}
+          />
+        </Card>
+      )}
 
-      {/* Upload Document Modal */}
+      {/* Create */}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="Upload Requirements Document (MSH-FR-BA-01)"
-        description="Attach the BRD, SRS, and/or FRS files for this client requirement."
+        title={`New requirement document — ${project?.title || ""}`}
         size="lg"
         footer={
           <>
             <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
-            <Button loading={submitting} icon={Plus} onClick={handleUpload}>Upload Document</Button>
+            <Button loading={submitting} icon={Plus} onClick={submit}>Submit for review</Button>
           </>
         }
       >
-        <form className="flex flex-col gap-4 text-left font-sans" onSubmit={handleUpload}>
+        <form className="flex flex-col gap-4 text-left font-sans" onSubmit={submit}>
           <Select
-            label="Project"
-            hint="Pick an existing project to attach these files to it, or create a new one."
-            options={projectOptions}
-            value={values.projectId}
-            onChange={handleProjectSelect}
-          />
-
-          <Input
-            label="Document Title"
+            label="Document type"
             required
-            placeholder="e.g. Project or requirement title"
+            options={DOC_TYPES}
+            value={values.docType}
+            onChange={(e) => setValues((v) => ({ ...v, docType: e.target.value }))}
+          />
+          <Input
+            label="Title"
+            required
+            placeholder="e.g. Storefront Checkout — Business Requirements"
             value={values.title}
             onChange={(e) => setValues((v) => ({ ...v, title: e.target.value }))}
             error={errors.title}
-            disabled={!!values.projectId}
           />
-
-          <Input
-            label="Client / Corporate Partner"
-            required
-            placeholder="e.g. Client company name"
-            value={values.client}
-            onChange={(e) => setValues((v) => ({ ...v, client: e.target.value }))}
-            error={errors.client}
-            disabled={!!values.projectId}
-          />
-
-          <Textarea
-            label="Summary (optional)"
-            rows={3}
-            placeholder="Brief high-level summary of the business goals..."
-            value={values.summary}
-            onChange={(e) => setValues((v) => ({ ...v, summary: e.target.value }))}
-          />
-
-          <div className="flex flex-col gap-3">
-            <div>
-              <p className="text-sm font-medium text-ink-700">Documents <span className="text-error-500">*</span></p>
-              <p className="text-xs text-ink-400">Attach any combination of BRD, SRS, and FRS files — upload one, two, or all three at once.</p>
-            </div>
-            {errors.files && <p className="text-xs text-error-500">{errors.files}</p>}
-            {DOC_TYPES.map(({ value, label }) => (
-              <FileUpload
-                key={value}
-                label={label}
-                hint="PDF, DOCX — up to 10MB"
-                accept=".pdf,.doc,.docx"
-                initialFiles={values.filesByType[value]}
-                onChange={(files) => setValues((v) => ({ ...v, filesByType: { ...v.filesByType, [value]: files } }))}
-              />
-            ))}
+          <div className="rounded-lg border border-dashed border-primary-300 bg-primary-50/40 p-3">
+            <p className="text-xs font-semibold text-ink-700 mb-2 flex items-center gap-1.5">
+              <UploadCloud size={14} className="text-primary-600" /> Import text from a file (optional)
+            </p>
+            <FileUpload hint=".docx or .txt — extracted straight into the content field below" accept=".docx,.txt" onChange={handleImport} />
+            {importing && <p className="text-xs text-ink-500 mt-2">Reading file…</p>}
           </div>
+          <Textarea
+            label="Content"
+            required
+            rows={12}
+            placeholder="Write (or paste) the full requirement text here…"
+            value={values.content}
+            onChange={(e) => setValues((v) => ({ ...v, content: e.target.value }))}
+            error={errors.content}
+          />
+          <p className="text-xs text-ink-400 -mt-2">
+            This creates version {(docs.filter((d) => d.docType === values.docType).sort((a, b) => b.version - a.version)[0]?.version || 0) + 1} of the {values.docType} for this project — earlier versions stay on record.
+          </p>
         </form>
       </Modal>
 
-      {/* Inspect Document Modal */}
+      {/* View */}
       <Modal
-        open={!!viewingDoc}
-        onClose={() => setViewingDoc(null)}
-        title={viewingDoc?.title || "Document Viewer"}
+        open={!!viewingId}
+        onClose={() => setViewingId(null)}
+        title={viewingDoc?.title || "Document"}
         size="lg"
         footer={
-          <div className="flex justify-between w-full items-center">
-            <Badge tone={viewingDoc?.status === "Approved" ? "success" : "warning"}>Status: {viewingDoc?.status}</Badge>
-            <Button variant="secondary" onClick={() => setViewingDoc(null)}>Close</Button>
+          <div className="flex justify-between w-full items-center gap-3">
+            {viewingDoc && <ApprovalSlots approvals={viewingDoc.approvals} />}
+            <div className="flex gap-2 shrink-0">
+              {viewingDoc && viewingDoc.status !== "APPROVED" && viewingDoc.authoredByUuid !== user?.uuid && (
+                <Button icon={ShieldCheck} loading={approvingId === viewingDoc.id} onClick={() => approve(viewingDoc)}>Sign off as BA</Button>
+              )}
+              <Button variant="secondary" onClick={() => setViewingId(null)}>Close</Button>
+            </div>
           </div>
         }
       >
-        {viewingDoc && (
-          <div className="p-4 bg-white rounded-xl border border-border flex flex-col gap-4 text-left font-sans">
+        {loadingView ? (
+          <div className="flex justify-center py-12"><LoadingSpinner label="Loading document…" /></div>
+        ) : viewingDoc && (
+          <div className="flex flex-col gap-4 text-left font-sans">
             <div className="flex justify-between items-start border-b border-border pb-3">
               <div>
-                <span className="text-xs font-bold uppercase tracking-wider text-primary-700">SPECIFICATION · v{viewingDoc.version}</span>
-                <h3 className="text-base font-bold text-ink-900 mt-1">{viewingDoc.title}</h3>
-                <p className="text-xs text-ink-500">Client: {viewingDoc.client} · Updated: {viewingDoc.updatedAt}</p>
+                <span className="text-xs font-bold uppercase tracking-wider text-primary-700">{viewingDoc.docType.replace("_", " ")} · v{viewingDoc.version}</span>
+                <p className="text-xs text-ink-500 mt-1">
+                  Authored by {viewingDoc.authoredByName || "—"}
+                  {viewingDoc.approvedByName && <> · Approved by {viewingDoc.approvedByName}</>}
+                  {viewingDoc.devReviewedAt && <> · Reviewed by developer {viewingDoc.devReviewedByName}</>}
+                </p>
               </div>
-              <Badge tone={viewingDoc.status === "Approved" ? "success" : "warning"}>{viewingDoc.status}</Badge>
             </div>
-
-            {viewingDoc.summary && (
-              <div className="p-3 bg-cream-50 rounded-lg border border-border text-xs leading-relaxed text-ink-800">
-                <p className="font-semibold text-ink-900 mb-1">Summary:</p>
-                <p>{viewingDoc.summary}</p>
-              </div>
+            {viewingDoc.status !== "APPROVED" && viewingDoc.authoredByUuid === user?.uuid && (
+              <p className="text-xs text-ink-500 bg-cream-50 border border-border rounded-lg px-3 py-2">
+                You authored this document — another Business Analyst needs to sign off the BA slot.
+              </p>
             )}
-
-            <div className="flex flex-col gap-2">
-              {[CLIENT_DOC_TYPE, ...DOC_TYPES].map(({ value, label }) => {
-                const fileMeta = normalizedFiles(viewingDoc).find((f) => f.type === value);
-                if (!fileMeta) return null;
-                const isClientDoc = value === "CLIENT_DOC";
-                return (
-                  <div key={value} className={`flex items-center gap-2 p-3 rounded-lg border text-sm ${isClientDoc ? "border-dashed border-border bg-cream-50" : "border-border bg-white"}`}>
-                    <FileText size={16} className={isClientDoc ? "text-ink-400 shrink-0" : "text-primary-500 shrink-0"} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-ink-900">
-                        {isClientDoc ? "Client Brief" : value} <span className="font-normal text-ink-400">— {label}</span>
-                      </p>
-                      <p className="truncate text-ink-700">{fileMeta.name}</p>
-                    </div>
-                    <Button size="sm" variant="secondary" icon={Download} onClick={() => downloadDoc(viewingDoc, value)}>Download</Button>
-                  </div>
-                );
-              })}
-              {!normalizedFiles(viewingDoc).length && (
-                <div className="flex items-center gap-2 p-3 rounded-lg border border-border bg-white text-sm text-ink-500">
-                  <FileText size={16} className="text-ink-300 shrink-0" />
-                  No files attached yet.
-                </div>
-              )}
-              {normalizedFiles(viewingDoc).length > 0 &&
-                !normalizedFiles(viewingDoc).some((f) => f.type === "BRD" || f.type === "SRS" || f.type === "FRS") && (
-                  <div className="flex items-center gap-2 p-3 rounded-lg border border-warning-200 bg-warning-50 text-xs text-warning-700">
-                    Only the client's brief is attached — author and upload the BRD/SRS/FRS above before verifying this requirement.
-                  </div>
-                )}
+            <div className="p-4 bg-cream-50 rounded-lg border border-border text-sm leading-relaxed text-ink-800 whitespace-pre-wrap max-h-[50vh] overflow-y-auto">
+              {viewingDoc.content}
             </div>
           </div>
         )}
