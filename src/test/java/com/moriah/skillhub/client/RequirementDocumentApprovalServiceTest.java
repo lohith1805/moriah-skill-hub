@@ -6,6 +6,7 @@ import com.moriah.skillhub.client.entity.RequirementDocument;
 import com.moriah.skillhub.client.entity.RequirementDocumentApproval;
 import com.moriah.skillhub.client.entity.RequirementDocumentStatus;
 import com.moriah.skillhub.client.entity.RequirementDocumentType;
+import com.moriah.skillhub.client.dto.PendingApprovalResponse;
 import com.moriah.skillhub.client.repository.ClientProjectRepository;
 import com.moriah.skillhub.client.repository.RequirementDocumentApprovalRepository;
 import com.moriah.skillhub.client.repository.RequirementDocumentRepository;
@@ -423,5 +424,65 @@ class RequirementDocumentApprovalServiceTest {
         approvalService.approve(1L, 9L);
 
         verify(staffAssignmentService, never()).pickLeastBusy(any());
+    }
+
+    // ---- pendingFor ----
+    //
+    // Regression coverage for a real bug found live: approve()'s self-approval exception for a
+    // sole BA (see resolveCallerSlot's own Javadoc) was never mirrored here, so a solo BA's own
+    // document — fully approvable via the API — simply never appeared in their own "Client
+    // Project Documents" inbox. There was no test for pendingFor() at all before this; that's
+    // exactly how the mismatch went unnoticed.
+
+    @Test
+    void pendingFor_soleBaOnStaff_seesTheirOwnAuthoredDocumentInInbox() {
+        User solebA = user(5L, "sole-ba");
+        RequirementDocument document = document(1L, RequirementDocumentType.BRD, project(10L, null, null), solebA);
+        RequirementDocumentApproval baSlot = new RequirementDocumentApproval(document, RoleCode.BUSINESS_ANALYST);
+        when(userRepository.findById(5L)).thenReturn(Optional.of(solebA));
+        when(approvalRepository.findByApproverRoleAndApprovedByIsNull(RoleCode.CLIENT)).thenReturn(List.of());
+        when(approvalRepository.findByApproverRoleAndApprovedByIsNull(RoleCode.DEVELOPER)).thenReturn(List.of());
+        when(approvalRepository.findByApproverRoleAndApprovedByIsNull(RoleCode.BUSINESS_ANALYST)).thenReturn(List.of(baSlot));
+        when(userRoleRepository.findRoleCodesByUserId(5L)).thenReturn(List.of(RoleCode.BUSINESS_ANALYST));
+        // Author (id 5) is the only BA on staff.
+        when(userRoleRepository.findUserIdsByRoleCode(RoleCode.BUSINESS_ANALYST)).thenReturn(List.of(5L));
+
+        List<PendingApprovalResponse> pending = approvalService.pendingFor(5L);
+
+        assertThat(pending).extracting(PendingApprovalResponse::documentId).containsExactly(1L);
+    }
+
+    @Test
+    void pendingFor_anotherBaOnStaff_excludesTheirOwnAuthoredDocument() {
+        User author = user(5L, "author-ba");
+        RequirementDocument document = document(1L, RequirementDocumentType.BRD, project(10L, null, null), author);
+        RequirementDocumentApproval baSlot = new RequirementDocumentApproval(document, RoleCode.BUSINESS_ANALYST);
+        when(userRepository.findById(5L)).thenReturn(Optional.of(author));
+        when(approvalRepository.findByApproverRoleAndApprovedByIsNull(RoleCode.CLIENT)).thenReturn(List.of());
+        when(approvalRepository.findByApproverRoleAndApprovedByIsNull(RoleCode.DEVELOPER)).thenReturn(List.of());
+        when(approvalRepository.findByApproverRoleAndApprovedByIsNull(RoleCode.BUSINESS_ANALYST)).thenReturn(List.of(baSlot));
+        when(userRoleRepository.findRoleCodesByUserId(5L)).thenReturn(List.of(RoleCode.BUSINESS_ANALYST));
+        // Another BA (id 6) is on staff besides the author (id 5).
+        when(userRoleRepository.findUserIdsByRoleCode(RoleCode.BUSINESS_ANALYST)).thenReturn(List.of(5L, 6L));
+
+        List<PendingApprovalResponse> pending = approvalService.pendingFor(5L);
+
+        assertThat(pending).isEmpty();
+    }
+
+    @Test
+    void pendingFor_client_seesOwnProjectsPendingClientSlot() {
+        User clientUser = user(3L, "client-uuid");
+        ClientProject project = project(10L, clientUser, null);
+        RequirementDocument document = document(1L, RequirementDocumentType.BRD, project, user(5L, "ba"));
+        RequirementDocumentApproval clientSlot = new RequirementDocumentApproval(document, RoleCode.CLIENT);
+        when(userRepository.findById(3L)).thenReturn(Optional.of(clientUser));
+        when(approvalRepository.findByApproverRoleAndApprovedByIsNull(RoleCode.CLIENT)).thenReturn(List.of(clientSlot));
+        when(approvalRepository.findByApproverRoleAndApprovedByIsNull(RoleCode.DEVELOPER)).thenReturn(List.of());
+        when(userRoleRepository.findRoleCodesByUserId(3L)).thenReturn(List.of(RoleCode.CLIENT));
+
+        List<PendingApprovalResponse> pending = approvalService.pendingFor(3L);
+
+        assertThat(pending).extracting(PendingApprovalResponse::documentId).containsExactly(1L);
     }
 }

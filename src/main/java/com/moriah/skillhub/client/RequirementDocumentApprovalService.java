@@ -187,8 +187,16 @@ public class RequirementDocumentApprovalService {
             }
         }
         if (userRoleRepository.findRoleCodesByUserId(callerUserId).contains(RoleCode.BUSINESS_ANALYST)) {
+            // Same exception as resolveCallerSlot's own self-approval block below: a BA's own
+            // document is only excluded from their inbox when there's *another* BA to hand it to.
+            // Missing this the first time around left a sole BA's own documents fully approvable
+            // (via approve()) but permanently invisible in this inbox — confirmed live: a BRD a
+            // solo BA authored, with CLIENT already signed off, never appeared here for them to
+            // act on, even though nothing else blocked it.
+            boolean anotherBaOnStaff = anotherBaOnStaff(callerUserId);
             for (RequirementDocumentApproval slot : approvalRepository.findByApproverRoleAndApprovedByIsNull(RoleCode.BUSINESS_ANALYST)) {
-                if (!Objects.equals(slot.getDocument().getAuthoredBy().getId(), callerUserId)) {
+                boolean isOwnDocument = Objects.equals(slot.getDocument().getAuthoredBy().getId(), callerUserId);
+                if (!isOwnDocument || !anotherBaOnStaff) {
                     results.add(slot);
                 }
             }
@@ -233,9 +241,7 @@ public class RequirementDocumentApprovalService {
         }
         if (userRoleRepository.findRoleCodesByUserId(caller.getId()).contains(RoleCode.BUSINESS_ANALYST)) {
             if (Objects.equals(document.getAuthoredBy().getId(), caller.getId())) {
-                boolean anotherBaOnStaff = userRoleRepository.findUserIdsByRoleCode(RoleCode.BUSINESS_ANALYST).stream()
-                        .anyMatch(id -> !Objects.equals(id, caller.getId()));
-                if (anotherBaOnStaff) {
+                if (anotherBaOnStaff(caller.getId())) {
                     throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION,
                             "You authored this document — another business analyst must sign it off.");
                 }
@@ -246,6 +252,15 @@ public class RequirementDocumentApprovalService {
                     .orElseThrow(() -> new ForbiddenOperationException(ErrorCode.NOT_RESOURCE_OWNER));
         }
         throw new ForbiddenOperationException(ErrorCode.NOT_RESOURCE_OWNER);
+    }
+
+    /** Shared by {@link #resolveCallerSlot} (may this BA self-approve their own document?) and
+     * {@link #pendingFor} (should their own document even show up in their inbox?) — the two
+     * questions must have the same answer, or a document becomes approvable but invisible (or
+     * visible but rejected on click), either of which is a dead end for the caller. */
+    private boolean anotherBaOnStaff(Long callerUserId) {
+        return userRoleRepository.findUserIdsByRoleCode(RoleCode.BUSINESS_ANALYST).stream()
+                .anyMatch(id -> !Objects.equals(id, callerUserId));
     }
 
     private static Optional<RequirementDocumentApproval> findSlot(List<RequirementDocumentApproval> slots, RoleCode role) {
