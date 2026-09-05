@@ -1,5 +1,15 @@
 package com.moriah.skillhub.admin;
 
+import com.lowagie.text.Chunk;
+import com.lowagie.text.Document;
+import com.lowagie.text.DocumentException;
+import com.lowagie.text.Font;
+import com.lowagie.text.PageSize;
+import com.lowagie.text.Paragraph;
+import com.lowagie.text.Phrase;
+import com.lowagie.text.pdf.PdfPCell;
+import com.lowagie.text.pdf.PdfPTable;
+import com.lowagie.text.pdf.PdfWriter;
 import com.moriah.skillhub.admin.dto.ExportFormat;
 import com.moriah.skillhub.admin.dto.ExportReport;
 import com.moriah.skillhub.admin.dto.ExportResult;
@@ -15,6 +25,7 @@ import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.awt.Color;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
@@ -24,6 +35,7 @@ import java.nio.charset.StandardCharsets;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -35,10 +47,14 @@ import java.util.concurrent.CompletableFuture;
  * across the proxy correctly.
  * <p>
  * build-plan.md feature 22: "Exports run {@code @Async} via {@code SXSSFWorkbook}" — now joined by
- * a CSV path (FRS MSH-FR-ADM-05) that reuses the exact same {@link ReportSpec} (SQL, headers, row
- * mapper) per report, so the two formats can never drift into showing different columns or rows
- * for what's nominally "the same export." Runs on the dedicated {@code exportExecutor} pool (audit
- * 2026-08-31, H1) so a slow export can't starve invoice generation.
+ * CSV and PDF paths (FRS MSH-FR-ADM-05: "Excel, PDF, and CSV") that all reuse the exact same
+ * {@link ReportSpec} (SQL, headers, row mapper) per report, so no format can ever drift into
+ * showing different columns or rows for what's nominally "the same export." PDF renders via
+ * OpenPDF (already a dependency — certificates/invoices/HR letters use it), capped at {@link
+ * #MAX_PDF_ROWS}: unlike XLSX/CSV, a PDF is meant to be read or printed, not opened as a data
+ * file, so rendering the full {@link #MAX_EXPORT_ROWS} into one document would produce something
+ * nobody could use. Runs on the dedicated {@code exportExecutor} pool (audit 2026-08-31, H1) so a
+ * slow export can't starve invoice generation.
  * <p>
  * "target the read replica, so a 50,000-row XLSX export never touches the primary" — enforced by
  * construction: this class autowires only the {@code replicaJdbcTemplate}-qualified bean, never
@@ -61,6 +77,12 @@ public class ExportGenerationService {
      * rows and logs when it bites. */
     static final int MAX_EXPORT_ROWS = 200_000;
 
+    /** Hard ceiling on rows actually rendered into a PDF table — well below {@link
+     * #MAX_EXPORT_ROWS}. A printed/skimmed report beyond a couple thousand rows stops being
+     * something a person reads; past this point {@code buildPdf} still counts every row the query
+     * returns (for an honest {@code rowCount}/truncation note) but stops adding table cells. */
+    static final int MAX_PDF_ROWS = 2_000;
+
     private final JdbcTemplate replicaJdbcTemplate;
 
     public ExportGenerationService(@Qualifier("replicaJdbcTemplate") JdbcTemplate replicaJdbcTemplate) {
@@ -75,7 +97,11 @@ public class ExportGenerationService {
     public CompletableFuture<ExportResult> generate(ExportReport report, ExportFormat format) {
         try {
             ReportSpec spec = specFor(report);
-            ExportResult result = format == ExportFormat.CSV ? buildCsv(spec) : buildWorkbook(report, spec);
+            ExportResult result = switch (format) {
+                case CSV -> buildCsv(spec);
+                case PDF -> buildPdf(spec);
+                case XLSX -> buildWorkbook(report, spec);
+            };
             if (report == ExportReport.AUDIT && result.rowCount() == MAX_EXPORT_ROWS) {
                 log.warn("[admin/export] AUDIT export truncated at the {}-row cap — older audit_logs rows "
                         + "are not included; add a date-range filter to this endpoint if full history is needed",
@@ -273,6 +299,82 @@ public class ExportGenerationService {
             return "\"" + value.replace("\"", "\"\"") + "\"";
         }
         return value;
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // PDF — same spec, same streaming-cursor approach, capped at MAX_PDF_ROWS for a document a
+    // person could actually read or print. OpenPDF (com.lowagie.text) — already a dependency,
+    // the same one certificates/invoices/HR letters render through.
+    // ---------------------------------------------------------------------------------------
+
+    private static final Font PDF_TITLE_FONT = new Font(Font.HELVETICA, 16, Font.BOLD);
+    private static final Font PDF_SUBTITLE_FONT = new Font(Font.HELVETICA, 9, Font.NORMAL, Color.DARK_GRAY);
+    private static final Font PDF_HEADER_FONT = new Font(Font.HELVETICA, 9, Font.BOLD, Color.WHITE);
+    private static final Font PDF_BODY_FONT = new Font(Font.HELVETICA, 8, Font.NORMAL);
+    private static final Font PDF_NOTE_FONT = new Font(Font.HELVETICA, 9, Font.ITALIC, Color.DARK_GRAY);
+    private static final Color PDF_HEADER_BG = new Color(0x0D, 0x28, 0x45);
+
+    private ExportResult buildPdf(ReportSpec spec) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        // Landscape — every report here is wider than it is tall (up to seven columns for AUDIT),
+        // and a printable admin report has no reason to fight a portrait page for column width.
+        Document doc = new Document(PageSize.A4.rotate(), 28, 28, 40, 28);
+        int[] rowNum = { 0 };
+        try {
+            PdfWriter.getInstance(doc, out);
+            doc.open();
+            doc.add(new Paragraph(spec.sheetName() + " Export", PDF_TITLE_FONT));
+            doc.add(new Paragraph("Moriah Skill Hub · Generated " + Instant.now(), PDF_SUBTITLE_FONT));
+            doc.add(Chunk.NEWLINE);
+
+            PdfPTable table = new PdfPTable(spec.headers().length);
+            table.setWidthPercentage(100);
+            table.setHeaderRows(1);
+            for (String header : spec.headers()) {
+                PdfPCell cell = new PdfPCell(new Phrase(header, PDF_HEADER_FONT));
+                cell.setBackgroundColor(PDF_HEADER_BG);
+                cell.setPadding(4f);
+                table.addCell(cell);
+            }
+
+            RowCallbackHandler intoPdf = rs -> {
+                Object[] values = spec.rowMapper().map(rs);
+                rowNum[0]++;
+                // Still counted above for an honest rowCount/truncation note — just not rendered
+                // past the cap, so the PDF itself never grows past something printable.
+                if (rowNum[0] > MAX_PDF_ROWS) {
+                    return;
+                }
+                for (Object value : values) {
+                    PdfPCell cell = new PdfPCell(new Phrase(formatPdfValue(value), PDF_BODY_FONT));
+                    cell.setPadding(3f);
+                    table.addCell(cell);
+                }
+            };
+            streamQuery(spec.sql(), intoPdf);
+            doc.add(table);
+
+            if (rowNum[0] > MAX_PDF_ROWS) {
+                doc.add(Chunk.NEWLINE);
+                doc.add(new Paragraph(
+                        "Showing the first %,d of %,d rows — use the XLSX or CSV export for the complete data set."
+                                .formatted(MAX_PDF_ROWS, rowNum[0]),
+                        PDF_NOTE_FONT));
+            }
+            doc.close();
+        } catch (DocumentException e) {
+            throw new IOException("PDF export rendering failed", e);
+        }
+        return new ExportResult(out.toByteArray(), rowNum[0]);
+    }
+
+    private String formatPdfValue(Object value) {
+        return switch (value) {
+            case null -> "";
+            case BigDecimal bigDecimal -> bigDecimal.toPlainString();
+            case Timestamp timestamp -> timestamp.toInstant().toString();
+            default -> value.toString();
+        };
     }
 
     // ---------------------------------------------------------------------------------------

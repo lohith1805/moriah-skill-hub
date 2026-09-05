@@ -52,6 +52,7 @@ public class ExportService {
 
     private static final String XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     private static final String CSV_CONTENT_TYPE = "text/csv;charset=UTF-8";
+    private static final String PDF_CONTENT_TYPE = "application/pdf";
 
     private final ExportGenerationService exportGenerationService;
     private final StorageService storageService;
@@ -61,8 +62,8 @@ public class ExportService {
         ExportFormat format = parseFormat(formatParam);
         ExportResult result = await(exportGenerationService.generate(report, format));
 
-        String extension = format == ExportFormat.CSV ? "csv" : "xlsx";
-        String contentType = format == ExportFormat.CSV ? CSV_CONTENT_TYPE : XLSX_CONTENT_TYPE;
+        String extension = extensionFor(format);
+        String contentType = contentTypeFor(format);
         String key = "exports/%s/%s.%s".formatted(report.name().toLowerCase(Locale.ROOT), UUID.randomUUID(), extension);
         storageService.uploadTrusted(key, result.fileBytes(), contentType);
 
@@ -78,6 +79,22 @@ public class ExportService {
      * gate in a future direct-bytes implementation. */
     boolean deliveredInline(long rowCount) {
         return rowCount <= Constants.EXPORT_SMALL_ROW_THRESHOLD;
+    }
+
+    private String extensionFor(ExportFormat format) {
+        return switch (format) {
+            case CSV -> "csv";
+            case PDF -> "pdf";
+            case XLSX -> "xlsx";
+        };
+    }
+
+    private String contentTypeFor(ExportFormat format) {
+        return switch (format) {
+            case CSV -> CSV_CONTENT_TYPE;
+            case PDF -> PDF_CONTENT_TYPE;
+            case XLSX -> XLSX_CONTENT_TYPE;
+        };
     }
 
     private ExportReport parseReport(String reportParam) {

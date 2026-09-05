@@ -122,8 +122,23 @@ class ExportServiceTest {
     }
 
     @Test
+    void export_pdfFormat_usesPdfContentTypeAndExtension() throws Exception {
+        byte[] bytes = { 7, 8, 9 };
+        when(exportGenerationService.generate(ExportReport.USERS, ExportFormat.PDF))
+                .thenReturn(CompletableFuture.completedFuture(new ExportResult(bytes, 2)));
+        when(storageService.presignedGetUrl(eq("caller-uuid"), anyString(), any(Duration.class)))
+                .thenReturn(URI.create("https://example.com/presigned.pdf").toURL());
+
+        ExportResponse response = exportService.export("users", "pdf", "caller-uuid");
+
+        assertThat(response.format()).isEqualTo("PDF");
+        verify(storageService).uploadTrusted(
+                org.mockito.ArgumentMatchers.contains(".pdf"), eq(bytes), eq("application/pdf"));
+    }
+
+    @Test
     void export_unsupportedFormat_throwsBusinessException() {
-        assertThatThrownBy(() -> exportService.export("users", "pdf", "caller-uuid"))
+        assertThatThrownBy(() -> exportService.export("users", "docx", "caller-uuid"))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EXPORT_FORMAT_NOT_SUPPORTED);
     }

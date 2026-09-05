@@ -308,13 +308,30 @@ class AdminMetricsFlowIT extends IntegrationTestBase {
     }
 
     @Test
+    void exportUsersAsPdf_returnsPresignedPdfUrlWithCorrectRowCount() {
+        String adminToken = registerVerifyGrantRoleAndLogin("Admin Export Pdf", "ADMIN");
+        long usersBefore = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM users", Long.class);
+
+        given()
+                .header("Authorization", "Bearer " + adminToken)
+            .when()
+                .post("/api/v1/admin/exports/users?format=pdf")
+            .then()
+                .statusCode(200)
+                .body("data.report", equalTo("USERS"))
+                .body("data.format", equalTo("PDF"))
+                .body("data.rowCount", equalTo((int) usersBefore))
+                .body("data.downloadUrl", org.hamcrest.Matchers.containsString(".pdf"));
+    }
+
+    @Test
     void exportUnsupportedFormat_returns400() {
         String adminToken = registerVerifyGrantRoleAndLogin("Admin Export Bad Format", "ADMIN");
 
         given()
                 .header("Authorization", "Bearer " + adminToken)
             .when()
-                .post("/api/v1/admin/exports/users?format=pdf")
+                .post("/api/v1/admin/exports/users?format=docx")
             .then()
                 .statusCode(400)
                 .body("error.code", equalTo("EXPORT_FORMAT_NOT_SUPPORTED"));
