@@ -170,12 +170,21 @@ SELECT 'ShopSprint — E-Commerce Storefront API', 'shopsprint-storefront-api',
        (SELECT id FROM users WHERE email = 'dev@moriah.test')
 WHERE NOT EXISTS (SELECT 1 FROM projects WHERE slug = 'shopsprint-storefront-api');
 
+-- broken_key/test_key are built from p.id (the real numeric project id), not the slug —
+-- OwnershipGuard#canAccessProject parses the "projects/{id}/..." segment with Long.parseLong,
+-- so a slug there ("projects/shopsprint/...") always fails to parse and permanently denies
+-- every presign for that key, which in turn breaks the WHOLE projects/bug-challenges list for
+-- every caller (toResponse presigns every row's assets/challenges inline, uncaught). Confirmed
+-- the hard way — fixed as a live UPDATE too, since this repeatable migration's own
+-- NOT EXISTS guard won't retouch a row that was already inserted with the old, wrong key.
 INSERT INTO bug_challenges (project_id, title, broken_code_key, expected_behaviour, test_script_key, difficulty, created_by)
-SELECT p.id, v.title, v.broken_key, v.expected, v.test_key, v.diff,
+SELECT p.id, v.title, CONCAT('projects/', p.id, '/challenges/', v.broken_key), v.expected,
+       CASE WHEN v.test_key IS NULL THEN NULL ELSE CONCAT('projects/', p.id, '/challenges/', v.test_key) END,
+       v.diff,
        (SELECT id FROM users WHERE email = 'dev@moriah.test')
 FROM projects p JOIN (
     SELECT 'Cart total is wrong when a coupon is applied' AS title,
-           'projects/shopsprint/challenges/cart-total-broken.java' AS broken_key,
+           'cart-total-broken.java' AS broken_key,
            CONCAT(
              'CartService.total() should return the sum of (unitPricePaise * quantity) for every line, ',
              'then subtract the coupon discount, and never return a negative number. Right now it applies ',
@@ -183,10 +192,10 @@ FROM projects p JOIN (
              'coupon is discounted ₹300. Rewrite total() so the coupon is applied exactly once and the ',
              'result is floored at 0.'
            ) AS expected,
-           'projects/shopsprint/challenges/cart-total-tests.java' AS test_key,
+           'cart-total-tests.java' AS test_key,
            'INTERMEDIATE' AS diff
     UNION ALL SELECT 'Checkout oversells the last item under concurrency',
-           'projects/shopsprint/challenges/checkout-oversell-broken.java',
+           'checkout-oversell-broken.java',
            CONCAT(
              'CheckoutService.checkout() reads stock, checks quantity, then decrements in three separate ',
              'statements with no lock, so two simultaneous checkouts for the last unit both succeed. ',
@@ -198,6 +207,15 @@ FROM projects p JOIN (
 ) v
 WHERE p.slug = 'shopsprint-storefront-api'
   AND NOT EXISTS (SELECT 1 FROM bug_challenges bc WHERE bc.project_id = p.id AND bc.title = v.title);
+
+-- Live-DB repair for a row already inserted by an earlier run of this same migration, back when
+-- broken_key/test_key were hardcoded to the slug instead of p.id (see comment above) — a
+-- repeatable migration's checksum-triggered re-run never revisits a row its own NOT EXISTS guard
+-- already considers present, so the bad key has to be corrected explicitly, once.
+UPDATE bug_challenges
+   SET broken_code_key = REPLACE(broken_code_key, 'projects/shopsprint/', CONCAT('projects/', project_id, '/')),
+       test_script_key = REPLACE(test_script_key, 'projects/shopsprint/', CONCAT('projects/', project_id, '/'))
+ WHERE broken_code_key LIKE 'projects/shopsprint/%';
 
 -- ---- A small CRM pipeline for the sales rep -----------------------------------------
 --   One lead per pipeline stage so /leads/pipeline, the leaderboard and the activity
