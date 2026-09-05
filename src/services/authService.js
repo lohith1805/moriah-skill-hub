@@ -264,6 +264,10 @@ export async function registerStudent(payload) {
     phone: payload.phone || undefined,
     password: payload.password,
     githubUsername: payload.githubUsername || undefined,
+    // NFR-05 (GDPR/DPDP): the "I agree to Terms of Service and Privacy Policy" checkbox was
+    // already required client-side (Register.jsx) but never actually reached the backend — the
+    // server now enforces and records it, so it has to be sent.
+    agreedToTerms: !!payload.agree,
   });
   return { registered: true, uuid: res.uuid, email: res.email, needsEmailVerification: true };
 }
@@ -289,6 +293,7 @@ export async function registerClient(payload) {
     password: payload.password,
     companyName: payload.companyName || payload.company || payload.name,
     industry: payload.industry || undefined,
+    agreedToTerms: !!payload.agree,
   });
   return { registered: true, uuid: res.uuid, pendingApproval: true };
 }

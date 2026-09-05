@@ -188,6 +188,7 @@ export default function Register() {
         track: values.track,
         githubUsername: values.githubUsername || undefined,
         notifications: { email: true, whatsapp: values.whatsappNotifications, desktop: true },
+        agree: values.agree,
       });
       setStudentSubmitted(res?.needsEmailVerification !== false);
     } catch (err) {
@@ -208,6 +209,7 @@ export default function Register() {
         company: values.company,
         password: values.password,
         notifications: { email: true, whatsapp: values.whatsappNotifications, desktop: true },
+        agree: values.agree,
       });
       setClientSubmitted(true);
     } catch (err) {
