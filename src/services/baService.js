@@ -185,6 +185,7 @@ function toFeMeeting(m) {
   if (!m) return null;
   const { date, time } = splitInstant(m.scheduledAt);
   const meta = readMeta()[m.id] || {};
+  const namedAttendees = (m.attendees || []).map((a) => a.fullName);
   return {
     id: m.id,
     title: m.title,
@@ -197,10 +198,13 @@ function toFeMeeting(m) {
     meetLink: m.location || "",
     status: m.status || "SCHEDULED",
     momNotes: m.minutes || "",
-    // UI-only sidecar fields
+    // Real, emailed invitees (B1.14 redesign) — a role -> employee checkbox pick, not free text.
+    attendeeList: (m.attendees || []).map((a) => ({ uuid: a.uuid, fullName: a.fullName, email: a.email })),
+    // UI-only sidecar fields (cosmetic ceremony type / free-text client label the backend has no
+    // column for)
     type: meta.type || "Sprint Demo",
     client: meta.client || "",
-    attendees: meta.attendees || [],
+    attendees: namedAttendees.length ? namedAttendees : meta.attendees || [],
   };
 }
 
@@ -212,12 +216,23 @@ function toMeetingRequest(v, { includeStatus = false } = {}) {
     scheduledAt: v.scheduledAt || toInstant(v.date, v.time),
     durationMinutes: v.durationMinutes ? Number(v.durationMinutes) : 60,
     location: v.meetLink || null,
+    // undefined (not sent) would still serialize as omitted key in JSON.stringify, but explicit
+    // null here means "the caller passed no attendee list" -> backend leaves invites untouched
+    // on update; a real (possibly empty) array means "replace wholesale."
+    attendeeUuids: Array.isArray(v.attendeeUuids) ? v.attendeeUuids : undefined,
   };
   if (includeStatus) {
     body.status = v.status || "SCHEDULED";
     body.minutes = v.momNotes ? v.momNotes : null;
   }
   return body;
+}
+
+// GET /api/v1/ba/meetings/staff-directory?role= — the role -> employee picker's second dropdown.
+// role must be BUSINESS_ANALYST, DEVELOPER, or ADMIN.
+export async function getMeetingStaffDirectory(role) {
+  const res = await apiClient.get("/ba/meetings/staff-directory", { role });
+  return Array.isArray(res) ? res : [];
 }
 
 export async function getMeetings() {
@@ -231,32 +246,16 @@ export async function createMeeting(input) {
   writeMeta(created.id, {
     type: input.type || "Sprint Demo",
     client: input.client || "",
-    attendees: Array.isArray(input.attendees)
-      ? input.attendees
-      : String(input.attendees || "")
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
   });
   return toFeMeeting(created);
 }
 
 export async function updateMeeting(id, input) {
   const updated = await apiClient.put(`/ba/meetings/${id}`, toMeetingRequest(input, { includeStatus: true }));
-  if (input.type !== undefined || input.client !== undefined || input.attendees !== undefined) {
+  if (input.type !== undefined || input.client !== undefined) {
     writeMeta(id, {
       ...(input.type !== undefined ? { type: input.type } : {}),
       ...(input.client !== undefined ? { client: input.client } : {}),
-      ...(input.attendees !== undefined
-        ? {
-            attendees: Array.isArray(input.attendees)
-              ? input.attendees
-              : String(input.attendees || "")
-                  .split(",")
-                  .map((s) => s.trim())
-                  .filter(Boolean),
-          }
-        : {}),
     });
   }
   return toFeMeeting(updated);

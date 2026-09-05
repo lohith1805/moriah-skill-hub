@@ -23,6 +23,7 @@ import Unauthorized from "../pages/shared/Unauthorized";
 import SharedProfile from "../pages/shared/Profile";
 import SharedSettings from "../pages/shared/Settings";
 import ClientProjectDocuments from "../pages/shared/ClientProjectDocuments";
+import ClientPreProjectDiscussions from "../pages/shared/ClientPreProjectDiscussions";
 
 // Student
 import StudentDashboard from "../pages/student/Dashboard";
@@ -160,6 +161,7 @@ export default function AppRoutes() {
           <Route path="/developer/projects" element={<DeveloperProjects />} />
           <Route path="/developer/client-requirements" element={<DeveloperClientRequirements />} />
           <Route path="/developer/project-documents" element={<ClientProjectDocuments />} />
+          <Route path="/developer/pre-project-discussions" element={<ClientPreProjectDiscussions />} />
           <Route path="/developer/bug-challenges" element={<DeveloperBugChallenges />} />
           <Route path="/developer/video-lessons" element={<DeveloperVideoLessons />} />
           <Route path="/developer/assessment-bank" element={<DeveloperAssessmentBank />} />
@@ -218,6 +220,7 @@ export default function AppRoutes() {
           <Route path="/admin/transactions" element={<AdminTransactions />} />
           <Route path="/admin/audit-logs" element={<AdminAuditLogs />} />
           <Route path="/admin/reports" element={<AdminReports />} />
+          <Route path="/admin/pre-project-discussions" element={<ClientPreProjectDiscussions />} />
           <Route path="/admin/profile" element={<SharedProfile />} />
           <Route path="/admin/settings" element={<SharedSettings />} />
         </Route>

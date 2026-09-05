@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import {
-  Plus, CalendarClock, Video, Edit, Trash2, Users, FileText,
-  Clock, CheckCircle2, MessageSquare, Link, Calendar
+  Plus, CalendarClock, Video, Trash2, Users, FileText,
+  CheckCircle2, Calendar, X
 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
-import Card, { CardHeader } from "../../components/ui/Card";
+import Card from "../../components/ui/Card";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
@@ -12,25 +12,41 @@ import { Input, Select, Textarea } from "../../components/ui/FormField";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required } from "../../utils/validators";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
-import { getMeetings, createMeeting, saveMeetingMinutes, deleteMeeting } from "../../services/baService";
+import { getMeetings, createMeeting, saveMeetingMinutes, deleteMeeting, getMeetingStaffDirectory } from "../../services/baService";
+import { getClientProjects } from "../../services/clientService";
+
+const INVITE_ROLES = [
+  { value: "BUSINESS_ANALYST", label: "Business Analyst" },
+  { value: "DEVELOPER", label: "Developer" },
+  { value: "ADMIN", label: "Admin" },
+];
+
+const emptyValues = () => ({
+  title: "",
+  type: "Sprint Demo",
+  clientProjectId: "",
+  date: "",
+  time: "03:00 PM",
+  meetLink: "",
+  agenda: "",
+});
 
 export default function BaMeetings() {
   const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [projects, setProjects] = useState([]);
 
   // Schedule modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [values, setValues] = useState({
-    title: "",
-    type: "Sprint Demo",
-    client: "",
-    date: "",
-    time: "03:00 PM",
-    meetLink: "",
-    agenda: "",
-    attendees: "Client Lead, Trainer, BA, Developer Lead"
-  });
+  const [values, setValues] = useState(emptyValues());
+
+  // Role -> employee attendee picker. selected: [{ uuid, fullName, role }] — accumulated across
+  // role switches so picking Developers then Business Analysts keeps both selections.
+  const [pickerRole, setPickerRole] = useState("DEVELOPER");
+  const [roster, setRoster] = useState({}); // { [role]: [{uuid, fullName, email}] } — fetched lazily, cached
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const [selectedAttendees, setSelectedAttendees] = useState([]);
 
   // MOM Notes modal state
   const [momOpen, setMomOpen] = useState(false);
@@ -50,7 +66,36 @@ export default function BaMeetings() {
 
   useEffect(() => {
     load();
+    getClientProjects().then(setProjects).catch(() => setProjects([]));
   }, []);
+
+  useEffect(() => {
+    if (!modalOpen || roster[pickerRole]) return;
+    setRosterLoading(true);
+    getMeetingStaffDirectory(pickerRole)
+      .then((list) => setRoster((r) => ({ ...r, [pickerRole]: list })))
+      .catch(() => notify(`Couldn't load the ${pickerRole} roster.`, { type: "error" }))
+      .finally(() => setRosterLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalOpen, pickerRole]);
+
+  const openCreate = () => {
+    setErrors({});
+    setValues(emptyValues());
+    setSelectedAttendees([]);
+    setPickerRole("DEVELOPER");
+    setModalOpen(true);
+  };
+
+  const toggleAttendee = (person, role) => {
+    setSelectedAttendees((current) => {
+      const already = current.some((a) => a.uuid === person.uuid);
+      if (already) return current.filter((a) => a.uuid !== person.uuid);
+      return [...current, { uuid: person.uuid, fullName: person.fullName, role }];
+    });
+  };
+
+  const removeAttendee = (uuid) => setSelectedAttendees((current) => current.filter((a) => a.uuid !== uuid));
 
   const handleSchedule = async (e) => {
     e.preventDefault();
@@ -61,19 +106,25 @@ export default function BaMeetings() {
     setSubmitting(true);
     try {
       const generatedLink = values.meetLink || `https://meet.google.com/msh-${Math.random().toString(36).substr(2, 4)}-${Math.random().toString(36).substr(2, 3)}`;
+      const project = projects.find((p) => String(p.id) === String(values.clientProjectId));
       await createMeeting({
         title: values.title,
         type: values.type,
-        client: values.client || "Enterprise Client",
+        client: project?.clientName || "",
+        clientProjectId: values.clientProjectId || null,
         date: values.date,
         time: values.time || "03:00 PM",
         meetLink: generatedLink,
         agenda: values.agenda || "Review sprint milestones and collect client sign-off.",
-        attendees: values.attendees,
+        attendeeUuids: selectedAttendees.map((a) => a.uuid),
       });
-      notify("Client ceremony scheduled.", { type: "success", title: "Meeting Scheduled" });
+      notify(
+        selectedAttendees.length
+          ? `Client Pre-Project Discussion scheduled — ${selectedAttendees.length} ${selectedAttendees.length === 1 ? "person" : "people"} invited by email.`
+          : "Client Pre-Project Discussion scheduled.",
+        { type: "success", title: "Meeting Scheduled" }
+      );
       setModalOpen(false);
-      setValues({ title: "", type: "Sprint Demo", client: "", date: "", time: "03:00 PM", meetLink: "", agenda: "", attendees: "Client Lead, Trainer, BA, Developer Lead" });
       load();
     } catch (err) {
       notify(err.message || "Could not schedule the meeting.", { type: "error" });
@@ -104,22 +155,24 @@ export default function BaMeetings() {
     const target = meetings.find((m) => m.id === id);
     try {
       await deleteMeeting(id);
-      notify(`Meeting "${target?.title}" cancelled.`, { type: "success" });
+      notify(`Meeting "${target?.title}" cancelled — invited attendees have been emailed.`, { type: "success" });
       load();
     } catch (err) {
       notify(err.message || "Could not cancel the meeting.", { type: "error" });
     }
   };
 
+  const currentRoster = roster[pickerRole] || [];
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Client Meeting Coordination"
-        subtitle="Direct scheduling for sprint demos, backlog refinement, and sign-off ceremonies with minutes of meeting (MOM)"
+        title="Client Pre-Project Discussions"
+        subtitle="Schedule kickoffs, requirement walkthroughs, and sign-off ceremonies — invite people by role, and they're emailed automatically"
         breadcrumbs={[{ label: "Dashboard", to: "/ba/dashboard" }, { label: "Meetings" }]}
         action={
-          <Button icon={Plus} onClick={() => { setErrors({}); setModalOpen(true); }}>
-            Schedule Client Ceremony
+          <Button icon={Plus} onClick={openCreate}>
+            Schedule Discussion
           </Button>
         }
       />
@@ -138,7 +191,8 @@ export default function BaMeetings() {
                   <div>
                     <h3 className="font-semibold text-ink-900 text-sm">{m.title}</h3>
                     <p className="text-xs text-ink-500 flex items-center gap-1.5 mt-0.5">
-                      <CalendarClock size={13} /> {m.date} at {m.time} · Client: <strong className="text-ink-800">{m.client}</strong>
+                      <CalendarClock size={13} /> {m.date} at {m.time}
+                      {m.client && <> · Client: <strong className="text-ink-800">{m.client}</strong></>}
                     </p>
                   </div>
                 </div>
@@ -164,13 +218,17 @@ export default function BaMeetings() {
                   <p className="text-ink-600 mt-0.5">{m.agenda || "Sprint review and demonstration of student pull requests."}</p>
                 </div>
                 <div>
-                  <span className="font-semibold text-ink-700">Invited Attendees:</span>
+                  <span className="font-semibold text-ink-700 flex items-center gap-1"><Users size={12} /> Invited Attendees:</span>
                   <div className="flex flex-wrap gap-1 mt-1">
-                    {(m.attendees || []).map((att, i) => (
-                      <span key={i} className="bg-white border border-border px-2 py-0.5 rounded text-[11px] text-ink-700">
-                        {att}
-                      </span>
-                    ))}
+                    {(m.attendees || []).length === 0 ? (
+                      <span className="text-ink-400">Nobody invited yet</span>
+                    ) : (
+                      (m.attendees || []).map((att, i) => (
+                        <span key={i} className="bg-white border border-border px-2 py-0.5 rounded text-[11px] text-ink-700">
+                          {att}
+                        </span>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>
@@ -189,11 +247,12 @@ export default function BaMeetings() {
         </div>
       )}
 
-      {/* Schedule Ceremony Modal */}
+      {/* Schedule Discussion Modal */}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="Schedule Client Ceremony (MSH-FR-BA-04)"
+        title="Schedule a Client Pre-Project Discussion"
+        size="lg"
         footer={
           <>
             <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
@@ -205,7 +264,7 @@ export default function BaMeetings() {
           <Input
             label="Meeting Title"
             required
-            placeholder="e.g. Meeting title"
+            placeholder="e.g. Storefront Revamp — Kickoff"
             value={values.title}
             onChange={(e) => setValues((v) => ({ ...v, title: e.target.value }))}
             error={errors.title}
@@ -222,11 +281,12 @@ export default function BaMeetings() {
               value={values.type}
               onChange={(e) => setValues((v) => ({ ...v, type: e.target.value }))}
             />
-            <Input
-              label="Client Partner"
-              placeholder="e.g. Client company name"
-              value={values.client}
-              onChange={(e) => setValues((v) => ({ ...v, client: e.target.value }))}
+            <Select
+              label="Client Project"
+              placeholder="Not tied to a project"
+              options={projects.map((p) => ({ value: String(p.id), label: `${p.title} — ${p.clientName}` }))}
+              value={values.clientProjectId}
+              onChange={(e) => setValues((v) => ({ ...v, clientProjectId: e.target.value }))}
             />
           </div>
 
@@ -246,6 +306,13 @@ export default function BaMeetings() {
             />
           </div>
 
+          <Input
+            label="Meeting Link"
+            placeholder="e.g. Google Meet / Zoom link — auto-generated if left blank"
+            value={values.meetLink}
+            onChange={(e) => setValues((v) => ({ ...v, meetLink: e.target.value }))}
+          />
+
           <Textarea
             label="Agenda & Focus Items"
             rows={2}
@@ -253,11 +320,56 @@ export default function BaMeetings() {
             value={values.agenda}
             onChange={(e) => setValues((v) => ({ ...v, agenda: e.target.value }))}
           />
-          <Input
-            label="Invited Stakeholders (Comma-separated)"
-            value={values.attendees}
-            onChange={(e) => setValues((v) => ({ ...v, attendees: e.target.value }))}
-          />
+
+          {/* Role -> employee attendee picker */}
+          <div className="rounded-lg border border-dashed border-primary-300 bg-primary-50/40 p-3 flex flex-col gap-3">
+            <p className="text-xs font-semibold text-ink-700 flex items-center gap-1.5">
+              <Users size={14} className="text-primary-600" /> Invite attendees — checked people are emailed and see this on their own dashboard
+            </p>
+            <Select
+              label="Role"
+              options={INVITE_ROLES}
+              value={pickerRole}
+              onChange={(e) => setPickerRole(e.target.value)}
+            />
+            <div className="flex flex-col divide-y divide-border border border-border rounded-lg max-h-[160px] overflow-y-auto bg-white">
+              {rosterLoading ? (
+                <p className="text-xs text-ink-400 py-3 text-center">Loading roster…</p>
+              ) : currentRoster.length === 0 ? (
+                <p className="text-xs text-ink-400 py-3 text-center">No active {INVITE_ROLES.find((r) => r.value === pickerRole)?.label} accounts.</p>
+              ) : (
+                currentRoster.map((person) => (
+                  <label key={person.uuid} className="flex items-center gap-3 px-3 py-2 hover:bg-cream-50/60 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedAttendees.some((a) => a.uuid === person.uuid)}
+                      onChange={() => toggleAttendee(person, pickerRole)}
+                      className="accent-primary-700"
+                    />
+                    <span className="text-xs text-ink-800 flex-1">{person.fullName}</span>
+                    <span className="text-[11px] text-ink-400">{person.email}</span>
+                  </label>
+                ))
+              )}
+            </div>
+
+            {selectedAttendees.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-ink-700 mb-1.5">Invited ({selectedAttendees.length})</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedAttendees.map((a) => (
+                    <span key={a.uuid} className="inline-flex items-center gap-1 bg-white border border-border px-2 py-1 rounded-full text-[11px] text-ink-700">
+                      {a.fullName}
+                      <span className="text-ink-400">· {INVITE_ROLES.find((r) => r.value === a.role)?.label}</span>
+                      <button type="button" onClick={() => removeAttendee(a.uuid)} className="text-ink-400 hover:text-error-600">
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </form>
       </Modal>
 
