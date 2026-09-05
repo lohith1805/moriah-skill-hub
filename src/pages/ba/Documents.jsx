@@ -28,6 +28,7 @@ const DOC_TYPES = [
   { value: "SRS", label: "System Requirements Specification (SRS)" },
   { value: "FRS", label: "Functional Requirements Specification (FRS)" },
   { value: "USER_STORY", label: "User Story" },
+  { value: "OTHER", label: "Other" },
 ];
 
 function typeTone(t) {

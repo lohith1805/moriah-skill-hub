@@ -10,7 +10,7 @@ import { getDevRequirementDocs, getRequirementDocDetail, markDocReviewed } from 
 import { useToast } from "../../context/ToastContext";
 import { downloadTextFile } from "../../utils/downloadTextFile";
 
-const DOC_TYPE_LABEL = { BRD: "BRD", SRS: "SRS", FRS: "FRS", USER_STORY: "User Story" };
+const DOC_TYPE_LABEL = { BRD: "BRD", SRS: "SRS", FRS: "FRS", USER_STORY: "User Story", OTHER: "Other" };
 
 /**
  * Read-only reference: the finalized specs a developer builds against, once

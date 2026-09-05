@@ -25,7 +25,7 @@ const DASHBOARD_PATH_BY_ROLE = {
 
 const ROLE_ORDER = ["CLIENT", "BUSINESS_ANALYST", "DEVELOPER"];
 const ROLE_LABEL = { CLIENT: "Client", BUSINESS_ANALYST: "Business Analyst", DEVELOPER: "Developer" };
-const DOC_TYPE_LABEL = { BRD: "BRD", SRS: "SRS", FRS: "FRS", USER_STORY: "User Story" };
+const DOC_TYPE_LABEL = { BRD: "BRD", SRS: "SRS", FRS: "FRS", USER_STORY: "User Story", OTHER: "Other" };
 
 function ApprovalSlots({ approvals }) {
   const ordered = [...(approvals || [])].sort((a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role));

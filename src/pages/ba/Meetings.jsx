@@ -24,6 +24,15 @@ const INVITE_ROLES = [
 
 const STATUS_TONE = { SCHEDULED: "primary", COMPLETED: "success", CANCELLED: "error" };
 
+const CEREMONY_TYPES = [
+  { value: "Sprint Demo", label: "Sprint Demo Review" },
+  { value: "Backlog Refinement", label: "Backlog Refinement" },
+  { value: "Sign-off Meeting", label: "Architecture / Scope Sign-off" },
+  { value: "Client Kickoff", label: "Client Project Kickoff" },
+  { value: "Other", label: "Other" },
+];
+const CEREMONY_TYPE_VALUES = CEREMONY_TYPES.map((t) => t.value);
+
 const emptyValues = () => ({
   title: "",
   type: "Sprint Demo",
@@ -127,7 +136,7 @@ export default function BaMeetings() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const validation = validateForm(values, { title: [required], date: [required] });
+    const validation = validateForm(values, { title: [required], date: [required], type: [required] });
     setErrors(validation);
     if (Object.keys(validation).length) return;
 
@@ -317,14 +326,9 @@ export default function BaMeetings() {
           <div className="grid sm:grid-cols-2 gap-4">
             <Select
               label="Ceremony Type"
-              options={[
-                { value: "Sprint Demo", label: "Sprint Demo Review" },
-                { value: "Backlog Refinement", label: "Backlog Refinement" },
-                { value: "Sign-off Meeting", label: "Architecture / Scope Sign-off" },
-                { value: "Client Kickoff", label: "Client Project Kickoff" }
-              ]}
-              value={values.type}
-              onChange={(e) => setValues((v) => ({ ...v, type: e.target.value }))}
+              options={CEREMONY_TYPES}
+              value={CEREMONY_TYPE_VALUES.includes(values.type) ? values.type : "Other"}
+              onChange={(e) => setValues((v) => ({ ...v, type: e.target.value === "Other" ? "" : e.target.value }))}
             />
             <Select
               label="Client Project"
@@ -334,6 +338,17 @@ export default function BaMeetings() {
               onChange={(e) => setValues((v) => ({ ...v, clientProjectId: e.target.value }))}
             />
           </div>
+
+          {!CEREMONY_TYPE_VALUES.includes(values.type) && (
+            <Input
+              label="Ceremony Type — please specify"
+              required
+              placeholder="e.g. Retrospective, Escalation Call, Ad-hoc Sync"
+              value={values.type}
+              onChange={(e) => setValues((v) => ({ ...v, type: e.target.value }))}
+              error={errors.type}
+            />
+          )}
 
           <div className="grid sm:grid-cols-2 gap-4">
             <Input
