@@ -14,6 +14,15 @@ import { mockRequest, apiClient } from "./apiClient";
 const PROJECT_STATUS_TO_FE = { DRAFT: "Draft", PUBLISHED: "Published", ARCHIVED: "Archived" };
 const DIFFICULTY_TO_FE = { BEGINNER: "Beginner", INTERMEDIATE: "Intermediate", ADVANCED: "Advanced" };
 const DIFFICULTY_TO_API = { Beginner: "BEGINNER", Intermediate: "INTERMEDIATE", Advanced: "ADVANCED" };
+// Same FE label <-> backend trackCode strings as trainerService.js's own batch tracks — a
+// project's track is matched against a batch's trackCode by equality, so both sides must agree.
+const TRACK_FE_TO_CODE = {
+  "Full-Stack Development": "FULL_STACK",
+  "Data Analytics": "DATA_ANALYTICS",
+  "Product Design": "PRODUCT_DESIGN",
+  "Backend Engineering": "BACKEND_ENGINEERING",
+};
+const TRACK_CODE_TO_FE = Object.fromEntries(Object.entries(TRACK_FE_TO_CODE).map(([fe, code]) => [code, fe]));
 
 function toFeProject(p) {
   return {
@@ -24,6 +33,7 @@ function toFeProject(p) {
     stack: p.techStack || [],
     difficulty: DIFFICULTY_TO_FE[p.difficulty] || p.difficulty || "",
     domain: p.domain || "",
+    track: TRACK_CODE_TO_FE[p.track] || p.track || "",
     starterRepo: p.starterRepoUrl || "",
     version: p.version || "v1",
     status: PROJECT_STATUS_TO_FE[p.status] || p.status,
@@ -45,11 +55,12 @@ function toFeChallenge(c) {
   };
 }
 
-export async function getProjects({ status, difficulty, domain } = {}) {
+export async function getProjects({ status, difficulty, domain, track } = {}) {
   const res = await apiClient.get("/projects", {
     status: status || undefined,
     difficulty: difficulty ? DIFFICULTY_TO_API[difficulty] || difficulty : undefined,
     domain: domain || undefined,
+    track: track ? TRACK_FE_TO_CODE[track] || track : undefined,
     size: 100,
   });
   return (res && res.content ? res.content : []).map(toFeProject);
@@ -65,6 +76,7 @@ export async function createProject(payload) {
       : String(payload.stack || "").split(",").map((s) => s.trim()).filter(Boolean),
     difficulty: DIFFICULTY_TO_API[payload.difficulty] || payload.difficulty || undefined,
     domain: payload.domain || undefined,
+    track: payload.track ? TRACK_FE_TO_CODE[payload.track] || payload.track : undefined,
     starterRepoUrl: payload.starterRepo || undefined,
     version: payload.version || undefined,
   };
@@ -80,6 +92,7 @@ export async function updateProject(id, payload) {
       : String(payload.stack || "").split(",").map((s) => s.trim()).filter(Boolean),
     difficulty: DIFFICULTY_TO_API[payload.difficulty] || payload.difficulty || undefined,
     domain: payload.domain || undefined,
+    track: payload.track ? TRACK_FE_TO_CODE[payload.track] || payload.track : undefined,
     starterRepoUrl: payload.starterRepo || undefined,
     version: payload.version || undefined,
   };

@@ -14,7 +14,8 @@ import {
   getBatches,
   createBatch,
   getAssignableProjects,
-  setProjectBatches,
+  getBatchProjects,
+  assignBatchProjects,
   getAllStudents,
   updateStudentBatch,
   createStudent,
@@ -145,9 +146,18 @@ export default function TrainerBatches() {
 
   const openAssignModal = async (batch) => {
     setAssignBatch(batch);
-    const projects = await getAssignableProjects();
-    setAssignableProjects(projects);
-    setCheckedProjectIds(projects.filter((p) => (p.assignedBatches || []).includes(batch.id)).map((p) => p.id));
+    setAssignableProjects([]);
+    setCheckedProjectIds([]);
+    try {
+      const [candidates, assigned] = await Promise.all([
+        getAssignableProjects(batch.track),
+        getBatchProjects(batch.id),
+      ]);
+      setAssignableProjects(candidates);
+      setCheckedProjectIds(assigned.map((p) => p.id));
+    } catch (err) {
+      notify(err.message || "Couldn't load projects for this batch.", { type: "error" });
+    }
   };
 
   const toggleProject = (id) => {
@@ -157,20 +167,11 @@ export default function TrainerBatches() {
   const saveAssignments = async () => {
     setAssignSaving(true);
     try {
-      await Promise.all(
-        assignableProjects.map((p) => {
-          const isChecked = checkedProjectIds.includes(p.id);
-          const current = p.assignedBatches || [];
-          const alreadyIn = current.includes(assignBatch.id);
-          if (isChecked === alreadyIn) return Promise.resolve();
-          const updatedBatches = isChecked
-            ? [...current, assignBatch.id]
-            : current.filter((id) => id !== assignBatch.id);
-          return setProjectBatches(p.id, updatedBatches);
-        })
-      );
-      notify(`Projects updated for ${assignBatch.name} — students in this batch will now see them.`, { type: "success", title: "Assignments saved" });
+      await assignBatchProjects(assignBatch.id, checkedProjectIds);
+      notify(`Projects assigned to ${assignBatch.name} — same track only, so students never see a mismatched project.`, { type: "success", title: "Projects assigned" });
       setAssignBatch(null);
+    } catch (err) {
+      notify(err.message || "Couldn't save this assignment.", { type: "error" });
     } finally {
       setAssignSaving(false);
     }
@@ -387,17 +388,17 @@ export default function TrainerBatches() {
         open={!!assignBatch}
         onClose={() => setAssignBatch(null)}
         title="Assign Projects"
-        description={assignBatch ? `Choose which published projects ${assignBatch.name} should see on their Student portal.` : ""}
+        description={assignBatch ? `Curate published, ${assignBatch.track || "same-track"} projects for ${assignBatch.name}'s own screen — every published project is still visible to every student either way.` : ""}
         footer={<>
           <Button variant="secondary" onClick={() => setAssignBatch(null)}>Cancel</Button>
-          <Button loading={assignSaving} onClick={saveAssignments}>Save Assignments</Button>
+          <Button loading={assignSaving} onClick={saveAssignments}>Assign Projects</Button>
         </>}
       >
         {assignableProjects.length === 0 ? (
           <EmptyState
             icon={FolderKanban}
-            title="No published projects yet"
-            description="Ask a Developer to author and publish a project before you can assign it to a batch."
+            title="No published projects on this track yet"
+            description={`Ask a Developer to author and publish a ${assignBatch?.track || ""} project before you can assign it here.`}
           />
         ) : (
           <div className="flex flex-col gap-2 max-h-80 overflow-y-auto">
@@ -411,7 +412,7 @@ export default function TrainerBatches() {
                 />
                 <div>
                   <p className="text-sm font-medium text-ink-900">{p.title}</p>
-                  <p className="text-xs text-ink-500">{p.difficulty} · {(p.stack || []).join(", ")}</p>
+                  <p className="text-xs text-ink-500">{p.difficulty}{p.domain ? ` · ${p.domain}` : ""}</p>
                 </div>
               </label>
             ))}

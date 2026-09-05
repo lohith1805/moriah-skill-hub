@@ -13,6 +13,7 @@ import { useToast } from "../../context/ToastContext";
 import { validateForm, required } from "../../utils/validators";
 
 const DIFFICULTIES = ["Beginner", "Intermediate", "Advanced"].map((d) => ({ value: d, label: d }));
+const TRACKS = ["Full-Stack Development", "Data Analytics", "Product Design", "Backend Engineering"].map((t) => ({ value: t, label: t }));
 const STATUS_OPTIONS = [
   { value: "Draft", label: "Draft" },
   { value: "Published", label: "Published" }
@@ -22,6 +23,7 @@ const emptyProjectValues = {
   title: "",
   stack: "",
   difficulty: "Intermediate",
+  track: "",
   description: "",
   files: [],
   starterRepo: "",
@@ -94,6 +96,7 @@ export default function DeveloperProjects() {
       title: p.title,
       stack: p.stack.join(", "),
       difficulty: p.difficulty,
+      track: p.track || "",
       description: p.description || "",
       status: p.status,
       files: p.files || [],
@@ -145,7 +148,7 @@ export default function DeveloperProjects() {
                     <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary-50 text-primary-700"><Layers size={16} /></div>
                     <div>
                       <p className="font-semibold text-ink-900 leading-snug">{p.title}</p>
-                      <p className="text-xs text-ink-500 mt-0.5">{p.version} · {p.difficulty}</p>
+                      <p className="text-xs text-ink-500 mt-0.5">{p.version} · {p.difficulty}{p.track ? ` · ${p.track}` : ""}</p>
                     </div>
                   </div>
                   <Badge tone={p.status === "Published" ? "success" : "neutral"}>{p.status}</Badge>
@@ -189,7 +192,10 @@ export default function DeveloperProjects() {
             <Select label="Difficulty" required placeholder="Select difficulty" options={DIFFICULTIES} value={values.difficulty} onChange={(e) => setValues((v) => ({ ...v, difficulty: e.target.value }))} error={errors.difficulty} />
           </div>
           
-          <Input label="Tech stack (Comma-separated)" required placeholder="React, Node.js, PostgreSQL, Docker" value={values.stack} onChange={(e) => setValues((v) => ({ ...v, stack: e.target.value }))} error={errors.stack} />
+          <div className="grid sm:grid-cols-2 gap-4">
+            <Input label="Tech stack (Comma-separated)" required placeholder="React, Node.js, PostgreSQL, Docker" value={values.stack} onChange={(e) => setValues((v) => ({ ...v, stack: e.target.value }))} error={errors.stack} />
+            <Select label="Track" placeholder="Not tied to a track" hint="A Trainer/PM can only assign this project to a batch on the same track" options={TRACKS} value={values.track} onChange={(e) => setValues((v) => ({ ...v, track: e.target.value }))} />
+          </div>
           <Textarea label="Description & milestone objectives" value={values.description} onChange={(e) => setValues((v) => ({ ...v, description: e.target.value }))} rows={2} />
           
           {/* FRS-DEV-02 Repository Starters */}
@@ -249,8 +255,9 @@ export default function DeveloperProjects() {
             <Select label="Difficulty" required placeholder="Select difficulty" options={DIFFICULTIES} value={editValues.difficulty} onChange={(e) => setEditValues((v) => ({ ...v, difficulty: e.target.value }))} />
           </div>
           
-          <div className="grid sm:grid-cols-2 gap-4">
+          <div className="grid sm:grid-cols-3 gap-4">
             <Input label="Tech stack (Comma-separated)" required placeholder="React, Node.js, PostgreSQL" value={editValues.stack} onChange={(e) => setEditValues((v) => ({ ...v, stack: e.target.value }))} />
+            <Select label="Track" placeholder="Not tied to a track" options={TRACKS} value={editValues.track} onChange={(e) => setEditValues((v) => ({ ...v, track: e.target.value }))} />
             <Select label="Project Status" options={STATUS_OPTIONS} value={editValues.status} onChange={(e) => setEditValues((v) => ({ ...v, status: e.target.value }))} />
           </div>
           

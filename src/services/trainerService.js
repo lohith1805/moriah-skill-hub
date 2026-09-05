@@ -44,36 +44,46 @@ function toFeBatch(b) {
   };
 }
 
-const DEV_PROJECTS_KEY = "msh_developer_projects";
+// ---------------------------------------------------------------------------
+// "Assign Projects" (real backend) — a Developer tags each project with a
+// track (developerService.js); a batch's own screen here can only pick from
+// PUBLISHED projects sharing that exact track. This is a curation record for
+// the PM's own screen, not a visibility restriction: every student still sees
+// every PUBLISHED project regardless (studentService.getMyProjects), track or
+// assignment aside — see backend V45's own migration comment.
+// ---------------------------------------------------------------------------
 
-function readLocalProjects() {
-  try {
-    const raw = localStorage.getItem(DEV_PROJECTS_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    return [];
-  }
+// GET /api/v1/projects?status=PUBLISHED&track=... — the candidate pool for one
+// batch's own track. Omit trackCode to see every published project (a batch
+// with no track set yet still needs *something* to pick from).
+export async function getAssignableProjects(trackCode) {
+  const res = await apiClient.get("/projects", {
+    status: "PUBLISHED",
+    track: TRACK_FE_TO_CODE[trackCode] || trackCode || undefined,
+    size: 100,
+  });
+  return asRows(res).map((p) => ({
+    id: p.id,
+    title: p.title,
+    slug: p.slug,
+    track: TRACK_CODE_TO_FE[p.track] || p.track || "",
+    difficulty: p.difficulty,
+    domain: p.domain || "",
+  }));
 }
 
-// Reads the exact same localStorage key Developer > Projects writes to.
-// Only Published projects are assignable — a Draft isn't finished being
-// authored yet, so it shouldn't be handed to a batch.
-export async function getAssignableProjects() {
-  return mockRequest(readLocalProjects().filter((p) => p.status === "Published"));
+// GET /api/v1/batches/{id}/projects — projects already curated onto this batch.
+export async function getBatchProjects(batchId) {
+  const res = await apiClient.get(`/batches/${batchId}/projects`);
+  return Array.isArray(res) ? res : [];
 }
 
-// Sets the full list of batch IDs a project is assigned to. This is what
-// makes a Published project (and any Bug Challenges linked to it) show up
-// on that batch's Student > Projects & Challenges page — see
-// studentService.getMyProjects / getMyBugChallenges.
-export async function setProjectBatches(projectId, batchIds) {
-  const all = readLocalProjects();
-  const idx = all.findIndex((p) => p.id === projectId);
-  if (idx > -1) {
-    all[idx] = { ...all[idx], assignedBatches: batchIds };
-    localStorage.setItem(DEV_PROJECTS_KEY, JSON.stringify(all));
-  }
-  return mockRequest(idx > -1 ? all[idx] : null);
+// PUT /api/v1/batches/{id}/projects — wholesale replace (empty array clears
+// everything). Every id must be an existing PUBLISHED project sharing this
+// batch's own track — the backend validates both and 400s otherwise.
+export async function assignBatchProjects(batchId, projectIds) {
+  const res = await apiClient.put(`/batches/${batchId}/projects`, { projectIds });
+  return Array.isArray(res) ? res : [];
 }
 
 // GET /api/v1/batches — TRAINER_PM/ADMIN see every batch (a STUDENT token would
