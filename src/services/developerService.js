@@ -35,6 +35,12 @@ function toFeProject(p) {
     domain: p.domain || "",
     track: TRACK_CODE_TO_FE[p.track] || p.track || "",
     starterRepo: p.starterRepoUrl || "",
+    architectureDiagramUrl: p.architectureDiagramUrl || "",
+    swaggerSpec: p.apiSpecUrl || "",
+    erDiagram: p.erDiagramUrl || "",
+    readmeContent: p.readmeContent || "",
+    referenceSolution: p.referenceSolutionUrl || "",
+    videoTutorial: p.videoTutorialUrl || "",
     version: p.version || "v1",
     status: PROJECT_STATUS_TO_FE[p.status] || p.status,
     backendStatus: p.status,
@@ -78,6 +84,12 @@ export async function createProject(payload) {
     domain: payload.domain || undefined,
     track: payload.track ? TRACK_FE_TO_CODE[payload.track] || payload.track : undefined,
     starterRepoUrl: payload.starterRepo || undefined,
+    architectureDiagramUrl: payload.architectureDiagramUrl || undefined,
+    apiSpecUrl: payload.swaggerSpec || undefined,
+    erDiagramUrl: payload.erDiagram || undefined,
+    readmeContent: payload.readmeContent || undefined,
+    referenceSolutionUrl: payload.referenceSolution || undefined,
+    videoTutorialUrl: payload.videoTutorial || undefined,
     version: payload.version || undefined,
   };
   return toFeProject(await apiClient.post("/projects", body));
@@ -94,6 +106,12 @@ export async function updateProject(id, payload) {
     domain: payload.domain || undefined,
     track: payload.track ? TRACK_FE_TO_CODE[payload.track] || payload.track : undefined,
     starterRepoUrl: payload.starterRepo || undefined,
+    architectureDiagramUrl: payload.architectureDiagramUrl || undefined,
+    apiSpecUrl: payload.swaggerSpec || undefined,
+    erDiagramUrl: payload.erDiagram || undefined,
+    readmeContent: payload.readmeContent || undefined,
+    referenceSolutionUrl: payload.referenceSolution || undefined,
+    videoTutorialUrl: payload.videoTutorial || undefined,
     version: payload.version || undefined,
   };
   return toFeProject(await apiClient.put(`/projects/${id}`, body));

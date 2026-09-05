@@ -28,6 +28,7 @@ const emptyProjectValues = {
   files: [],
   starterRepo: "",
   referenceSolution: "",
+  architectureDiagramUrl: "",
   swaggerSpec: "",
   erDiagram: "",
   videoTutorial: "",
@@ -102,6 +103,7 @@ export default function DeveloperProjects() {
       files: p.files || [],
       starterRepo: p.starterRepo || "",
       referenceSolution: p.referenceSolution || "",
+      architectureDiagramUrl: p.architectureDiagramUrl || "",
       swaggerSpec: p.swaggerSpec || "",
       erDiagram: p.erDiagram || "",
       videoTutorial: p.videoTutorial || "",
@@ -210,7 +212,9 @@ export default function DeveloperProjects() {
           {/* FRS-DEV-03 Technical Documentation */}
           <div className="border-t border-border pt-4">
             <h4 className="text-xs font-bold text-ink-500 uppercase tracking-wider mb-3 flex items-center gap-1.5"><FileCode size={13} /> Architecture Specs & Documentation</h4>
-            <div className="grid sm:grid-cols-2 gap-4">
+            <p className="text-xs text-ink-400 -mt-2 mb-3">All optional — add whichever exist now, and come back to fill in the rest once they're ready.</p>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <Input label="Architecture Diagram URL" placeholder="https://miro.com/board/..." value={values.architectureDiagramUrl} onChange={(e) => setValues((v) => ({ ...v, architectureDiagramUrl: e.target.value }))} />
               <Input label="Swagger / OpenAPI Spec URL" placeholder="https://swagger.myproject.com" value={values.swaggerSpec} onChange={(e) => setValues((v) => ({ ...v, swaggerSpec: e.target.value }))} />
               <Input label="Database ER Diagram URL" placeholder="https://dbdiagram.io/d/..." value={values.erDiagram} onChange={(e) => setValues((v) => ({ ...v, erDiagram: e.target.value }))} />
             </div>
@@ -275,7 +279,9 @@ export default function DeveloperProjects() {
           {/* FRS-DEV-03 Technical Documentation */}
           <div className="border-t border-border pt-4">
             <h4 className="text-xs font-bold text-ink-500 uppercase tracking-wider mb-3 flex items-center gap-1.5"><FileCode size={13} /> Architecture Specs & Documentation</h4>
-            <div className="grid sm:grid-cols-2 gap-4">
+            <p className="text-xs text-ink-400 -mt-2 mb-3">All optional — add whichever exist now, and come back to fill in the rest once they're ready.</p>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <Input label="Architecture Diagram URL" placeholder="https://miro.com/board/..." value={editValues.architectureDiagramUrl} onChange={(e) => setEditValues((v) => ({ ...v, architectureDiagramUrl: e.target.value }))} />
               <Input label="Swagger / OpenAPI Spec URL" placeholder="https://swagger.myproject.com" value={editValues.swaggerSpec} onChange={(e) => setEditValues((v) => ({ ...v, swaggerSpec: e.target.value }))} />
               <Input label="Database ER Diagram URL" placeholder="https://dbdiagram.io/d/..." value={editValues.erDiagram} onChange={(e) => setEditValues((v) => ({ ...v, erDiagram: e.target.value }))} />
             </div>

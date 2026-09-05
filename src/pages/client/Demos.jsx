@@ -16,6 +16,34 @@ import { useToast } from "../../context/ToastContext";
 
 const STATUS_TONE = { SCHEDULED: "primary", COMPLETED: "success", CANCELLED: "error" };
 
+// Same labels as studentService.js's own TASK_STATUS_TO_FE — kept local here since that map
+// isn't exported, and this is the one other place a task status ever reaches a screen.
+const TASK_STATUS_LABEL = {
+  BACKLOG: "Backlog",
+  ASSIGNED: "Assigned",
+  IN_PROGRESS: "In Progress",
+  IN_REVIEW: "Review",
+  COMPLETED: "Completed",
+  REJECTED: "Rejected",
+};
+const TASK_STATUS_TONE = {
+  BACKLOG: "neutral",
+  ASSIGNED: "primary",
+  IN_PROGRESS: "gold",
+  IN_REVIEW: "warning",
+  COMPLETED: "success",
+  REJECTED: "error",
+};
+const TASK_STATUS_ORDER = ["BACKLOG", "ASSIGNED", "IN_PROGRESS", "IN_REVIEW", "COMPLETED", "REJECTED"];
+
+// FRS MSH-FR-PM-02/MSH-FR-BA-03: task-level detail, not just story points — shown for whichever
+// sprint is ACTIVE, or the most recent one if none currently is (a completed batch, or one that
+// hasn't started its first sprint yet).
+function currentSprintFor(burndown) {
+  if (!burndown.length) return null;
+  return burndown.find((s) => s.status === "ACTIVE") || burndown[burndown.length - 1];
+}
+
 /**
  * FRS MSH-FR-BA-03 ("Client Project Review Portal") + MSH-FR-BA-04 ("Client Meeting
  * Coordination"): a client should be able to inspect batch progress / sprint burn-down here, and
@@ -127,11 +155,15 @@ export default function ClientDemos() {
             const fb = feedbacks[p.id];
             const progress = progressByProject[p.id];
             const demos = demosByProject[p.id] || { next: null, lastCompleted: null };
-            const burndown = (progress?.burndown || []).map((s) => ({
+            const rawBurndown = progress?.burndown || [];
+            const burndown = rawBurndown.map((s) => ({
               sprint: `Sprint ${s.sprintNumber}`,
               planned: s.plannedPoints,
               completed: s.completedPoints,
             }));
+            const currentSprint = currentSprintFor(rawBurndown);
+            const currentSprintTaskCounts = currentSprint?.taskStatusCounts || {};
+            const hasTaskCounts = Object.keys(currentSprintTaskCounts).length > 0;
             return (
               <Card key={p.id}>
                 <CardHeader
@@ -165,6 +197,22 @@ export default function ClientDemos() {
                       </div>
                     ) : (
                       <p className="text-xs text-ink-400 mt-3 text-center">No sprints logged yet.</p>
+                    )}
+
+                    {hasTaskCounts && (
+                      <div className="mt-4">
+                        <p className="text-xs font-semibold text-ink-700 mb-1.5">
+                          Task progress — Sprint {currentSprint.sprintNumber}
+                          {currentSprint.status === "ACTIVE" ? " (current)" : ""}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {TASK_STATUS_ORDER.filter((status) => currentSprintTaskCounts[status] != null).map((status) => (
+                            <Badge key={status} tone={TASK_STATUS_TONE[status]}>
+                              {TASK_STATUS_LABEL[status]}: {currentSprintTaskCounts[status]}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </>
                 )}

@@ -78,6 +78,9 @@ export async function getClientProjectProgress(id) {
       status: s.sprintStatus,
       plannedPoints: s.plannedPoints ?? 0,
       completedPoints: s.completedPoints ?? 0,
+      // Task-level counts by status (BACKLOG/ASSIGNED/IN_PROGRESS/IN_REVIEW/COMPLETED/REJECTED) —
+      // a status absent here means zero tasks in that state for this sprint, not an error.
+      taskStatusCounts: s.taskStatusCounts || {},
     })),
   };
 }
