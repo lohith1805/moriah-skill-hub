@@ -42,6 +42,16 @@ INSERT IGNORE INTO user_roles (user_id, role_id)
 SELECT u.id, r.id FROM users u JOIN roles r ON r.code = 'BUSINESS_ANALYST' WHERE u.email = 'ba@moriah.test';
 INSERT IGNORE INTO user_roles (user_id, role_id)
 SELECT u.id, r.id FROM users u JOIN roles r ON r.code = 'CLIENT'          WHERE u.email = 'client@moriah.test';
+
+-- The CLIENT portal user needs a linked `clients` row, or every client action
+-- (submit a project, view submissions) dead-ends with CLIENT_NOT_FOUND
+-- ("you're not in our client record"). ClientRegistrationService / ClientService
+-- create this row for real registrations; the seed user needs it explicitly.
+INSERT INTO clients (company_name, contact_person, email, phone, industry, user_id, status)
+SELECT 'Carl Client Co', u.full_name, u.email, u.phone, 'Software', u.id, 'ACTIVE'
+FROM users u
+WHERE u.email = 'client@moriah.test'
+  AND NOT EXISTS (SELECT 1 FROM clients c WHERE c.user_id = u.id);
 INSERT IGNORE INTO user_roles (user_id, role_id)
 SELECT u.id, r.id FROM users u JOIN roles r ON r.code = 'STUDENT'
 WHERE u.email IN ('student1@moriah.test', 'student2@moriah.test', 'student3@moriah.test');

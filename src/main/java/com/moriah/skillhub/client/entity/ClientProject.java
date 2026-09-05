@@ -2,6 +2,7 @@ package com.moriah.skillhub.client.entity;
 
 import com.moriah.skillhub.batch.entity.Batch;
 import com.moriah.skillhub.common.entity.BaseEntity;
+import com.moriah.skillhub.user.entity.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -37,6 +38,20 @@ public class ClientProject extends BaseEntity {
     @JoinColumn(name = "client_id")
     private Client client;
 
+    /** Auto-assigned (round-robin, least open projects) the moment the client submits — see
+     * {@code StaffAssignmentService}. {@code null} only when no active BUSINESS_ANALYST exists at
+     * all; an admin fills it in by hand from the Client Project Assignments screen. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_ba_id")
+    private User assignedBa;
+
+    /** Auto-assigned the moment the BA first signs off a BRD/FRS for this project — a developer
+     * has nothing to do before that, so unlike {@link #assignedBa} this stays {@code null} well
+     * past submission (see {@code RequirementDocumentApprovalService}). */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_developer_id")
+    private User assignedDeveloper;
+
     @Column(nullable = false, length = 200)
     private String title;
 
@@ -45,6 +60,12 @@ public class ClientProject extends BaseEntity {
 
     @Column(name = "budget_range", length = 50)
     private String budgetRange;
+
+    /** Optional free-text context beyond the one-line {@link #scopeDescription} — company
+     * background, links, "who to loop in," anything the client wants BA/Dev to know before the
+     * kickoff discussion. */
+    @Column(name = "additional_notes", columnDefinition = "TEXT")
+    private String additionalNotes;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "target_batch_id")

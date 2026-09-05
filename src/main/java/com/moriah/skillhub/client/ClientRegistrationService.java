@@ -93,7 +93,12 @@ public class ClientRegistrationService {
                         "body", "Thanks for registering " + request.companyName() + ". Our team will review "
                                 + "your request and email you once it's approved."));
 
-        auditLogService.record(user.getId(), "CLIENT_REGISTRATION_SUBMITTED", "User", user.getId(),
+        // recordAfterCommit, not record: user.getId() is a row THIS transaction just inserted and
+        // still holds exclusively — record()'s REQUIRES_NEW would need a lock on that same row to
+        // satisfy audit_logs' FK check and self-lock against this still-open transaction until
+        // innodb_lock_wait_timeout kills it (see AuditLogService#recordAfterCommit's Javadoc —
+        // found the hard way when every self-registration started timing out).
+        auditLogService.recordAfterCommit(user.getId(), "CLIENT_REGISTRATION_SUBMITTED", "User", user.getId(),
                 null, Map.of("companyName", request.companyName()));
 
         log.info("[client/self-register] '{}' submitted, pending approval", request.companyName());

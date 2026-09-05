@@ -1,6 +1,7 @@
 package com.moriah.skillhub.client;
 
 import com.moriah.skillhub.batch.entity.Batch;
+import com.moriah.skillhub.client.dto.AssignClientProjectRequest;
 import com.moriah.skillhub.client.dto.ClientProjectProgressResponse;
 import com.moriah.skillhub.client.dto.ClientProjectResponse;
 import com.moriah.skillhub.client.dto.CreateClientProjectRequest;
@@ -8,6 +9,8 @@ import com.moriah.skillhub.client.entity.Client;
 import com.moriah.skillhub.client.entity.ClientProject;
 import com.moriah.skillhub.client.repository.ClientProjectRepository;
 import com.moriah.skillhub.client.repository.ClientRepository;
+import com.moriah.skillhub.common.audit.AuditLogService;
+import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ForbiddenOperationException;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
@@ -15,7 +18,9 @@ import com.moriah.skillhub.common.security.AuthenticatedPrincipal;
 import com.moriah.skillhub.sprint.SprintService;
 import com.moriah.skillhub.sprint.dto.SprintProgressProjection;
 import com.moriah.skillhub.sprint.entity.SprintStatus;
+import com.moriah.skillhub.user.entity.RoleCode;
 import com.moriah.skillhub.user.entity.User;
+import com.moriah.skillhub.user.repository.UserRoleRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,6 +35,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 /** build-plan.md feature 21: "Clients submit scope" and "GET /clients/projects/{id}/progress
@@ -48,7 +55,13 @@ class ClientProjectServiceTest {
     @Mock
     private com.moriah.skillhub.user.repository.UserRepository userRepository;
     @Mock
+    private UserRoleRepository userRoleRepository;
+    @Mock
     private SprintService sprintService;
+    @Mock
+    private StaffAssignmentService staffAssignmentService;
+    @Mock
+    private AuditLogService auditLogService;
 
     @InjectMocks
     private ClientProjectService clientProjectService;
@@ -93,12 +106,31 @@ class ClientProjectServiceTest {
                 .thenAnswer(inv -> inv.getArgument(0));
 
         CreateClientProjectRequest request = new CreateClientProjectRequest(
-                "New Storefront", "Build a storefront.", "10k-20k");
+                "New Storefront", "Build a storefront.", "10k-20k", null);
 
         ClientProjectResponse response = clientProjectService.create(request, 50L);
 
         assertThat(response.title()).isEqualTo("New Storefront");
         assertThat(response.clientId()).isEqualTo(1L);
+    }
+
+    @Test
+    void create_autoAssignsLeastBusyBa() {
+        Client client = client(1L, 50L);
+        when(clientRepository.findByUserId(50L)).thenReturn(Optional.of(client));
+        when(clientProjectRepository.save(any(ClientProject.class))).thenAnswer(inv -> inv.getArgument(0));
+        User ba = new User();
+        ba.setId(7L);
+        ba.setUuid("ba-uuid-7");
+        when(staffAssignmentService.pickLeastBusy(RoleCode.BUSINESS_ANALYST)).thenReturn(Optional.of(ba));
+
+        CreateClientProjectRequest request = new CreateClientProjectRequest(
+                "New Storefront", "Build a storefront.", "10k-20k", "Discuss on kickoff call.");
+
+        ClientProjectResponse response = clientProjectService.create(request, 50L);
+
+        assertThat(response.assignedBaUuid()).isEqualTo("ba-uuid-7");
+        assertThat(response.additionalNotes()).isEqualTo("Discuss on kickoff call.");
     }
 
     @Test
@@ -114,7 +146,7 @@ class ClientProjectServiceTest {
         when(clientProjectRepository.save(org.mockito.ArgumentMatchers.any(ClientProject.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
-        CreateClientProjectRequest request = new CreateClientProjectRequest("T", "S", null);
+        CreateClientProjectRequest request = new CreateClientProjectRequest("T", "S", null, null);
         ClientProjectResponse response = clientProjectService.create(request, 50L);
 
         assertThat(response.title()).isEqualTo("T");
@@ -202,5 +234,79 @@ class ClientProjectServiceTest {
         ClientProjectProgressResponse response = clientProjectService.progress(10L, 999L);
 
         assertThat(response.clientProjectId()).isEqualTo(10L);
+    }
+
+    @Test
+    void list_baWithoutAllProjects_scopesToOwnAssignmentPlusUnassigned() {
+        authenticateAs(20L, List.of("BUSINESS_ANALYST"));
+        when(clientProjectRepository.search(eq(null), eq(null), eq(20L), any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of()));
+
+        clientProjectService.list(20L, null, false, org.springframework.data.domain.PageRequest.of(0, 20));
+
+        org.mockito.Mockito.verify(clientProjectRepository).search(eq(null), eq(null), eq(20L), any());
+    }
+
+    @Test
+    void list_baWithAllProjects_seesEverything() {
+        authenticateAs(20L, List.of("BUSINESS_ANALYST"));
+        when(clientProjectRepository.search(eq(null), eq(null), eq(null), any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of()));
+
+        clientProjectService.list(20L, null, true, org.springframework.data.domain.PageRequest.of(0, 20));
+
+        org.mockito.Mockito.verify(clientProjectRepository).search(eq(null), eq(null), eq(null), any());
+    }
+
+    @Test
+    void assign_setsBaAndDeveloper_whenBothHoldTheRightRole() {
+        Client client = client(1L, 50L);
+        ClientProject project = project(10L, client, null);
+        when(clientProjectRepository.findById(10L)).thenReturn(Optional.of(project));
+        User ba = new User();
+        ba.setId(20L);
+        ba.setUuid("ba-uuid");
+        User dev = new User();
+        dev.setId(21L);
+        dev.setUuid("dev-uuid");
+        when(userRepository.findByUuid("ba-uuid")).thenReturn(Optional.of(ba));
+        when(userRepository.findByUuid("dev-uuid")).thenReturn(Optional.of(dev));
+        when(userRoleRepository.findRoleCodesByUserId(20L)).thenReturn(List.of(RoleCode.BUSINESS_ANALYST));
+        when(userRoleRepository.findRoleCodesByUserId(21L)).thenReturn(List.of(RoleCode.DEVELOPER));
+
+        ClientProjectResponse response = clientProjectService.assign(10L,
+                new AssignClientProjectRequest("ba-uuid", "dev-uuid"), 4L);
+
+        assertThat(response.assignedBaUuid()).isEqualTo("ba-uuid");
+        assertThat(response.assignedDeveloperUuid()).isEqualTo("dev-uuid");
+    }
+
+    @Test
+    void assign_wrongRole_throwsValidationFailed() {
+        Client client = client(1L, 50L);
+        ClientProject project = project(10L, client, null);
+        when(clientProjectRepository.findById(10L)).thenReturn(Optional.of(project));
+        User notABa = new User();
+        notABa.setId(22L);
+        notABa.setUuid("student-uuid");
+        when(userRepository.findByUuid("student-uuid")).thenReturn(Optional.of(notABa));
+        when(userRoleRepository.findRoleCodesByUserId(22L)).thenReturn(List.of(RoleCode.STUDENT));
+
+        assertThatThrownBy(() -> clientProjectService.assign(10L,
+                new AssignClientProjectRequest("student-uuid", null), 4L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.VALIDATION_FAILED);
+    }
+
+    @Test
+    void assign_neitherFieldProvided_throwsValidationFailed() {
+        Client client = client(1L, 50L);
+        ClientProject project = project(10L, client, null);
+        when(clientProjectRepository.findById(10L)).thenReturn(Optional.of(project));
+
+        assertThatThrownBy(() -> clientProjectService.assign(10L,
+                new AssignClientProjectRequest(null, null), 4L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.VALIDATION_FAILED);
     }
 }

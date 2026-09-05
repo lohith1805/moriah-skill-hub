@@ -235,19 +235,57 @@ class BaClientFlowIT extends IntegrationTestBase {
                 .statusCode(201)
                 .body("data.version", equalTo(2));
 
+        // Multi-party sign-off (BRD needs CLIENT + BUSINESS_ANALYST + DEVELOPER — see
+        // RequirementDocumentApprovalService): the document's own author may not sign the
+        // BUSINESS_ANALYST slot themselves.
+        String baToken2 = registerVerifyGrantRoleAndLogin("Ba Analyst Flow Second", "BUSINESS_ANALYST");
+
         given()
                 .header("Authorization", "Bearer " + baToken)
             .when()
                 .put("/api/v1/ba/documents/" + firstDocumentId + "/approve")
+            .then()
+                .statusCode(409)
+                .body("error.code", equalTo("BUSINESS_RULE_VIOLATION"));
+
+        given()
+                .header("Authorization", "Bearer " + clientToken)
+            .when()
+                .post("/api/v1/requirement-documents/" + firstDocumentId + "/approve")
+            .then()
+                .statusCode(200)
+                .body("data.status", equalTo("IN_REVIEW"));
+
+        given()
+                .header("Authorization", "Bearer " + clientToken)
+            .when()
+                .post("/api/v1/requirement-documents/" + firstDocumentId + "/approve")
+            .then()
+                .statusCode(409)
+                .body("error.code", equalTo("BUSINESS_RULE_VIOLATION"));
+
+        given()
+                .header("Authorization", "Bearer " + baToken2)
+            .when()
+                .put("/api/v1/ba/documents/" + firstDocumentId + "/approve")
+            .then()
+                .statusCode(200)
+                .body("data.status", equalTo("IN_REVIEW")); // DEVELOPER slot still open
+
+        // ADMIN fast-tracks whichever slot(s) are still pending in one call — here, just DEVELOPER.
+        given()
+                .header("Authorization", "Bearer " + adminToken)
+            .when()
+                .post("/api/v1/requirement-documents/" + firstDocumentId + "/approve")
             .then()
                 .statusCode(200)
                 .body("data.status", equalTo("APPROVED"))
                 .body("data.approvedByUuid", notNullValue());
 
         given()
-                .header("Authorization", "Bearer " + baToken)
+                .header("Authorization", "Bearer " + adminToken)
             .when()
-                .put("/api/v1/ba/documents/" + firstDocumentId + "/approve")
+                .post("/api/v1/requirement-documents/" + firstDocumentId + "/approve")
             .then()
                 .statusCode(409)
                 .body("error.code", equalTo("BUSINESS_RULE_VIOLATION"));

@@ -257,7 +257,9 @@ public class AuthService {
         userRepository.save(user);
 
         denylistBearerTokenIfPresent(authorizationHeader);
-        auditLogService.record(user.getId(), "LOGOUT_ALL", "User", user.getId(), null, null);
+        // recordAfterCommit — user.getId() is this transaction's own row (just updated above,
+        // still exclusively locked); see AuditLogService#recordAfterCommit's Javadoc.
+        auditLogService.recordAfterCommit(user.getId(), "LOGOUT_ALL", "User", user.getId(), null, null);
     }
 
     @Transactional
@@ -360,7 +362,8 @@ public class AuthService {
         user.setEmailVerifiedAt(Instant.now());
         userRepository.save(user);
 
-        auditLogService.record(user.getId(), "STAFF_INVITE_ACCEPTED", "User", user.getId(), null, null);
+        // recordAfterCommit — see AuditLogService#recordAfterCommit's Javadoc.
+        auditLogService.recordAfterCommit(user.getId(), "STAFF_INVITE_ACCEPTED", "User", user.getId(), null, null);
 
         return completeOrChallengeLogin(user, userAgent, ipAddress);
     }
@@ -386,7 +389,8 @@ public class AuthService {
         userRepository.save(user);
 
         refreshTokenRepository.revokeAllActiveForUser(user.getId(), Instant.now());
-        auditLogService.record(user.getId(), "PASSWORD_RESET", "User", user.getId(), null, null);
+        // recordAfterCommit — see AuditLogService#recordAfterCommit's Javadoc.
+        auditLogService.recordAfterCommit(user.getId(), "PASSWORD_RESET", "User", user.getId(), null, null);
     }
 
     private void issueEmailVerificationToken(User user) {

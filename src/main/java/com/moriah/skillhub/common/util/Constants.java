@@ -151,6 +151,16 @@ public final class Constants {
      * exports" change would hang off, and what {@code ExportServiceTest} exercises directly. */
     public static final int EXPORT_SMALL_ROW_THRESHOLD = 1000;
 
+    /** Workload bands for the admin Client Project Assignments screen (feature: BA/developer
+     * round-robin routing) — a staff member's count of currently-OPEN (SUBMITTED/IN_PROGRESS)
+     * assigned client projects. {@code <= AVAILABLE} = "Available", {@code <= BUSY} = "Busy",
+     * anything higher = "High workload". Plain Java constants, not a config-table row — this is a
+     * display threshold for a UI badge, not a business rule an admin needs to tune per
+     * architecture.md's "PIP thresholds are rows in pip_rules" reasoning (that rule is specific to
+     * PIP's own {@code pip_rules} table). */
+    public static final int STAFF_WORKLOAD_AVAILABLE_MAX = 2;
+    public static final int STAFF_WORKLOAD_BUSY_MAX = 5;
+
     // The clearance-gate task-completion percentage lives in PipClearanceProperties
     // (moriah.pip.clearance.min-task-completion-percent), not here — a `/review` finding: unlike
     // the two constants above, this value is one AGENTS.md explicitly calls a PIP threshold

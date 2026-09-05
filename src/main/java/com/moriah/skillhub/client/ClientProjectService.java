@@ -1,10 +1,12 @@
 package com.moriah.skillhub.client;
 
 import com.moriah.skillhub.batch.entity.Batch;
+import com.moriah.skillhub.client.dto.AssignClientProjectRequest;
 import com.moriah.skillhub.client.dto.ClientProjectProgressResponse;
 import com.moriah.skillhub.client.dto.ClientProjectProgressResponse.SprintBurndown;
 import com.moriah.skillhub.client.dto.ClientProjectResponse;
 import com.moriah.skillhub.client.dto.CreateClientProjectRequest;
+import com.moriah.skillhub.common.audit.AuditLogService;
 import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.client.entity.Client;
 import com.moriah.skillhub.client.entity.ClientProject;
@@ -12,6 +14,7 @@ import com.moriah.skillhub.client.entity.ClientProjectStatus;
 import com.moriah.skillhub.client.entity.ClientStatus;
 import com.moriah.skillhub.client.repository.ClientProjectRepository;
 import com.moriah.skillhub.client.repository.ClientRepository;
+import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ForbiddenOperationException;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
@@ -22,6 +25,7 @@ import com.moriah.skillhub.sprint.entity.SprintStatus;
 import com.moriah.skillhub.user.entity.RoleCode;
 import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.repository.UserRepository;
+import com.moriah.skillhub.user.repository.UserRoleRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
@@ -47,7 +51,10 @@ public class ClientProjectService {
     private final ClientProjectRepository clientProjectRepository;
     private final ClientRepository clientRepository;
     private final UserRepository userRepository;
+    private final UserRoleRepository userRoleRepository;
     private final SprintService sprintService;
+    private final StaffAssignmentService staffAssignmentService;
+    private final AuditLogService auditLogService;
 
     /** Resolves the caller's own {@code client_id} via {@code clients.user_id = callerUserId}
      * (build-plan.md feature 21 decision). A CLIENT user with no linked {@code clients} row is a
@@ -63,8 +70,12 @@ public class ClientProjectService {
         project.setTitle(request.title());
         project.setScopeDescription(request.scopeDescription());
         project.setBudgetRange(request.budgetRange());
+        project.setAdditionalNotes(blankToNull(request.additionalNotes()));
         project.setStatus(ClientProjectStatus.SUBMITTED);
         project.setSubmittedAt(Instant.now());
+        // Workload-aware round-robin: route to whichever active BA currently has the fewest open
+        // projects. null (no active BA exists at all) leaves it for an admin to assign by hand.
+        staffAssignmentService.pickLeastBusy(RoleCode.BUSINESS_ANALYST).ifPresent(project::setAssignedBa);
         clientProjectRepository.save(project);
 
         return toResponse(project);
@@ -76,19 +87,68 @@ public class ClientProjectService {
      * split {@link #progress} already uses). A CLIENT with no linked {@code clients} row gets an
      * empty page, not a 404 — nothing to show is not an error on a list.
      */
+    /** {@code allProjects} (default {@code false}) is a BA's own "assigned to me" toggle — off,
+     * they see their own assigned projects plus anything still unassigned (round-robin found no
+     * active BA); on, the same full oversight view ADMIN always gets regardless of the flag. */
     @Transactional(readOnly = true)
-    public PageResponse<ClientProjectResponse> list(Long callerUserId, ClientProjectStatus status, Pageable pageable) {
+    public PageResponse<ClientProjectResponse> list(Long callerUserId, ClientProjectStatus status,
+                                                     boolean allProjects, Pageable pageable) {
         List<String> roles = SecurityUtils.currentUserRoles();
-        boolean isStaff = roles.contains(RoleCode.BUSINESS_ANALYST.name()) || roles.contains(RoleCode.ADMIN.name());
+        boolean isAdmin = roles.contains(RoleCode.ADMIN.name());
+        boolean isBa = roles.contains(RoleCode.BUSINESS_ANALYST.name());
+        boolean isStaff = isAdmin || isBa;
 
         Long clientId = null;
+        Long assignedBaId = null;
         if (!isStaff) {
             clientId = clientRepository.findByUserId(callerUserId).map(Client::getId).orElse(null);
             if (clientId == null) {
                 return PageResponse.from(org.springframework.data.domain.Page.<ClientProjectResponse>empty(pageable));
             }
+        } else if (isBa && !isAdmin && !allProjects) {
+            assignedBaId = callerUserId;
         }
-        return PageResponse.from(clientProjectRepository.search(clientId, status, pageable).map(this::toResponse));
+        return PageResponse.from(
+                clientProjectRepository.search(clientId, status, assignedBaId, pageable).map(this::toResponse));
+    }
+
+    /** {@code PUT /api/v1/admin/client-projects/{id}/assignment} — ADMIN manual override of the
+     * round-robin pick (a BA out sick, a developer better suited to the stack, etc.). Either field
+     * may be omitted to leave that half untouched; validates the target actually holds the
+     * relevant role so a typo'd uuid can't silently assign, say, a STUDENT as a project's BA. */
+    @Transactional
+    public ClientProjectResponse assign(Long projectId, AssignClientProjectRequest request, Long callerUserId) {
+        ClientProject project = clientProjectRepository.findById(projectId)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.CLIENT_PROJECT_NOT_FOUND, projectId));
+        if (request.baUuid() == null && request.developerUuid() == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "Provide baUuid and/or developerUuid.");
+        }
+
+        if (request.baUuid() != null) {
+            User ba = requireUserWithRole(request.baUuid(), RoleCode.BUSINESS_ANALYST);
+            project.setAssignedBa(ba);
+        }
+        if (request.developerUuid() != null) {
+            User dev = requireUserWithRole(request.developerUuid(), RoleCode.DEVELOPER);
+            project.setAssignedDeveloper(dev);
+        }
+
+        auditLogService.record(callerUserId, "CLIENT_PROJECT_ASSIGNED", "ClientProject", project.getId(),
+                null, java.util.Map.of(
+                        "baUuid", request.baUuid() == null ? "" : request.baUuid(),
+                        "developerUuid", request.developerUuid() == null ? "" : request.developerUuid()));
+
+        return toResponse(project);
+    }
+
+    private User requireUserWithRole(String userUuid, RoleCode role) {
+        User user = userRepository.findByUuid(userUuid)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.USER_NOT_FOUND, userUuid));
+        if (!userRoleRepository.findRoleCodesByUserId(user.getId()).contains(role)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                    "User " + userUuid + " does not hold the " + role + " role.");
+        }
+        return user;
     }
 
     /** build-plan.md feature 21 "Verify": "A client requesting another client's project gets
@@ -164,6 +224,8 @@ public class ClientProjectService {
     }
 
     private ClientProjectResponse toResponse(ClientProject project) {
+        User ba = project.getAssignedBa();
+        User dev = project.getAssignedDeveloper();
         return new ClientProjectResponse(
                 project.getId(),
                 project.getClient().getId(),
@@ -171,8 +233,17 @@ public class ClientProjectService {
                 project.getTitle(),
                 project.getScopeDescription(),
                 project.getBudgetRange(),
+                project.getAdditionalNotes(),
                 project.getTargetBatch() == null ? null : project.getTargetBatch().getId(),
                 project.getStatus(),
+                ba == null ? null : ba.getUuid(),
+                ba == null ? null : ba.getFullName(),
+                dev == null ? null : dev.getUuid(),
+                dev == null ? null : dev.getFullName(),
                 project.getSubmittedAt());
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 }

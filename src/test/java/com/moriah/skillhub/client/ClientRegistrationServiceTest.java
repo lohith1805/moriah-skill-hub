@@ -99,7 +99,7 @@ class ClientRegistrationServiceTest {
         verify(userRoleRepository).save(any(UserRole.class));
         verify(notificationService).enqueueAfterCommit(eq(42L), eq(NotificationChannel.EMAIL),
                 eq("CLIENT_REGISTRATION_RECEIVED"), any());
-        verify(auditLogService).record(eq(42L), eq("CLIENT_REGISTRATION_SUBMITTED"), eq("User"), eq(42L), any(), any());
+        verify(auditLogService).recordAfterCommit(eq(42L), eq("CLIENT_REGISTRATION_SUBMITTED"), eq("User"), eq(42L), any(), any());
     }
 
     @Test

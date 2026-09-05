@@ -9,8 +9,11 @@ import com.moriah.skillhub.crm.dto.CreateLeadCampaignRequest;
 import com.moriah.skillhub.crm.dto.LeadCampaignResponse;
 import com.moriah.skillhub.crm.dto.UpdateLeadCampaignRequest;
 import com.moriah.skillhub.crm.entity.LeadCampaign;
+import com.moriah.skillhub.crm.entity.LeadCampaignRecipient;
 import com.moriah.skillhub.crm.entity.LeadCampaignStatus;
+import com.moriah.skillhub.crm.repository.LeadCampaignRecipientRepository;
 import com.moriah.skillhub.crm.repository.LeadCampaignRepository;
+import com.moriah.skillhub.crm.repository.LeadRepository;
 import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +38,8 @@ import java.util.stream.Collectors;
 public class LeadCampaignService {
 
     private final LeadCampaignRepository campaignRepository;
+    private final LeadCampaignRecipientRepository recipientRepository;
+    private final LeadRepository leadRepository;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
 
@@ -42,12 +47,20 @@ public class LeadCampaignService {
     public PageResponse<LeadCampaignResponse> list(LeadCampaignStatus status, Pageable pageable) {
         var page = campaignRepository.search(status, pageable);
         Map<Long, String> creatorUuids = resolveCreatorUuids(page.getContent());
-        return PageResponse.from(page.map(c -> toResponse(c, creatorUuids)));
+        List<Long> campaignIds = page.getContent().stream().map(LeadCampaign::getId).toList();
+        Map<Long, List<Long>> leadIdsByCampaignId = campaignIds.isEmpty()
+                ? Map.of()
+                : recipientRepository.findByIdCampaignIdIn(campaignIds).stream()
+                        .collect(Collectors.groupingBy(r -> r.getId().getCampaignId(),
+                                Collectors.mapping(r -> r.getId().getLeadId(), Collectors.toList())));
+        return PageResponse.from(page.map(c ->
+                toResponse(c, leadIdsByCampaignId.getOrDefault(c.getId(), List.of()), creatorUuids)));
     }
 
     @Transactional
     public LeadCampaignResponse create(CreateLeadCampaignRequest request, Long callerUserId) {
         requireValidWindow(request.startDate(), request.endDate());
+        List<Long> leadIds = requireValidLeadIds(request.leadIds());
 
         LeadCampaign campaign = new LeadCampaign();
         campaign.setName(request.name());
@@ -61,9 +74,12 @@ public class LeadCampaignService {
         campaign.setCreatedBy(callerUserId);
         campaignRepository.save(campaign);
 
+        saveRecipients(campaign.getId(), leadIds);
+
         auditLogService.record(callerUserId, "LEAD_CAMPAIGN_CREATED", "LeadCampaign", campaign.getId(), null, campaign.getName());
-        log.info("[leads/campaigns] {} created campaign {} ({})", callerUserId, campaign.getId(), campaign.getChannel());
-        return toResponse(campaign, resolveCreatorUuids(List.of(campaign)));
+        log.info("[leads/campaigns] {} created campaign {} ({}) with {} recipient(s)",
+                callerUserId, campaign.getId(), campaign.getChannel(), leadIds.size());
+        return toResponse(campaign, leadIds, resolveCreatorUuids(List.of(campaign)));
     }
 
     @Transactional
@@ -80,8 +96,19 @@ public class LeadCampaignService {
         campaign.setTargetLeads(request.targetLeads());
         campaign.setStatus(request.status());
 
+        // null leadIds = "didn't touch the audience" (e.g. a status-only edit); a present list
+        // (even empty) replaces the whole audience wholesale, same delete-then-insert idiom
+        // AdminUserService.updateRoles uses for user_roles.
+        List<Long> leadIds = request.leadIds() != null
+                ? requireValidLeadIds(request.leadIds())
+                : recipientRepository.findLeadIdsByCampaignId(id);
+        if (request.leadIds() != null) {
+            recipientRepository.deleteByIdCampaignId(id);
+            saveRecipients(id, leadIds);
+        }
+
         auditLogService.record(callerUserId, "LEAD_CAMPAIGN_UPDATED", "LeadCampaign", campaign.getId(), null, campaign.getName());
-        return toResponse(campaign, resolveCreatorUuids(List.of(campaign)));
+        return toResponse(campaign, leadIds, resolveCreatorUuids(List.of(campaign)));
     }
 
     /** {@code DELETE} — moves to {@code CANCELLED}, never row-deletes, so a lead attributed to
@@ -101,6 +128,30 @@ public class LeadCampaignService {
         }
     }
 
+    /** De-dupes and validates every id actually resolves to a real lead — a bad id 404s the
+     * whole request rather than silently dropping it (the same "fail loud on a bad reference"
+     * choice {@code ResourceAllocationService.create} makes for its own batchId/userUuid checks). */
+    private List<Long> requireValidLeadIds(List<Long> rawLeadIds) {
+        if (rawLeadIds == null || rawLeadIds.isEmpty()) {
+            return List.of();
+        }
+        List<Long> distinct = rawLeadIds.stream().distinct().toList();
+        long found = leadRepository.findAllById(distinct).stream().count();
+        if (found != distinct.size()) {
+            throw new ResourceNotFoundException(ErrorCode.LEAD_NOT_FOUND, distinct);
+        }
+        return distinct;
+    }
+
+    private void saveRecipients(Long campaignId, List<Long> leadIds) {
+        if (leadIds.isEmpty()) {
+            return;
+        }
+        recipientRepository.saveAll(leadIds.stream()
+                .map(leadId -> new LeadCampaignRecipient(campaignId, leadId))
+                .toList());
+    }
+
     private LeadCampaign requireCampaign(Long id) {
         return campaignRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.LEAD_CAMPAIGN_NOT_FOUND, id));
@@ -114,11 +165,11 @@ public class LeadCampaignService {
         return userRepository.findAllById(ids).stream().collect(Collectors.toMap(User::getId, User::getUuid));
     }
 
-    private LeadCampaignResponse toResponse(LeadCampaign c, Map<Long, String> creatorUuids) {
+    private LeadCampaignResponse toResponse(LeadCampaign c, List<Long> leadIds, Map<Long, String> creatorUuids) {
         return new LeadCampaignResponse(
                 c.getId(), c.getName(), c.getChannel(), c.getDescription(),
                 c.getStartDate(), c.getEndDate(), c.getBudget(), c.getTargetLeads(),
-                c.getStatus(), creatorUuids.get(c.getCreatedBy()), c.getCreatedAt(), c.getUpdatedAt());
+                c.getStatus(), leadIds, creatorUuids.get(c.getCreatedBy()), c.getCreatedAt(), c.getUpdatedAt());
     }
 
     private static String blankToNull(String value) {

@@ -11,7 +11,9 @@ import com.moriah.skillhub.crm.dto.UpdateLeadCampaignRequest;
 import com.moriah.skillhub.crm.entity.LeadCampaign;
 import com.moriah.skillhub.crm.entity.LeadCampaignChannel;
 import com.moriah.skillhub.crm.entity.LeadCampaignStatus;
+import com.moriah.skillhub.crm.repository.LeadCampaignRecipientRepository;
 import com.moriah.skillhub.crm.repository.LeadCampaignRepository;
+import com.moriah.skillhub.crm.repository.LeadRepository;
 import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -43,6 +45,10 @@ class LeadCampaignServiceTest {
     @Mock
     private LeadCampaignRepository campaignRepository;
     @Mock
+    private LeadCampaignRecipientRepository recipientRepository;
+    @Mock
+    private LeadRepository leadRepository;
+    @Mock
     private UserRepository userRepository;
     @Mock
     private AuditLogService auditLogService;
@@ -52,7 +58,7 @@ class LeadCampaignServiceTest {
 
     private CreateLeadCampaignRequest createRequest(LocalDate start, LocalDate end) {
         return new CreateLeadCampaignRequest("Autumn Webinar Push", LeadCampaignChannel.WEBINAR,
-                "  ", start, end, new BigDecimal("50000"), 200);
+                "  ", start, end, new BigDecimal("50000"), 200, null);
     }
 
     private LeadCampaign campaign(long id) {
@@ -104,7 +110,7 @@ class LeadCampaignServiceTest {
 
         assertThatThrownBy(() -> service.update(404L, new UpdateLeadCampaignRequest(
                 "x", LeadCampaignChannel.EMAIL, null, LocalDate.of(2026, 1, 1), null, null, null,
-                LeadCampaignStatus.ACTIVE), 4L))
+                LeadCampaignStatus.ACTIVE, null), 4L))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.LEAD_CAMPAIGN_NOT_FOUND);
     }
@@ -117,12 +123,69 @@ class LeadCampaignServiceTest {
 
         LeadCampaignResponse response = service.update(3L, new UpdateLeadCampaignRequest(
                 "Renamed", LeadCampaignChannel.PAID_ADS, "desc", LocalDate.of(2026, 9, 5),
-                LocalDate.of(2026, 12, 5), new BigDecimal("99999"), 500, LeadCampaignStatus.ACTIVE), 4L);
+                LocalDate.of(2026, 12, 5), new BigDecimal("99999"), 500, LeadCampaignStatus.ACTIVE, null), 4L);
 
         assertThat(c.getName()).isEqualTo("Renamed");
         assertThat(c.getChannel()).isEqualTo(LeadCampaignChannel.PAID_ADS);
         assertThat(c.getStatus()).isEqualTo(LeadCampaignStatus.ACTIVE);
         assertThat(response.targetLeads()).isEqualTo(500);
+    }
+
+    @Test
+    void create_withLeadIds_savesRecipients() {
+        when(campaignRepository.save(any(LeadCampaign.class))).thenAnswer(inv -> {
+            LeadCampaign c = inv.getArgument(0);
+            c.setId(1L);
+            return c;
+        });
+        when(userRepository.findAllById(any())).thenReturn(List.of());
+        com.moriah.skillhub.crm.entity.Lead lead1 = new com.moriah.skillhub.crm.entity.Lead();
+        lead1.setId(10L);
+        com.moriah.skillhub.crm.entity.Lead lead2 = new com.moriah.skillhub.crm.entity.Lead();
+        lead2.setId(11L);
+        when(leadRepository.findAllById(List.of(10L, 11L))).thenReturn(List.of(lead1, lead2));
+
+        CreateLeadCampaignRequest request = new CreateLeadCampaignRequest("Autumn Webinar Push",
+                LeadCampaignChannel.WEBINAR, null, LocalDate.of(2026, 9, 1), null,
+                null, null, List.of(10L, 11L));
+
+        LeadCampaignResponse response = service.create(request, 4L);
+
+        assertThat(response.leadIds()).containsExactlyInAnyOrder(10L, 11L);
+        verify(recipientRepository).saveAll(any());
+    }
+
+    @Test
+    void create_withUnknownLeadId_throwsNotFound() {
+        when(leadRepository.findAllById(List.of(999L))).thenReturn(List.of());
+
+        CreateLeadCampaignRequest request = new CreateLeadCampaignRequest("Autumn Webinar Push",
+                LeadCampaignChannel.WEBINAR, null, LocalDate.of(2026, 9, 1), null,
+                null, null, List.of(999L));
+
+        assertThatThrownBy(() -> service.create(request, 4L))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.LEAD_NOT_FOUND);
+        verify(campaignRepository, never()).save(any());
+    }
+
+    @Test
+    void update_withLeadIds_replacesRecipientsWholesale() {
+        LeadCampaign c = campaign(3L);
+        when(campaignRepository.findById(3L)).thenReturn(Optional.of(c));
+        when(userRepository.findAllById(any())).thenReturn(List.of());
+        com.moriah.skillhub.crm.entity.Lead lead = new com.moriah.skillhub.crm.entity.Lead();
+        lead.setId(20L);
+        when(leadRepository.findAllById(List.of(20L))).thenReturn(List.of(lead));
+
+        LeadCampaignResponse response = service.update(3L, new UpdateLeadCampaignRequest(
+                "Renamed", LeadCampaignChannel.PAID_ADS, "desc", LocalDate.of(2026, 9, 5),
+                LocalDate.of(2026, 12, 5), new BigDecimal("99999"), 500, LeadCampaignStatus.ACTIVE,
+                List.of(20L)), 4L);
+
+        assertThat(response.leadIds()).containsExactly(20L);
+        verify(recipientRepository).deleteByIdCampaignId(3L);
+        verify(recipientRepository).saveAll(any());
     }
 
     @Test

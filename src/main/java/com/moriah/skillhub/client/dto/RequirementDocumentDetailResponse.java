@@ -4,6 +4,7 @@ import com.moriah.skillhub.client.entity.RequirementDocumentStatus;
 import com.moriah.skillhub.client.entity.RequirementDocumentType;
 
 import java.time.Instant;
+import java.util.List;
 
 /**
  * The single-document view (gap B1.16) — everything {@link RequirementDocumentResponse} carries
@@ -24,6 +25,7 @@ public record RequirementDocumentDetailResponse(
         String approvedByFullName,
         String devReviewedByUuid,
         String devReviewedByFullName,
-        Instant devReviewedAt
+        Instant devReviewedAt,
+        List<RequirementDocumentApprovalResponse> approvals
 ) {
 }

@@ -11,8 +11,13 @@ public record ClientProjectResponse(
         String title,
         String scopeDescription,
         String budgetRange,
+        String additionalNotes,
         Long targetBatchId,
         ClientProjectStatus status,
+        String assignedBaUuid,
+        String assignedBaName,
+        String assignedDeveloperUuid,
+        String assignedDeveloperName,
         Instant submittedAt
 ) {
 }

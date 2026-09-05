@@ -7,6 +7,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -48,6 +50,50 @@ public class AuditLogService {
             auditLog.setUserAgent(request.getHeader("User-Agent"));
         });
 
+        auditLogRepository.save(auditLog);
+    }
+
+    /**
+     * Use instead of {@link #record} whenever {@code userId} (or anything else this row's {@code
+     * fk_audit_logs_user} FK will need to lock) is a row the CALLER's own still-open transaction
+     * just inserted or updated — {@code record}'s {@code REQUIRES_NEW} opens a second, concurrent
+     * transaction that must take a lock on that exact row to satisfy the FK check, and the caller's
+     * transaction won't release it until this call returns. Neither side is blocked on a DB
+     * resource the other can see, so InnoDB can't detect the cycle as a deadlock — it just sits
+     * for the full {@code innodb_lock_wait_timeout} (~50s) and then fails the whole request.
+     * Confirmed the hard way against {@code ClientRegistrationService#register}: inserts a brand
+     * new {@code users} row, then audited it inline in the same transaction — every single
+     * self-registration timed out. Same {@code TransactionSynchronizationManager.
+     * registerSynchronization(...).afterCommit()} idiom {@code NotificationService.
+     * enqueueAfterCommit} already uses for the identical "must not race the caller's own
+     * transaction" reason. Request context (ip/user-agent) is captured eagerly, before the
+     * callback — {@code RequestContextHolder} may no longer be valid by the time it runs.
+     */
+    public void recordAfterCommit(Long userId, String action, String entityType, Long entityId,
+                                   Object oldValue, Object newValue) {
+        String ipAddress = currentRequest().map(HttpServletRequest::getRemoteAddr).orElse(null);
+        String userAgent = currentRequest().map(r -> r.getHeader("User-Agent")).orElse(null);
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                recordWithContext(userId, action, entityType, entityId, oldValue, newValue, ipAddress, userAgent);
+            }
+        });
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    void recordWithContext(Long userId, String action, String entityType, Long entityId,
+                            Object oldValue, Object newValue, String ipAddress, String userAgent) {
+        AuditLog auditLog = new AuditLog();
+        auditLog.setUserId(userId);
+        auditLog.setAction(action);
+        auditLog.setEntityType(entityType);
+        auditLog.setEntityId(entityId);
+        auditLog.setOldValue(toJson(oldValue));
+        auditLog.setNewValue(toJson(newValue));
+        auditLog.setIpAddress(ipAddress);
+        auditLog.setUserAgent(userAgent);
         auditLogRepository.save(auditLog);
     }
 

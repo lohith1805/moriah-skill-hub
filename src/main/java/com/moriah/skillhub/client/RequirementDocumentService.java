@@ -1,41 +1,62 @@
 package com.moriah.skillhub.client;
 
 import com.moriah.skillhub.client.dto.CreateRequirementDocumentRequest;
+import com.moriah.skillhub.client.dto.RequirementDocumentApprovalResponse;
 import com.moriah.skillhub.client.dto.RequirementDocumentDetailResponse;
 import com.moriah.skillhub.client.dto.RequirementDocumentResponse;
 import com.moriah.skillhub.client.entity.ClientProject;
 import com.moriah.skillhub.client.entity.RequirementDocument;
+import com.moriah.skillhub.client.entity.RequirementDocumentApproval;
 import com.moriah.skillhub.client.entity.RequirementDocumentStatus;
 import com.moriah.skillhub.client.repository.ClientProjectRepository;
+import com.moriah.skillhub.client.repository.ClientRepository;
+import com.moriah.skillhub.client.repository.RequirementDocumentApprovalRepository;
 import com.moriah.skillhub.client.repository.RequirementDocumentRepository;
 import com.moriah.skillhub.common.audit.AuditLogService;
 import com.moriah.skillhub.common.dto.PageResponse;
-import com.moriah.skillhub.common.exception.BusinessException;
+import com.moriah.skillhub.common.exception.ForbiddenOperationException;
 import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
+import com.moriah.skillhub.common.security.SecurityUtils;
+import com.moriah.skillhub.user.entity.RoleCode;
 import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * build-plan.md feature 21: BA converts client scope into {@code requirement_documents} (BRD/
- * SRS/FRS/user story) with versioning; approval restricted to BUSINESS_ANALYST/ADMIN. See {@code
- * RequirementDocumentStatus}'s own Javadoc for why {@link #create} lands directly in {@code
- * IN_REVIEW}, never {@code DRAFT}.
+ * SRS/FRS/user story) with versioning. Approval itself was originally a single BUSINESS_ANALYST/
+ * ADMIN action here — it is now multi-party (CLIENT/BUSINESS_ANALYST/DEVELOPER sign-off slots,
+ * see {@link RequirementDocumentApprovalService}), so {@link #approve} is a thin delegate kept on
+ * this service only so {@code BaController}'s existing {@code PUT /ba/documents/{id}/approve} URL
+ * doesn't have to change. See {@code RequirementDocumentStatus}'s own Javadoc for why
+ * {@link #create} lands directly in {@code IN_REVIEW}, never {@code DRAFT}.
  */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class RequirementDocumentService {
 
+    private static final List<RoleCode> APPROVAL_ROLE_ORDER =
+            List.of(RoleCode.CLIENT, RoleCode.BUSINESS_ANALYST, RoleCode.DEVELOPER);
+
     private final RequirementDocumentRepository requirementDocumentRepository;
+    private final RequirementDocumentApprovalRepository requirementDocumentApprovalRepository;
+    private final RequirementDocumentApprovalService requirementDocumentApprovalService;
     private final ClientProjectRepository clientProjectRepository;
+    private final ClientRepository clientRepository;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
 
@@ -43,7 +64,9 @@ public class RequirementDocumentService {
      * starting at 1 — older versions are never mutated, pure history (build-plan.md feature 21
      * decision). {@code author} is loaded as a real managed entity (not {@code
      * getReferenceById}) so {@link #toResponse} can read {@code uuid}/{@code fullName} off it
-     * with no extra lazy round trip. */
+     * with no extra lazy round trip. Pre-creates the document's required approval slots ({@link
+     * RequirementDocumentApprovalService#createSlots}) in the same transaction — a document
+     * without its slots would be un-approvable by anyone. */
     @Transactional
     public RequirementDocumentResponse create(CreateRequirementDocumentRequest request, Long callerUserId) {
         ClientProject project = requireProject(request.clientProjectId());
@@ -63,31 +86,20 @@ public class RequirementDocumentService {
         document.setStatus(RequirementDocumentStatus.IN_REVIEW);
         document.setAuthoredBy(author);
         requirementDocumentRepository.save(document);
+        List<RequirementDocumentApproval> slots = requirementDocumentApprovalService.createSlots(document);
 
         log.info("[ba/documents] created {} v{} for client project {}", request.docType(), nextVersion, project.getId());
-        return toResponse(document);
+        return toResponse(document, slots);
     }
 
-    /** Guards against double-approve — {@code BUSINESS_RULE_VIOLATION}, matching {@code
-     * CertificateService#revoke}'s/{@code PayrollService}'s established one-off-state-guard
-     * precedent, not a bespoke {@code ErrorCode}. */
+    /** {@code PUT /api/v1/ba/documents/{id}/approve} and {@code POST /api/v1/requirement-documents
+     * /{id}/approve} — same underlying action, kept as two URLs so the BA portal's existing route
+     * doesn't change while CLIENT/DEVELOPER get their own entry point. All the actual role
+     * inference, self-approval blocking, and developer auto-assignment lives in {@link
+     * RequirementDocumentApprovalService#approve}. */
     @Transactional
     public RequirementDocumentResponse approve(Long documentId, Long callerUserId) {
-        RequirementDocument document = requireDocument(documentId);
-
-        if (document.getStatus() == RequirementDocumentStatus.APPROVED) {
-            throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION, "This document has already been approved.");
-        }
-
-        User approver = userRepository.findById(callerUserId)
-                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.USER_NOT_FOUND, callerUserId));
-        document.setStatus(RequirementDocumentStatus.APPROVED);
-        document.setApprovedBy(approver);
-
-        auditLogService.record(callerUserId, "REQUIREMENT_DOCUMENT_APPROVED", "RequirementDocument",
-                document.getId(), null, document.getVersion());
-        log.info("[ba/documents] approved document {} v{}", document.getId(), document.getVersion());
-
+        RequirementDocument document = requirementDocumentApprovalService.approve(documentId, callerUserId);
         return toResponse(document);
     }
 
@@ -96,13 +108,48 @@ public class RequirementDocumentService {
     @Transactional(readOnly = true)
     public PageResponse<RequirementDocumentResponse> list(Long clientProjectId,
             RequirementDocumentStatus status, Pageable pageable) {
+        Page<RequirementDocument> page = requirementDocumentRepository.search(clientProjectId, status, pageable);
+        Map<Long, List<RequirementDocumentApproval>> approvalsByDocId = batchApprovals(page.getContent());
         return PageResponse.from(
-                requirementDocumentRepository.search(clientProjectId, status, pageable).map(this::toResponse));
+                page.map(d -> toResponse(d, approvalsByDocId.getOrDefault(d.getId(), List.of()))));
+    }
+
+    /** {@code GET /api/v1/requirement-documents} — the CLIENT/DEVELOPER-reachable equivalent of
+     * {@link #list}: a CLIENT may only ever see their own project's documents (staff — BA/ADMIN —
+     * and DEVELOPER keep the same unrestricted read {@code /ba/documents}/{@code
+     * /dev/requirement-documents} already have; nothing about visibility changes for them here,
+     * only CLIENT gains access at all). */
+    @Transactional(readOnly = true)
+    public PageResponse<RequirementDocumentResponse> listForCaller(Long clientProjectId,
+            RequirementDocumentStatus status, Long callerUserId, Pageable pageable) {
+        if (isClientOnly()) {
+            ClientProject project = clientProjectRepository.findById(clientProjectId)
+                    .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.CLIENT_PROJECT_NOT_FOUND, clientProjectId));
+            requireOwningClient(project, callerUserId);
+        }
+        return list(clientProjectId, status, pageable);
     }
 
     @Transactional(readOnly = true)
     public RequirementDocumentDetailResponse getDetail(Long documentId) {
         return toDetailResponse(requireDocument(documentId));
+    }
+
+    /** {@code GET /api/v1/requirement-documents/{id}} — same document {@link #getDetail} serves
+     * BA/ADMIN, but reachable by CLIENT/DEVELOPER too; a CLIENT-only caller gets a 403 unless the
+     * document's project is their own (staff and DEVELOPER keep the existing unrestricted read —
+     * see {@link #listForCaller}'s own note on why). */
+    @Transactional(readOnly = true)
+    public RequirementDocumentDetailResponse getDetailForCaller(Long documentId, Long callerUserId) {
+        RequirementDocument document = requireDocument(documentId);
+        if (isClientOnly()) {
+            ClientProject project = document.getClientProject();
+            if (project == null) {
+                throw new ForbiddenOperationException(ErrorCode.NOT_RESOURCE_OWNER);
+            }
+            requireOwningClient(project, callerUserId);
+        }
+        return toDetailResponse(document);
     }
 
     /**
@@ -137,7 +184,52 @@ public class RequirementDocumentService {
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.REQUIREMENT_DOCUMENT_NOT_FOUND, id));
     }
 
+    /** {@code true} only for a caller holding CLIENT and none of BUSINESS_ANALYST/DEVELOPER/ADMIN
+     * — staff and developers keep the unrestricted read they already had before CLIENT gained
+     * access at all (see {@link #listForCaller}/{@link #getDetailForCaller}). */
+    private boolean isClientOnly() {
+        List<String> roles = SecurityUtils.currentUserRoles();
+        return roles.contains(RoleCode.CLIENT.name())
+                && !roles.contains(RoleCode.ADMIN.name())
+                && !roles.contains(RoleCode.BUSINESS_ANALYST.name())
+                && !roles.contains(RoleCode.DEVELOPER.name());
+    }
+
+    private void requireOwningClient(ClientProject project, Long callerUserId) {
+        User owner = project.getClient() == null ? null : project.getClient().getUser();
+        if (owner == null || !Objects.equals(owner.getId(), callerUserId)) {
+            throw new ForbiddenOperationException(ErrorCode.NOT_RESOURCE_OWNER);
+        }
+    }
+
+    /** {@code RequirementDocumentApprovalRepository#findByDocumentIdIn}'s batched per-page lookup
+     * — one flat query for a whole page of documents instead of one {@code findByDocumentId} call
+     * per row (code-standards.md "N+1 Prevention"). */
+    private Map<Long, List<RequirementDocumentApproval>> batchApprovals(List<RequirementDocument> documents) {
+        if (documents.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> ids = documents.stream().map(RequirementDocument::getId).toList();
+        return requirementDocumentApprovalRepository.findByDocumentIdIn(ids).stream()
+                .collect(Collectors.groupingBy(a -> a.getDocument().getId()));
+    }
+
+    private static List<RequirementDocumentApprovalResponse> toApprovalResponses(List<RequirementDocumentApproval> approvals) {
+        return approvals.stream()
+                .sorted(Comparator.comparingInt(a -> APPROVAL_ROLE_ORDER.indexOf(a.getApproverRole())))
+                .map(a -> new RequirementDocumentApprovalResponse(
+                        a.getApproverRole().name(),
+                        a.getApprovedBy() == null ? null : a.getApprovedBy().getUuid(),
+                        a.getApprovedBy() == null ? null : a.getApprovedBy().getFullName(),
+                        a.getApprovedAt()))
+                .toList();
+    }
+
     private RequirementDocumentResponse toResponse(RequirementDocument document) {
+        return toResponse(document, requirementDocumentApprovalRepository.findByDocumentId(document.getId()));
+    }
+
+    private RequirementDocumentResponse toResponse(RequirementDocument document, List<RequirementDocumentApproval> approvals) {
         User author = document.getAuthoredBy();
         User approver = document.getApprovedBy();
         User devReviewer = document.getDevReviewedBy();
@@ -154,13 +246,15 @@ public class RequirementDocumentService {
                 approver == null ? null : approver.getFullName(),
                 devReviewer == null ? null : devReviewer.getUuid(),
                 devReviewer == null ? null : devReviewer.getFullName(),
-                document.getDevReviewedAt());
+                document.getDevReviewedAt(),
+                toApprovalResponses(approvals));
     }
 
     private RequirementDocumentDetailResponse toDetailResponse(RequirementDocument document) {
         User author = document.getAuthoredBy();
         User approver = document.getApprovedBy();
         User devReviewer = document.getDevReviewedBy();
+        List<RequirementDocumentApproval> approvals = requirementDocumentApprovalRepository.findByDocumentId(document.getId());
         return new RequirementDocumentDetailResponse(
                 document.getId(),
                 document.getClientProject() == null ? null : document.getClientProject().getId(),
@@ -175,6 +269,7 @@ public class RequirementDocumentService {
                 approver == null ? null : approver.getFullName(),
                 devReviewer == null ? null : devReviewer.getUuid(),
                 devReviewer == null ? null : devReviewer.getFullName(),
-                document.getDevReviewedAt());
+                document.getDevReviewedAt(),
+                toApprovalResponses(approvals));
     }
 }

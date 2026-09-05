@@ -68,10 +68,11 @@ public class ClientController {
             + "a BUSINESS_ANALYST / ADMIN sees every client's")
     public ResponseEntity<ApiResponse<PageResponse<ClientProjectResponse>>> listProjects(
             @RequestParam(required = false) ClientProjectStatus status,
+            @RequestParam(defaultValue = "false") boolean allProjects,
             @CurrentUser Long callerUserId,
             @PageableDefault(size = 50) Pageable pageable) {
         return ResponseEntity.ok(ApiResponse.success(
-                clientProjectService.list(callerUserId, status, pageable)));
+                clientProjectService.list(callerUserId, status, allProjects, pageable)));
     }
 
     @GetMapping("/projects/{id}/progress")

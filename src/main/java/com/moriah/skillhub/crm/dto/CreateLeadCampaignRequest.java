@@ -9,9 +9,12 @@ import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 /** {@code POST /api/v1/leads/campaigns} (gap B1.7). {@code status} is not accepted here — a new
- * campaign always starts {@code PLANNED} and is advanced via {@code PUT}. */
+ * campaign always starts {@code PLANNED} and is advanced via {@code PUT}. {@code leadIds} is the
+ * audience picked at creation time (frontend gap — this used to only be built at Send time,
+ * client-side, from scratch every time); {@code null}/empty means no audience picked yet. */
 public record CreateLeadCampaignRequest(
         @NotBlank @Size(max = 150) String name,
         @NotNull LeadCampaignChannel channel,
@@ -19,6 +22,7 @@ public record CreateLeadCampaignRequest(
         @NotNull LocalDate startDate,
         LocalDate endDate,
         @DecimalMin(value = "0.0", inclusive = true) BigDecimal budget,
-        @Positive Integer targetLeads
+        @Positive Integer targetLeads,
+        List<Long> leadIds
 ) {
 }

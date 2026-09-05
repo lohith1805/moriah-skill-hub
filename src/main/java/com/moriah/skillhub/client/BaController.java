@@ -2,6 +2,7 @@ package com.moriah.skillhub.client;
 
 import com.moriah.skillhub.client.dto.CreateRequirementDocumentRequest;
 import com.moriah.skillhub.client.dto.CreateResourceAllocationRequest;
+import com.moriah.skillhub.client.dto.RequirementDocumentDetailResponse;
 import com.moriah.skillhub.client.dto.RequirementDocumentResponse;
 import com.moriah.skillhub.client.dto.ResourceAllocationResponse;
 import com.moriah.skillhub.client.entity.RequirementDocumentStatus;
@@ -52,6 +53,14 @@ public class BaController {
 
         return ResponseEntity.ok(ApiResponse.success(
                 requirementDocumentService.list(clientProjectId, status, pageable)));
+    }
+
+    @GetMapping("/documents/{id}")
+    @PreAuthorize("hasAnyRole('BUSINESS_ANALYST','ADMIN')")
+    @Operation(summary = "One requirement document with its full content — the BA-side equivalent "
+            + "of GET /dev/requirement-documents/{id}, so a BA can re-open what they authored")
+    public ResponseEntity<ApiResponse<RequirementDocumentDetailResponse>> getDocument(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success(requirementDocumentService.getDetail(id)));
     }
 
     @PostMapping("/documents")
