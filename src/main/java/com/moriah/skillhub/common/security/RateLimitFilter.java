@@ -9,6 +9,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -40,9 +42,19 @@ import java.time.Instant;
  * which includes the {@code /api/v1/auth/**} brute-force surface — still bucket by IP, so a
  * correct {@code trusted-proxies} configuration remains necessary for login throttling to work
  * per-client (and account-level lockout in {@code AuthService} is the complementary defence).
+ * <p>
+ * <b>Fails open on a Redis outage</b> — confirmed the hard way: a transient Redis connectivity
+ * blip (Docker Desktop's port-forward occasionally going stale after a container restart) used
+ * to throw {@code RedisConnectionFailureException} straight out of this filter, uncaught, for
+ * <em>every</em> request including {@code /api/v1/auth/login} — no rate-limit response, just an
+ * unhandled exception that Spring Security's {@code AuthenticationEntryPoint} eventually turned
+ * into a deeply misleading {@code UNAUTHENTICATED} "Authentication is required" error, masking
+ * the real problem entirely. Rate limiting is defense-in-depth, not core correctness — a Redis
+ * hiccup should degrade to "temporarily unlimited," never take the whole API down.
  */
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class RateLimitFilter extends OncePerRequestFilter {
 
     private final StringRedisTemplate redisTemplate;
@@ -64,9 +76,16 @@ public class RateLimitFilter extends OncePerRequestFilter {
         long window = Instant.now().getEpochSecond() / 60;
         String key = "ratelimit:%s:%d".formatted(callerIdentity(request), window);
 
-        Long count = redisTemplate.opsForValue().increment(key);
-        if (count != null && count == 1L) {
-            redisTemplate.expire(key, Duration.ofMinutes(1));
+        Long count;
+        try {
+            count = redisTemplate.opsForValue().increment(key);
+            if (count != null && count == 1L) {
+                redisTemplate.expire(key, Duration.ofMinutes(1));
+            }
+        } catch (DataAccessException e) {
+            log.warn("[security/ratelimit] Redis unavailable, failing open for this request: {}", e.getMessage());
+            filterChain.doFilter(request, response);
+            return;
         }
 
         if (count != null && count > limit) {
