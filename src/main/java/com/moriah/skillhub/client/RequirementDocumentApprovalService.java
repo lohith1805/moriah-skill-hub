@@ -214,7 +214,11 @@ public class RequirementDocumentApprovalService {
     /** Decision order (see class Javadoc): the project's own CLIENT contact, then its assigned
      * DEVELOPER, then any BUSINESS_ANALYST other than the document's own author — self-approval
      * is blocked outright rather than silently falling through to a generic 403, so a BA gets a
-     * clear reason. Anyone else is not a party to this document at all. */
+     * clear reason. The one exception is a team with a single BA on staff: if no *other* BA
+     * exists to hand the slot to, blocking self-approval unconditionally would strand the
+     * document (and every doc downstream of it — the developer never gets auto-assigned, since
+     * that only fires off a BUSINESS_ANALYST slot being filled) in {@code IN_REVIEW} forever, with
+     * no path for anyone to ever fill it. Anyone else is not a party to this document at all. */
     private RequirementDocumentApproval resolveCallerSlot(RequirementDocument document, ClientProject project,
             List<RequirementDocumentApproval> slots, User caller) {
         if (project != null && project.getClient() != null && project.getClient().getUser() != null
@@ -229,8 +233,14 @@ public class RequirementDocumentApprovalService {
         }
         if (userRoleRepository.findRoleCodesByUserId(caller.getId()).contains(RoleCode.BUSINESS_ANALYST)) {
             if (Objects.equals(document.getAuthoredBy().getId(), caller.getId())) {
-                throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION,
-                        "You authored this document — another business analyst must sign it off.");
+                boolean anotherBaOnStaff = userRoleRepository.findUserIdsByRoleCode(RoleCode.BUSINESS_ANALYST).stream()
+                        .anyMatch(id -> !Objects.equals(id, caller.getId()));
+                if (anotherBaOnStaff) {
+                    throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION,
+                            "You authored this document — another business analyst must sign it off.");
+                }
+                log.info("[requirement-documents] {} is the only business analyst on staff — allowing "
+                        + "self sign-off on document {} they authored", caller.getId(), document.getId());
             }
             return findSlot(slots, RoleCode.BUSINESS_ANALYST)
                     .orElseThrow(() -> new ForbiddenOperationException(ErrorCode.NOT_RESOURCE_OWNER));

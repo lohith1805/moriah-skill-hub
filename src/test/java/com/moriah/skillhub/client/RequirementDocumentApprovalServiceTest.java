@@ -212,7 +212,7 @@ class RequirementDocumentApprovalServiceTest {
     }
 
     @Test
-    void approve_authorHoldingBusinessAnalystRole_isBlockedFromApprovingOwnDocument() {
+    void approve_authorHoldingBusinessAnalystRole_isBlockedFromApprovingOwnDocument_whenAnotherBaIsOnStaff() {
         User author = user(5L, "author-ba");
         RequirementDocument document = document(1L, RequirementDocumentType.SRS, project(10L, null, null), author);
         when(requirementDocumentRepository.findWithAssociationsById(1L)).thenReturn(Optional.of(document));
@@ -221,11 +221,39 @@ class RequirementDocumentApprovalServiceTest {
                 new RequirementDocumentApproval(document, RoleCode.BUSINESS_ANALYST),
                 new RequirementDocumentApproval(document, RoleCode.DEVELOPER))));
         when(userRoleRepository.findRoleCodesByUserId(5L)).thenReturn(List.of(RoleCode.BUSINESS_ANALYST));
+        // Another BA (id 6) is on staff besides the author (id 5) — the author must hand this off.
+        when(userRoleRepository.findUserIdsByRoleCode(RoleCode.BUSINESS_ANALYST)).thenReturn(List.of(5L, 6L));
         authenticateAs(5L, RoleCode.BUSINESS_ANALYST);
 
         assertThatThrownBy(() -> approvalService.approve(1L, 5L))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.BUSINESS_RULE_VIOLATION);
+    }
+
+    /** Regression test for a real deadlock found in manual testing: a team with exactly one BA on
+     * staff who authors every document. Unconditionally blocking self-approval left the
+     * BUSINESS_ANALYST slot — and everything gated on it, including developer auto-assignment —
+     * permanently unfillable, since no other BA could ever exist to hand it to. */
+    @Test
+    void approve_authorHoldingBusinessAnalystRole_canSelfApprove_whenNoOtherBaIsOnStaff() {
+        User author = user(5L, "author-ba");
+        RequirementDocument document = document(1L, RequirementDocumentType.SRS, project(10L, null, null), author);
+        RequirementDocumentApproval baSlot = new RequirementDocumentApproval(document, RoleCode.BUSINESS_ANALYST);
+        RequirementDocumentApproval devSlot = new RequirementDocumentApproval(document, RoleCode.DEVELOPER);
+        when(requirementDocumentRepository.findWithAssociationsById(1L)).thenReturn(Optional.of(document));
+        when(userRepository.findById(5L)).thenReturn(Optional.of(author));
+        when(approvalRepository.findByDocumentId(1L)).thenReturn(new ArrayList<>(List.of(baSlot, devSlot)));
+        when(approvalRepository.existsPriorBusinessAnalystApproval(10L)).thenReturn(false);
+        when(userRoleRepository.findRoleCodesByUserId(5L)).thenReturn(List.of(RoleCode.BUSINESS_ANALYST));
+        // Author (id 5) is the only BA on staff.
+        when(userRoleRepository.findUserIdsByRoleCode(RoleCode.BUSINESS_ANALYST)).thenReturn(List.of(5L));
+
+        authenticateAs(5L, RoleCode.BUSINESS_ANALYST);
+
+        RequirementDocument result = approvalService.approve(1L, 5L);
+
+        assertThat(baSlot.getApprovedBy()).isEqualTo(author);
+        assertThat(result.getStatus()).isEqualTo(RequirementDocumentStatus.IN_REVIEW); // DEVELOPER slot still open
     }
 
     @Test
