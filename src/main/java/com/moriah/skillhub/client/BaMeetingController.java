@@ -2,11 +2,13 @@ package com.moriah.skillhub.client;
 
 import com.moriah.skillhub.client.dto.BaMeetingResponse;
 import com.moriah.skillhub.client.dto.CreateBaMeetingRequest;
+import com.moriah.skillhub.client.dto.StaffDirectoryEntryResponse;
 import com.moriah.skillhub.client.dto.UpdateBaMeetingRequest;
 import com.moriah.skillhub.client.entity.BaMeetingStatus;
 import com.moriah.skillhub.common.dto.ApiResponse;
 import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.common.security.CurrentUser;
+import com.moriah.skillhub.user.entity.RoleCode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -28,6 +30,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 /**
  * BA Meetings coordination (gap B1.14). Separate controller from {@link BaController} to keep
  * that one focused — same {@code /api/v1/ba} prefix, distinct {@code /meetings} sub-path.
@@ -40,6 +44,15 @@ import org.springframework.web.bind.annotation.RestController;
 public class BaMeetingController {
 
     private final BaMeetingService baMeetingService;
+
+    @GetMapping("/staff-directory")
+    @PreAuthorize("hasAnyRole('BUSINESS_ANALYST','ADMIN')")
+    @Operation(summary = "Active staff holding a given role — the attendee picker's second dropdown",
+            description = "role must be BUSINESS_ANALYST, DEVELOPER, or ADMIN")
+    public ResponseEntity<ApiResponse<List<StaffDirectoryEntryResponse>>> staffDirectory(
+            @RequestParam RoleCode role) {
+        return ResponseEntity.ok(ApiResponse.success(baMeetingService.staffDirectory(role)));
+    }
 
     @GetMapping
     @PreAuthorize("hasAnyRole('BUSINESS_ANALYST','ADMIN')")

@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.Optional;
 
 public interface BaMeetingRepository extends JpaRepository<BaMeeting, Long> {
@@ -28,4 +29,9 @@ public interface BaMeetingRepository extends JpaRepository<BaMeeting, Long> {
 
     @EntityGraph(attributePaths = "clientProject")
     Optional<BaMeeting> findWithProjectById(Long id);
+
+    /** {@code BaMeetingService#myMeetings} — "Client Pre-Project Discussions" on an attendee's own
+     * dashboard: every meeting they're invited to, regardless of who scheduled it. */
+    @EntityGraph(attributePaths = "clientProject")
+    Page<BaMeeting> findByIdIn(Collection<Long> ids, Pageable pageable);
 }
