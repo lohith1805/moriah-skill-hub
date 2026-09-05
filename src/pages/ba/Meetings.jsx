@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Plus, CalendarClock, Video, Trash2, Users, FileText,
-  CheckCircle2, Calendar, X
+  CheckCircle2, Calendar, X, Pencil
 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
@@ -12,7 +12,7 @@ import { Input, Select, Textarea } from "../../components/ui/FormField";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required } from "../../utils/validators";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
-import { getMeetings, createMeeting, saveMeetingMinutes, deleteMeeting, getMeetingStaffDirectory } from "../../services/baService";
+import { getMeetings, createMeeting, updateMeeting, saveMeetingMinutes, deleteMeeting, getMeetingStaffDirectory } from "../../services/baService";
 import { getClientProjects } from "../../services/clientService";
 
 const INVITE_ROLES = [
@@ -36,8 +36,11 @@ export default function BaMeetings() {
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState([]);
 
-  // Schedule modal state
+  // Schedule/edit modal state — editingId null means "creating a new discussion";
+  // otherwise the form is pre-filled from that meeting and submits via updateMeeting.
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editingMeeting, setEditingMeeting] = useState(null); // kept for status/momNotes passthrough
   const [submitting, setSubmitting] = useState(false);
   const [values, setValues] = useState(emptyValues());
 
@@ -81,8 +84,30 @@ export default function BaMeetings() {
 
   const openCreate = () => {
     setErrors({});
+    setEditingId(null);
+    setEditingMeeting(null);
     setValues(emptyValues());
     setSelectedAttendees([]);
+    setPickerRole("DEVELOPER");
+    setModalOpen(true);
+  };
+
+  const openEdit = (meeting) => {
+    setErrors({});
+    setEditingId(meeting.id);
+    setEditingMeeting(meeting);
+    setValues({
+      title: meeting.title,
+      type: meeting.type || "Sprint Demo",
+      clientProjectId: meeting.clientProjectId != null ? String(meeting.clientProjectId) : "",
+      date: meeting.date,
+      time: meeting.time,
+      meetLink: meeting.meetLink || "",
+      agenda: meeting.agenda || "",
+    });
+    // Pre-fill from the meeting's real attendee list — role is unknown until the BA re-opens that
+    // role's tab in the picker (cosmetic only: it's just the chip's "· Role" label).
+    setSelectedAttendees((meeting.attendeeList || []).map((a) => ({ uuid: a.uuid, fullName: a.fullName, role: null })));
     setPickerRole("DEVELOPER");
     setModalOpen(true);
   };
@@ -97,7 +122,7 @@ export default function BaMeetings() {
 
   const removeAttendee = (uuid) => setSelectedAttendees((current) => current.filter((a) => a.uuid !== uuid));
 
-  const handleSchedule = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const validation = validateForm(values, { title: [required], date: [required] });
     setErrors(validation);
@@ -107,7 +132,7 @@ export default function BaMeetings() {
     try {
       const generatedLink = values.meetLink || `https://meet.google.com/msh-${Math.random().toString(36).substr(2, 4)}-${Math.random().toString(36).substr(2, 3)}`;
       const project = projects.find((p) => String(p.id) === String(values.clientProjectId));
-      await createMeeting({
+      const payload = {
         title: values.title,
         type: values.type,
         client: project?.clientName || "",
@@ -117,17 +142,28 @@ export default function BaMeetings() {
         meetLink: generatedLink,
         agenda: values.agenda || "Review sprint milestones and collect client sign-off.",
         attendeeUuids: selectedAttendees.map((a) => a.uuid),
-      });
-      notify(
-        selectedAttendees.length
-          ? `Client Pre-Project Discussion scheduled — ${selectedAttendees.length} ${selectedAttendees.length === 1 ? "person" : "people"} invited by email.`
-          : "Client Pre-Project Discussion scheduled.",
-        { type: "success", title: "Meeting Scheduled" }
-      );
+      };
+
+      if (editingId) {
+        await updateMeeting(editingId, {
+          ...payload,
+          status: editingMeeting?.status || "SCHEDULED",
+          momNotes: editingMeeting?.momNotes || "",
+        });
+        notify("Client Pre-Project Discussion updated — newly invited attendees have been emailed.", { type: "success", title: "Meeting Updated" });
+      } else {
+        await createMeeting(payload);
+        notify(
+          selectedAttendees.length
+            ? `Client Pre-Project Discussion scheduled — ${selectedAttendees.length} ${selectedAttendees.length === 1 ? "person" : "people"} invited by email.`
+            : "Client Pre-Project Discussion scheduled.",
+          { type: "success", title: "Meeting Scheduled" }
+        );
+      }
       setModalOpen(false);
       load();
     } catch (err) {
-      notify(err.message || "Could not schedule the meeting.", { type: "error" });
+      notify(err.message || "Could not save the meeting.", { type: "error" });
     } finally {
       setSubmitting(false);
     }
@@ -207,6 +243,7 @@ export default function BaMeetings() {
                   <Button size="sm" variant="secondary" icon={FileText} onClick={() => openMomModal(m)}>
                     {m.momNotes ? "View / Edit MOM" : "Log MOM"}
                   </Button>
+                  <Button size="sm" variant="secondary" icon={Pencil} onClick={() => openEdit(m)}>Edit</Button>
                   <Button size="sm" variant="ghost" icon={Trash2} onClick={() => handleDelete(m.id)} className="text-error-600 hover:bg-error-50" />
                 </div>
               </div>
@@ -247,20 +284,22 @@ export default function BaMeetings() {
         </div>
       )}
 
-      {/* Schedule Discussion Modal */}
+      {/* Schedule/Edit Discussion Modal */}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="Schedule a Client Pre-Project Discussion"
+        title={editingId ? "Edit Client Pre-Project Discussion" : "Schedule a Client Pre-Project Discussion"}
         size="lg"
         footer={
           <>
             <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
-            <Button loading={submitting} icon={Calendar} onClick={handleSchedule}>Schedule & Send Invites</Button>
+            <Button loading={submitting} icon={Calendar} onClick={handleSubmit}>
+              {editingId ? "Save Changes" : "Schedule & Send Invites"}
+            </Button>
           </>
         }
       >
-        <form className="flex flex-col gap-4 text-left font-sans" onSubmit={handleSchedule}>
+        <form className="flex flex-col gap-4 text-left font-sans" onSubmit={handleSubmit}>
           <Input
             label="Meeting Title"
             required
@@ -326,6 +365,12 @@ export default function BaMeetings() {
             <p className="text-xs font-semibold text-ink-700 flex items-center gap-1.5">
               <Users size={14} className="text-primary-600" /> Invite attendees — checked people are emailed and see this on their own dashboard
             </p>
+            {editingId && (
+              <p className="text-xs text-ink-500 -mt-1">
+                Already-invited people are pre-checked below (switch roles to find and uncheck someone).
+                Only newly-added people are re-emailed when you save.
+              </p>
+            )}
             <Select
               label="Role"
               options={INVITE_ROLES}
@@ -360,7 +405,7 @@ export default function BaMeetings() {
                   {selectedAttendees.map((a) => (
                     <span key={a.uuid} className="inline-flex items-center gap-1 bg-white border border-border px-2 py-1 rounded-full text-[11px] text-ink-700">
                       {a.fullName}
-                      <span className="text-ink-400">· {INVITE_ROLES.find((r) => r.value === a.role)?.label}</span>
+                      {a.role && <span className="text-ink-400">· {INVITE_ROLES.find((r) => r.value === a.role)?.label}</span>}
                       <button type="button" onClick={() => removeAttendee(a.uuid)} className="text-ink-400 hover:text-error-600">
                         <X size={12} />
                       </button>
