@@ -10,6 +10,7 @@ import com.moriah.skillhub.assessment.entity.AttemptStatus;
 import com.moriah.skillhub.assessment.entity.QuestionType;
 import com.moriah.skillhub.assessment.entity.Quiz;
 import com.moriah.skillhub.assessment.entity.QuizAttempt;
+import com.moriah.skillhub.assessment.entity.QuizQuestion;
 import com.moriah.skillhub.assessment.dto.CreateAssessmentFromBankRequest;
 import com.moriah.skillhub.assessment.entity.QuestionBank;
 import com.moriah.skillhub.assessment.entity.QuestionBankItem;
@@ -36,6 +37,7 @@ import com.moriah.skillhub.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -148,7 +150,7 @@ class QuizServiceTest {
             when(userRepository.findById(1L)).thenReturn(Optional.of(new User()));
 
             AssessmentResponse response = quizService.createFromBank(1L,
-                    new CreateAssessmentFromBankRequest(5L, 100L, null, null, 20, null, null));
+                    new CreateAssessmentFromBankRequest(5L, 100L, null, null, 20, null, null, null));
 
             assertThat(response.title()).isEqualTo("Java Basics Bank"); // defaults to bank name
             verify(batchService, org.mockito.Mockito.never()).requireOwnerOrAdmin(any(), any());
@@ -169,9 +171,65 @@ class QuizServiceTest {
             when(questionBankItemRepository.findByBankId(eq(5L), any())).thenReturn(new PageImpl<>(List.of()));
 
             assertThatThrownBy(() -> quizService.createFromBank(1L,
-                    new CreateAssessmentFromBankRequest(5L, 100L, null, null, 20, null, null)))
+                    new CreateAssessmentFromBankRequest(5L, 100L, null, null, 20, null, null, null)))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.QUESTION_BANK_EMPTY);
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+    }
+
+    @Test
+    void createFromBank_questionCountLessThanBankSize_snapshotsOnlyThatMany() {
+        SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken(
+                new AuthenticatedPrincipal(1L, "uuid-1", List.of("ADMIN")), null));
+        try {
+            QuestionBank bank = new QuestionBank();
+            bank.setId(5L);
+            bank.setName("Java Basics Bank");
+            List<QuestionBankItem> items = new java.util.ArrayList<>();
+            for (int i = 0; i < 200; i++) {
+                QuestionBankItem item = new QuestionBankItem();
+                item.setQuestionText("Question " + i);
+                item.setQuestionType(QuestionType.MCQ);
+                item.setOptions("[\"a\",\"b\"]");
+                item.setCorrectAnswer("[0]");
+                item.setMarks(1);
+                items.add(item);
+            }
+
+            when(questionBankRepository.findById(5L)).thenReturn(Optional.of(bank));
+            when(questionBankItemRepository.findByBankId(eq(5L), any())).thenReturn(new PageImpl<>(items));
+            when(batchRepository.findById(100L)).thenReturn(Optional.of(batch));
+            when(userRepository.findById(1L)).thenReturn(Optional.of(new User()));
+
+            ArgumentCaptor<List<QuizQuestion>> captor = ArgumentCaptor.forClass(List.class);
+            quizService.createFromBank(1L, new CreateAssessmentFromBankRequest(5L, 100L, null, null, 20, null, null, 30));
+
+            verify(quizQuestionRepository).saveAll(captor.capture());
+            assertThat(captor.getValue()).hasSize(30);
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+    }
+
+    @Test
+    void createFromBank_questionCountExceedsBankSize_throwsValidationFailed() {
+        SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken(
+                new AuthenticatedPrincipal(1L, "uuid-1", List.of("ADMIN")), null));
+        try {
+            QuestionBank bank = new QuestionBank();
+            bank.setId(5L);
+            QuestionBankItem item = new QuestionBankItem();
+            item.setQuestionType(QuestionType.MCQ);
+            when(questionBankRepository.findById(5L)).thenReturn(Optional.of(bank));
+            when(questionBankItemRepository.findByBankId(eq(5L), any())).thenReturn(new PageImpl<>(List.of(item)));
+
+            assertThatThrownBy(() -> quizService.createFromBank(1L,
+                    new CreateAssessmentFromBankRequest(5L, 100L, null, null, 20, null, null, 5)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.VALIDATION_FAILED);
+            verify(quizQuestionRepository, org.mockito.Mockito.never()).saveAll(any());
         } finally {
             SecurityContextHolder.clearContext();
         }

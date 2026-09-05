@@ -47,6 +47,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -191,17 +193,28 @@ public class QuizService {
      * Publish a question bank as a live, batch-scoped assessment. The bank's items — including
      * their {@code correctAnswer} keys — are snapshotted into fresh {@link QuizQuestion}s, so
      * editing the bank later leaves this assessment untouched. ADMIN may target any batch; a
-     * TRAINER_PM is held to a batch they own, exactly as {@link #create}.
+     * TRAINER_PM is held to a batch they own, exactly as {@link #create}. {@code
+     * request.questionCount()} lets a 200-question bank publish a random 30-question assessment
+     * instead of dumping the whole bank on every attempt — {@code null} keeps the original
+     * "every question" behavior.
      */
     @Transactional
     public AssessmentResponse createFromBank(Long callerUserId, CreateAssessmentFromBankRequest request) {
         QuestionBank bank = questionBankRepository.findById(request.bankId())
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.QUESTION_BANK_NOT_FOUND, request.bankId()));
 
-        List<QuestionBankItem> items = questionBankItemRepository
-                .findByBankId(bank.getId(), Pageable.unpaged()).getContent();
+        List<QuestionBankItem> items = new ArrayList<>(questionBankItemRepository
+                .findByBankId(bank.getId(), Pageable.unpaged()).getContent());
         if (items.isEmpty()) {
             throw new BusinessException(ErrorCode.QUESTION_BANK_EMPTY);
+        }
+        if (request.questionCount() != null) {
+            if (request.questionCount() > items.size()) {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                        "This bank only has " + items.size() + " question(s) — questionCount can't exceed that.");
+            }
+            Collections.shuffle(items);
+            items = items.subList(0, request.questionCount());
         }
 
         Batch batch = requireBatch(request.batchId());
