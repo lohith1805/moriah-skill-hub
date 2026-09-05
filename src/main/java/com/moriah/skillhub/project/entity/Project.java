@@ -59,6 +59,33 @@ public class Project extends BaseEntity {
     @Column(name = "starter_repo_url", length = 500)
     private String starterRepoUrl;
 
+    /** FRS MSH-FR-DEV-03 ("Upload Architecture diagrams, Swagger/OpenAPI specs, ... ER
+     * diagrams... "): three optional reference links, same plain-URL convention as {@code
+     * starterRepoUrl} rather than a new upload pipeline — a README is already covered by whatever
+     * lives in the starter repo itself, so there's no separate readmeUrl. All three are nullable
+     * and independently settable on an existing project, so a developer can add them any time
+     * after creation, not only at authoring time. */
+    @Column(name = "architecture_diagram_url", length = 500)
+    private String architectureDiagramUrl;
+
+    @Column(name = "api_spec_url", length = 500)
+    private String apiSpecUrl;
+
+    @Column(name = "er_diagram_url", length = 500)
+    private String erDiagramUrl;
+
+    @Column(name = "readme_content", columnDefinition = "LONGTEXT")
+    private String readmeContent;
+
+    /** FRS MSH-FR-DEV-03: a reference-solution branch link and a Loom/YouTube/Vimeo tutorial
+     * embed link, same plain-URL convention as {@code architectureDiagramUrl} et al. — no upload
+     * pipeline, independently settable on an existing project at any time. */
+    @Column(name = "reference_solution_url", length = 500)
+    private String referenceSolutionUrl;
+
+    @Column(name = "video_tutorial_url", length = 500)
+    private String videoTutorialUrl;
+
     @Column(length = 10)
     private String version;
 

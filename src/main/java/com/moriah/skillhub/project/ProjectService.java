@@ -82,6 +82,12 @@ public class ProjectService {
         project.setDomain(request.domain());
         project.setTrack(request.track());
         project.setStarterRepoUrl(request.starterRepoUrl());
+        project.setArchitectureDiagramUrl(request.architectureDiagramUrl());
+        project.setApiSpecUrl(request.apiSpecUrl());
+        project.setErDiagramUrl(request.erDiagramUrl());
+        project.setReadmeContent(request.readmeContent());
+        project.setReferenceSolutionUrl(request.referenceSolutionUrl());
+        project.setVideoTutorialUrl(request.videoTutorialUrl());
         project.setVersion(request.version());
         project.setStatus(ProjectStatus.DRAFT);
         project.setCreatedBy(creator);
@@ -155,6 +161,12 @@ public class ProjectService {
         newVersion.setDomain(project.getDomain());
         newVersion.setTrack(project.getTrack());
         newVersion.setStarterRepoUrl(project.getStarterRepoUrl());
+        newVersion.setArchitectureDiagramUrl(project.getArchitectureDiagramUrl());
+        newVersion.setApiSpecUrl(project.getApiSpecUrl());
+        newVersion.setErDiagramUrl(project.getErDiagramUrl());
+        newVersion.setReadmeContent(project.getReadmeContent());
+        newVersion.setReferenceSolutionUrl(project.getReferenceSolutionUrl());
+        newVersion.setVideoTutorialUrl(project.getVideoTutorialUrl());
         newVersion.setVersion(project.getVersion());
         newVersion.setCreatedBy(project.getCreatedBy());
         newVersion.setStatus(ProjectStatus.DRAFT);
@@ -397,6 +409,12 @@ public class ProjectService {
         if (request.domain() != null) project.setDomain(request.domain());
         if (request.track() != null) project.setTrack(request.track());
         if (request.starterRepoUrl() != null) project.setStarterRepoUrl(request.starterRepoUrl());
+        if (request.architectureDiagramUrl() != null) project.setArchitectureDiagramUrl(request.architectureDiagramUrl());
+        if (request.apiSpecUrl() != null) project.setApiSpecUrl(request.apiSpecUrl());
+        if (request.erDiagramUrl() != null) project.setErDiagramUrl(request.erDiagramUrl());
+        if (request.readmeContent() != null) project.setReadmeContent(request.readmeContent());
+        if (request.referenceSolutionUrl() != null) project.setReferenceSolutionUrl(request.referenceSolutionUrl());
+        if (request.videoTutorialUrl() != null) project.setVideoTutorialUrl(request.videoTutorialUrl());
         if (request.version() != null) project.setVersion(request.version());
     }
 
@@ -499,6 +517,12 @@ public class ProjectService {
                 project.getDomain(),
                 project.getTrack(),
                 project.getStarterRepoUrl(),
+                project.getArchitectureDiagramUrl(),
+                project.getApiSpecUrl(),
+                project.getErDiagramUrl(),
+                project.getReadmeContent(),
+                project.getReferenceSolutionUrl(),
+                project.getVideoTutorialUrl(),
                 project.getVersion(),
                 project.getStatus(),
                 creator.getUuid(),

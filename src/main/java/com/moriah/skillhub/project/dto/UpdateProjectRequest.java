@@ -20,6 +20,12 @@ public record UpdateProjectRequest(
         @Size(max = 100) String domain,
         @Size(max = 50) String track,
         @Size(max = 500) String starterRepoUrl,
+        @Size(max = 500) String architectureDiagramUrl,
+        @Size(max = 500) String apiSpecUrl,
+        @Size(max = 500) String erDiagramUrl,
+        @Size(max = 20000) String readmeContent,
+        @Size(max = 500) String referenceSolutionUrl,
+        @Size(max = 500) String videoTutorialUrl,
         @Size(max = 10) String version
 ) {
 }
