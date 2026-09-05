@@ -17,6 +17,7 @@ const DASHBOARD_PATH_BY_ROLE = {
   [ROLES.DEVELOPER]: "/developer/dashboard",
   [ROLES.ADMIN]: "/admin/dashboard",
   [ROLES.BUSINESS_ANALYST]: "/ba/dashboard",
+  [ROLES.CLIENT]: "/client/dashboard",
 };
 
 const STATUS_TONE = { SCHEDULED: "primary", COMPLETED: "success", CANCELLED: "error" };

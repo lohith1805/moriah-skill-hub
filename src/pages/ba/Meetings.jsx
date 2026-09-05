@@ -33,12 +33,21 @@ const CEREMONY_TYPES = [
 ];
 const CEREMONY_TYPE_VALUES = CEREMONY_TYPES.map((t) => t.value);
 
+const DURATION_OPTIONS = [
+  { value: "30", label: "30 minutes" },
+  { value: "45", label: "45 minutes" },
+  { value: "60", label: "1 hour" },
+  { value: "90", label: "1.5 hours" },
+  { value: "120", label: "2 hours" },
+];
+
 const emptyValues = () => ({
   title: "",
   type: "Sprint Demo",
   clientProjectId: "",
   date: "",
   time: "15:00",
+  durationMinutes: "60",
   meetLink: "",
   agenda: "",
 });
@@ -114,6 +123,7 @@ export default function BaMeetings() {
       clientProjectId: meeting.clientProjectId != null ? String(meeting.clientProjectId) : "",
       date: meeting.date,
       time: meeting.time,
+      durationMinutes: meeting.durationMinutes != null ? String(meeting.durationMinutes) : "60",
       meetLink: meeting.meetLink || "",
       agenda: meeting.agenda || "",
     });
@@ -151,6 +161,7 @@ export default function BaMeetings() {
         clientProjectId: values.clientProjectId || null,
         date: values.date,
         time: values.time || "15:00",
+        durationMinutes: Number(values.durationMinutes) || 60,
         meetLink: generatedLink,
         agenda: values.agenda || "Review sprint milestones and collect client sign-off.",
         attendeeUuids: selectedAttendees.map((a) => a.uuid),
@@ -367,6 +378,17 @@ export default function BaMeetings() {
               onChange={(e) => setValues((v) => ({ ...v, time: e.target.value }))}
             />
           </div>
+
+          <Select
+            label="Expected Duration"
+            options={DURATION_OPTIONS}
+            value={values.durationMinutes}
+            onChange={(e) => setValues((v) => ({ ...v, durationMinutes: e.target.value }))}
+          />
+          <p className="text-xs text-ink-500 -mt-2">
+            Once this long has passed after the start time, the meeting is automatically marked completed
+            (checked every 15 minutes) and its "Add a note" option unlocks for attendees.
+          </p>
 
           <Input
             label="Meeting Link"

@@ -233,6 +233,7 @@ export default function AppRoutes() {
           <Route path="/client/projects" element={<ClientProjects />} />
           <Route path="/client/project-documents" element={<ClientProjectDocuments />} />
           <Route path="/client/talent-pool" element={<ClientTalentPool />} />
+          <Route path="/client/pre-project-discussions" element={<ClientPreProjectDiscussions />} />
           <Route path="/client/demos" element={<ClientDemos />} />
           <Route path="/client/profile" element={<SharedProfile />} />
           <Route path="/client/settings" element={<SharedSettings />} />

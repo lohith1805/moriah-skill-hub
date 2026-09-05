@@ -96,6 +96,7 @@ export const NAV_CONFIG = {
     { to: "/client/projects", label: "My Project Requirements", icon: Briefcase },
     { to: "/client/project-documents", label: "Client Project Documents", icon: FileText },
     { to: "/client/talent-pool", label: "Talent Pool", icon: Users },
+    { to: "/client/pre-project-discussions", label: "Client Pre-Project Discussions", icon: CalendarClock },
     { to: "/client/demos", label: "Sprint Demo Reviews", icon: MonitorCheck },
     { to: "/client/profile", label: "My Profile", icon: User },
     { to: "/client/settings", label: "Account Settings", icon: Settings2 },
