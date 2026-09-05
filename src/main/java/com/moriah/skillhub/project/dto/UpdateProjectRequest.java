@@ -18,6 +18,7 @@ public record UpdateProjectRequest(
         List<@Size(max = 50) String> techStack,
         ProjectDifficulty difficulty,
         @Size(max = 100) String domain,
+        @Size(max = 50) String track,
         @Size(max = 500) String starterRepoUrl,
         @Size(max = 10) String version
 ) {

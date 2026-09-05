@@ -3,6 +3,8 @@ package com.moriah.skillhub.batch;
 import com.moriah.skillhub.batch.dto.ActiveEnrollmentProjection;
 import com.moriah.skillhub.batch.dto.ActiveMemberProjection;
 import com.moriah.skillhub.batch.dto.AddStudentRequest;
+import com.moriah.skillhub.batch.dto.AssignBatchProjectsRequest;
+import com.moriah.skillhub.batch.dto.BatchProjectResponse;
 import com.moriah.skillhub.batch.dto.BatchResponse;
 import com.moriah.skillhub.batch.dto.BatchStudentResponse;
 import com.moriah.skillhub.batch.dto.CreateBatchRequest;
@@ -10,8 +12,10 @@ import com.moriah.skillhub.batch.dto.GraduationResult;
 import com.moriah.skillhub.batch.dto.PendingAllocationResponse;
 import com.moriah.skillhub.batch.dto.UpdateBatchRequest;
 import com.moriah.skillhub.batch.entity.Batch;
+import com.moriah.skillhub.batch.entity.BatchProject;
 import com.moriah.skillhub.batch.entity.BatchStudent;
 import com.moriah.skillhub.batch.entity.BatchStudentStatus;
+import com.moriah.skillhub.batch.repository.BatchProjectRepository;
 import com.moriah.skillhub.batch.repository.BatchRepository;
 import com.moriah.skillhub.batch.repository.BatchStudentRepository;
 import com.moriah.skillhub.batch.repository.PendingBatchAllocationRepository;
@@ -21,6 +25,9 @@ import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ForbiddenOperationException;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
 import com.moriah.skillhub.common.security.SecurityUtils;
+import com.moriah.skillhub.project.entity.Project;
+import com.moriah.skillhub.project.entity.ProjectStatus;
+import com.moriah.skillhub.project.repository.ProjectRepository;
 import com.moriah.skillhub.subscription.EntitlementService;
 import com.moriah.skillhub.user.entity.RoleCode;
 import com.moriah.skillhub.user.entity.User;
@@ -34,6 +41,7 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Manual, PM/Admin-driven batch CRUD and student management. The automatic path — a paying
@@ -47,6 +55,8 @@ public class BatchService {
     private final BatchRepository batchRepository;
     private final BatchStudentRepository batchStudentRepository;
     private final PendingBatchAllocationRepository pendingBatchAllocationRepository;
+    private final BatchProjectRepository batchProjectRepository;
+    private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
     private final EntitlementService entitlementService;
     private final org.springframework.context.ApplicationEventPublisher eventPublisher;
@@ -142,6 +152,63 @@ public class BatchService {
         return batchStudentRepository.findByBatchIdOrderByJoinedAtAscIdAsc(batchId).stream()
                 .map(BatchService::toStudentResponse)
                 .toList();
+    }
+
+    /** {@code GET /api/v1/batches/{id}/projects} — the projects a Trainer/PM has already curated
+     * onto this batch's own "Assign Projects" screen. Not the candidate pool to pick from (that's
+     * just {@code GET /api/v1/projects?status=PUBLISHED&track=...}, no batch-specific endpoint
+     * needed for it) — this is only what's already assigned. */
+    @Transactional(readOnly = true)
+    public List<BatchProjectResponse> listAssignedProjects(Long batchId) {
+        requireBatch(batchId);
+        List<Long> projectIds = batchProjectRepository.findProjectIdsByBatchId(batchId);
+        if (projectIds.isEmpty()) {
+            return List.of();
+        }
+        return projectRepository.findAllById(projectIds).stream()
+                .map(BatchService::toBatchProjectResponse)
+                .toList();
+    }
+
+    /** {@code PUT /api/v1/batches/{id}/projects} — wholesale replace (empty list clears
+     * everything), same idiom {@code LeadCampaignService#update} uses for its own recipients join
+     * table. Every candidate must be {@code PUBLISHED} and share this batch's own {@code
+     * trackCode} — "the PM can assign the projects to batches of their track only," the user's own
+     * words — so a Data Analytics project can never land on a Full-Stack batch's screen by typo.
+     * This is a curation record, not an access-control change: {@code ProjectService#list} keeps
+     * showing every PUBLISHED project to every student either way. */
+    @Transactional
+    public List<BatchProjectResponse> assignProjects(Long callerUserId, Long batchId, AssignBatchProjectsRequest request) {
+        Batch batch = requireBatch(batchId);
+        requireOwnerOrAdmin(callerUserId, batch);
+
+        List<Long> projectIds = request.projectIds();
+        if (!projectIds.isEmpty()) {
+            List<Project> projects = projectRepository.findAllById(projectIds);
+            if (projects.size() != new java.util.HashSet<>(projectIds).size()) {
+                throw new ResourceNotFoundException(ErrorCode.PROJECT_NOT_FOUND, projectIds);
+            }
+            for (Project project : projects) {
+                if (project.getStatus() != ProjectStatus.PUBLISHED) {
+                    throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                            "\"" + project.getTitle() + "\" is not published yet.");
+                }
+                if (!Objects.equals(project.getTrack(), batch.getTrackCode())) {
+                    throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                            "\"" + project.getTitle() + "\" is tracked " + project.getTrack()
+                                    + ", not this batch's " + batch.getTrackCode() + ".");
+                }
+            }
+        }
+
+        batchProjectRepository.deleteByIdBatchId(batchId);
+        projectIds.forEach(projectId -> batchProjectRepository.save(new BatchProject(batchId, projectId)));
+
+        return listAssignedProjects(batchId);
+    }
+
+    private static BatchProjectResponse toBatchProjectResponse(Project p) {
+        return new BatchProjectResponse(p.getId(), p.getTitle(), p.getSlug(), p.getTrack(), p.getDifficulty(), p.getDomain());
     }
 
     private static BatchStudentResponse toStudentResponse(BatchStudent bs) {

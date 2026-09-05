@@ -80,6 +80,7 @@ public class ProjectService {
         project.setTechStack(toJson(request.techStack()));
         project.setDifficulty(request.difficulty());
         project.setDomain(request.domain());
+        project.setTrack(request.track());
         project.setStarterRepoUrl(request.starterRepoUrl());
         project.setVersion(request.version());
         project.setStatus(ProjectStatus.DRAFT);
@@ -96,12 +97,12 @@ public class ProjectService {
      * they already hold from {@link #create}'s response. */
     @Transactional(readOnly = true)
     public PageResponse<ProjectResponse> list(Long callerUserId, ProjectDifficulty difficulty, String domain,
-            ProjectStatus status, Pageable pageable) {
+            ProjectStatus status, String track, Pageable pageable) {
         String callerUuid = requireUser(callerUserId).getUuid();
         ProjectStatus effectiveStatus = SecurityUtils.currentUserRoles().contains(RoleCode.ADMIN.name())
                 ? status : ProjectStatus.PUBLISHED;
 
-        Page<Project> page = projectRepository.search(difficulty, domain, effectiveStatus, pageable);
+        Page<Project> page = projectRepository.search(difficulty, domain, effectiveStatus, track, pageable);
         List<Project> projects = page.getContent();
         if (projects.isEmpty()) {
             return PageResponse.from(page.map(p -> toResponse(p, List.of(), List.of(), callerUuid)));
@@ -152,6 +153,7 @@ public class ProjectService {
         newVersion.setTechStack(project.getTechStack());
         newVersion.setDifficulty(project.getDifficulty());
         newVersion.setDomain(project.getDomain());
+        newVersion.setTrack(project.getTrack());
         newVersion.setStarterRepoUrl(project.getStarterRepoUrl());
         newVersion.setVersion(project.getVersion());
         newVersion.setCreatedBy(project.getCreatedBy());
@@ -393,6 +395,7 @@ public class ProjectService {
         if (request.techStack() != null) project.setTechStack(toJson(request.techStack()));
         if (request.difficulty() != null) project.setDifficulty(request.difficulty());
         if (request.domain() != null) project.setDomain(request.domain());
+        if (request.track() != null) project.setTrack(request.track());
         if (request.starterRepoUrl() != null) project.setStarterRepoUrl(request.starterRepoUrl());
         if (request.version() != null) project.setVersion(request.version());
     }
@@ -494,6 +497,7 @@ public class ProjectService {
                 fromJsonList(project.getTechStack()),
                 project.getDifficulty(),
                 project.getDomain(),
+                project.getTrack(),
                 project.getStarterRepoUrl(),
                 project.getVersion(),
                 project.getStatus(),

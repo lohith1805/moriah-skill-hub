@@ -1,6 +1,8 @@
 package com.moriah.skillhub.batch;
 
 import com.moriah.skillhub.batch.dto.AddStudentRequest;
+import com.moriah.skillhub.batch.dto.AssignBatchProjectsRequest;
+import com.moriah.skillhub.batch.dto.BatchProjectResponse;
 import com.moriah.skillhub.batch.dto.BatchResponse;
 import com.moriah.skillhub.batch.dto.BatchStudentResponse;
 import com.moriah.skillhub.batch.dto.CreateBatchRequest;
@@ -90,6 +92,23 @@ public class BatchController {
     public ResponseEntity<ApiResponse<List<BatchStudentResponse>>> listStudents(
             @PathVariable Long id, @CurrentUser Long callerUserId) {
         return ResponseEntity.ok(ApiResponse.success(batchService.listStudents(callerUserId, id)));
+    }
+
+    @GetMapping("/{id}/projects")
+    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @Operation(summary = "Projects already curated onto this batch's own screen",
+            description = "Not the candidate pool — that's GET /api/v1/projects?status=PUBLISHED&track=... directly")
+    public ResponseEntity<ApiResponse<List<BatchProjectResponse>>> listProjects(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success(batchService.listAssignedProjects(id)));
+    }
+
+    @PutMapping("/{id}/projects")
+    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @Operation(summary = "Assign PUBLISHED, same-track projects to this batch (wholesale replace)",
+            description = "A TRAINER_PM must own the batch; every project must be PUBLISHED and share this batch's trackCode")
+    public ResponseEntity<ApiResponse<List<BatchProjectResponse>>> assignProjects(
+            @PathVariable Long id, @Valid @RequestBody AssignBatchProjectsRequest request, @CurrentUser Long callerUserId) {
+        return ResponseEntity.ok(ApiResponse.success(batchService.assignProjects(callerUserId, id, request)));
     }
 
     /** A caller who holds STUDENT and nothing that grants the full list (ADMIN / TRAINER_PM). */

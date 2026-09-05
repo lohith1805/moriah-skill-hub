@@ -174,7 +174,7 @@ class ProjectServiceTest {
         when(projectAssetRepository.findByProjectIdOrderBySortOrderAsc(10L)).thenReturn(List.of());
         when(bugChallengeRepository.findByProjectId(10L)).thenReturn(List.of());
 
-        UpdateProjectRequest request = new UpdateProjectRequest("New Title", null, null, null, null, null, null);
+        UpdateProjectRequest request = new UpdateProjectRequest("New Title", null, null, null, null, null, null, null);
         ProjectResponse response = projectService.update(1L, 10L, request);
 
         assertThat(response.title()).isEqualTo("New Title");
@@ -201,7 +201,7 @@ class ProjectServiceTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(developer));
         stubTrySaveSucceeds();
 
-        UpdateProjectRequest request = new UpdateProjectRequest(null, null, null, null, null, null, "v2");
+        UpdateProjectRequest request = new UpdateProjectRequest(null, null, null, null, null, null, null, "v2");
         ProjectResponse response = projectService.update(1L, 10L, request);
 
         assertThat(response.status()).isEqualTo(ProjectStatus.DRAFT);
@@ -506,11 +506,11 @@ class ProjectServiceTest {
 
     private com.moriah.skillhub.project.dto.CreateProjectRequest createRequest(String title) {
         return new com.moriah.skillhub.project.dto.CreateProjectRequest(
-                title, "A weather app", List.of("React", "Node"), null, "web", null, null);
+                title, "A weather app", List.of("React", "Node"), null, "web", null, null, null);
     }
 
     private UpdateProjectRequest updateRequest() {
-        return new UpdateProjectRequest(null, null, null, null, null, null, null);
+        return new UpdateProjectRequest(null, null, null, null, null, null, null, null);
     }
 
     private String argThatKeyStartsWith(String prefix) {

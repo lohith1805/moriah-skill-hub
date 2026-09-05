@@ -48,6 +48,14 @@ public class Project extends BaseEntity {
     @Column(length = 100)
     private String domain;
 
+    /** Same free-string convention as {@code Batch.trackCode} (no shared enum — both are plain
+     * columns, matched by equality). Lets a Trainer/PM curate which published projects show up on
+     * their own batch's "Assign Projects" screen ({@code BatchService#assignProjects}) without
+     * this being a project-visibility restriction — {@code ProjectService#list} still shows every
+     * PUBLISHED project to every student regardless of track. */
+    @Column(length = 50)
+    private String track;
+
     @Column(name = "starter_repo_url", length = 500)
     private String starterRepoUrl;
 

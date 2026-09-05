@@ -1,9 +1,13 @@
 package com.moriah.skillhub.batch;
 
+import com.moriah.skillhub.batch.dto.AssignBatchProjectsRequest;
+import com.moriah.skillhub.batch.dto.BatchProjectResponse;
 import com.moriah.skillhub.batch.dto.GraduationResult;
 import com.moriah.skillhub.batch.entity.Batch;
+import com.moriah.skillhub.batch.entity.BatchProject;
 import com.moriah.skillhub.batch.entity.BatchStudent;
 import com.moriah.skillhub.batch.entity.BatchStudentStatus;
+import com.moriah.skillhub.batch.repository.BatchProjectRepository;
 import com.moriah.skillhub.batch.repository.BatchRepository;
 import com.moriah.skillhub.batch.repository.BatchStudentRepository;
 import com.moriah.skillhub.batch.repository.PendingBatchAllocationRepository;
@@ -12,6 +16,9 @@ import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ForbiddenOperationException;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
 import com.moriah.skillhub.common.security.AuthenticatedPrincipal;
+import com.moriah.skillhub.project.entity.Project;
+import com.moriah.skillhub.project.entity.ProjectStatus;
+import com.moriah.skillhub.project.repository.ProjectRepository;
 import com.moriah.skillhub.subscription.EntitlementService;
 import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.repository.UserRepository;
@@ -50,6 +57,10 @@ class BatchServiceTest {
     @Mock
     private PendingBatchAllocationRepository pendingBatchAllocationRepository;
     @Mock
+    private BatchProjectRepository batchProjectRepository;
+    @Mock
+    private ProjectRepository projectRepository;
+    @Mock
     private UserRepository userRepository;
     @Mock
     private EntitlementService entitlementService;
@@ -67,6 +78,17 @@ class BatchServiceTest {
         batch = new Batch();
         batch.setId(100L);
         batch.setPm(pm);
+        batch.setTrackCode("FULL_STACK");
+    }
+
+    private Project project(long id, String title, ProjectStatus status, String track) {
+        Project p = new Project();
+        p.setId(id);
+        p.setTitle(title);
+        p.setSlug(title.toLowerCase().replace(" ", "-"));
+        p.setStatus(status);
+        p.setTrack(track);
+        return p;
     }
 
     @AfterEach
@@ -287,6 +309,104 @@ class BatchServiceTest {
 
         assertThatThrownBy(() -> batchService.listStudents(77L, 100L))
                 .isInstanceOf(ForbiddenOperationException.class);
+    }
+
+    // ---- Assign Projects (curation, not visibility — ProjectService#list is untouched) ----
+
+    @Test
+    void assignProjects_publishedSameTrackProjects_replacesWholesale() {
+        authenticateAs(10L, List.of("TRAINER_PM"));
+        when(batchRepository.findById(100L)).thenReturn(Optional.of(batch));
+        Project p1 = project(1L, "Storefront API", ProjectStatus.PUBLISHED, "FULL_STACK");
+        Project p2 = project(2L, "Order Service", ProjectStatus.PUBLISHED, "FULL_STACK");
+        when(projectRepository.findAllById(List.of(1L, 2L))).thenReturn(List.of(p1, p2));
+        // assignProjects returns listAssignedProjects' fresh read after the wholesale replace.
+        when(batchProjectRepository.findProjectIdsByBatchId(100L)).thenReturn(List.of(1L, 2L));
+
+        List<BatchProjectResponse> response = batchService.assignProjects(10L, 100L, new AssignBatchProjectsRequest(List.of(1L, 2L)));
+
+        verify(batchProjectRepository).deleteByIdBatchId(100L);
+        verify(batchProjectRepository, org.mockito.Mockito.times(2)).save(org.mockito.ArgumentMatchers.any(BatchProject.class));
+        assertThat(response).extracting(BatchProjectResponse::title).containsExactlyInAnyOrder("Storefront API", "Order Service");
+    }
+
+    @Test
+    void assignProjects_emptyList_clearsExistingAssignments() {
+        authenticateAs(10L, List.of("TRAINER_PM"));
+        when(batchRepository.findById(100L)).thenReturn(Optional.of(batch));
+
+        batchService.assignProjects(10L, 100L, new AssignBatchProjectsRequest(List.of()));
+
+        verify(batchProjectRepository).deleteByIdBatchId(100L);
+        verify(batchProjectRepository, org.mockito.Mockito.never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void assignProjects_notPublished_throwsValidationFailed() {
+        authenticateAs(10L, List.of("TRAINER_PM"));
+        when(batchRepository.findById(100L)).thenReturn(Optional.of(batch));
+        Project draft = project(1L, "Storefront API", ProjectStatus.DRAFT, "FULL_STACK");
+        when(projectRepository.findAllById(List.of(1L))).thenReturn(List.of(draft));
+
+        assertThatThrownBy(() -> batchService.assignProjects(10L, 100L, new AssignBatchProjectsRequest(List.of(1L))))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.VALIDATION_FAILED);
+        verify(batchProjectRepository, org.mockito.Mockito.never()).deleteByIdBatchId(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void assignProjects_trackMismatch_throwsValidationFailed() {
+        authenticateAs(10L, List.of("TRAINER_PM"));
+        when(batchRepository.findById(100L)).thenReturn(Optional.of(batch));
+        Project wrongTrack = project(1L, "Churn Model", ProjectStatus.PUBLISHED, "DATA_ANALYTICS");
+        when(projectRepository.findAllById(List.of(1L))).thenReturn(List.of(wrongTrack));
+
+        assertThatThrownBy(() -> batchService.assignProjects(10L, 100L, new AssignBatchProjectsRequest(List.of(1L))))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.VALIDATION_FAILED);
+    }
+
+    @Test
+    void assignProjects_unknownProjectId_throwsNotFound() {
+        authenticateAs(10L, List.of("TRAINER_PM"));
+        when(batchRepository.findById(100L)).thenReturn(Optional.of(batch));
+        when(projectRepository.findAllById(List.of(404L))).thenReturn(List.of());
+
+        assertThatThrownBy(() -> batchService.assignProjects(10L, 100L, new AssignBatchProjectsRequest(List.of(404L))))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_NOT_FOUND);
+    }
+
+    @Test
+    void assignProjects_callerIsNotThePm_throwsForbidden() {
+        authenticateAs(77L, List.of("TRAINER_PM"));
+        when(batchRepository.findById(100L)).thenReturn(Optional.of(batch));
+
+        assertThatThrownBy(() -> batchService.assignProjects(77L, 100L, new AssignBatchProjectsRequest(List.of())))
+                .isInstanceOf(ForbiddenOperationException.class);
+        verify(batchProjectRepository, org.mockito.Mockito.never()).deleteByIdBatchId(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void listAssignedProjects_returnsCuratedProjects() {
+        when(batchRepository.findById(100L)).thenReturn(Optional.of(batch));
+        when(batchProjectRepository.findProjectIdsByBatchId(100L)).thenReturn(List.of(1L));
+        when(projectRepository.findAllById(List.of(1L)))
+                .thenReturn(List.of(project(1L, "Storefront API", ProjectStatus.PUBLISHED, "FULL_STACK")));
+
+        List<BatchProjectResponse> response = batchService.listAssignedProjects(100L);
+
+        assertThat(response).hasSize(1);
+        assertThat(response.get(0).title()).isEqualTo("Storefront API");
+    }
+
+    @Test
+    void listAssignedProjects_none_returnsEmptyWithoutQueryingProjects() {
+        when(batchRepository.findById(100L)).thenReturn(Optional.of(batch));
+        when(batchProjectRepository.findProjectIdsByBatchId(100L)).thenReturn(List.of());
+
+        assertThat(batchService.listAssignedProjects(100L)).isEmpty();
+        verify(projectRepository, org.mockito.Mockito.never()).findAllById(org.mockito.ArgumentMatchers.any());
     }
 
     private void authenticateAs(long userId, List<String> roles) {

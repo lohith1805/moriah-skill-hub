@@ -18,6 +18,7 @@ public record ProjectResponse(
         List<String> techStack,
         ProjectDifficulty difficulty,
         String domain,
+        String track,
         String starterRepoUrl,
         String version,
         ProjectStatus status,

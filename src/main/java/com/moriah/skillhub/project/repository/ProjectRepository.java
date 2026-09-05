@@ -29,10 +29,11 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
              WHERE (:difficulty IS NULL OR p.difficulty = :difficulty)
                AND (:domain IS NULL OR p.domain = :domain)
                AND (:status IS NULL OR p.status = :status)
+               AND (:track IS NULL OR p.track = :track)
              ORDER BY p.createdAt DESC
             """)
     Page<Project> search(@Param("difficulty") ProjectDifficulty difficulty, @Param("domain") String domain,
-            @Param("status") ProjectStatus status, Pageable pageable);
+            @Param("status") ProjectStatus status, @Param("track") String track, Pageable pageable);
 
     @EntityGraph(attributePaths = "createdBy")
     Optional<Project> findById(Long id);

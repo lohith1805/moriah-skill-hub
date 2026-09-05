@@ -59,11 +59,12 @@ public class ProjectController {
             @RequestParam(required = false) ProjectDifficulty difficulty,
             @RequestParam(required = false) String domain,
             @RequestParam(required = false) ProjectStatus status,
+            @RequestParam(required = false) String track,
             @PageableDefault(size = 20) Pageable pageable,
             @CurrentUser Long callerUserId) {
 
         return ResponseEntity.ok(ApiResponse.success(
-                projectService.list(callerUserId, difficulty, domain, status, pageable)));
+                projectService.list(callerUserId, difficulty, domain, status, track, pageable)));
     }
 
     @PutMapping("/api/v1/projects/{id}")
