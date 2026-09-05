@@ -57,10 +57,13 @@ public class BaMeetingService {
             DateTimeFormatter.ofPattern("EEE, d MMM yyyy 'at' h:mm a 'UTC'").withZone(ZoneOffset.UTC);
 
     /** The cast the user's own description named ("roles like developers, BA") plus ADMIN for
-     * oversight — deliberately not every {@link RoleCode} (a client's own contact is invited by
-     * uuid through a different flow, not this general staff roster). */
+     * oversight and CLIENT so the project's own client contact can actually be invited to their
+     * own kickoff — deliberately not every {@link RoleCode} (STUDENT/HR_MANAGER/LEAD_GEN/
+     * TRAINER_PM have no reason to sit in on a client discussion). Picking the right CLIENT out
+     * of the roster is on the BA (same trust as picking the right Developer) — this directory is
+     * role-wide, not scoped to any one client project. */
     private static final Set<RoleCode> INVITABLE_DIRECTORY_ROLES =
-            Set.of(RoleCode.BUSINESS_ANALYST, RoleCode.DEVELOPER, RoleCode.ADMIN);
+            Set.of(RoleCode.BUSINESS_ANALYST, RoleCode.DEVELOPER, RoleCode.ADMIN, RoleCode.CLIENT);
 
     private final BaMeetingRepository meetingRepository;
     private final BaMeetingAttendeeRepository attendeeRepository;
@@ -181,6 +184,37 @@ public class BaMeetingService {
                 }
             });
         }
+    }
+
+    /** {@code POST /api/v1/meetings/{id}/note} — the user's own ask: once a discussion is over,
+     * any attendee (not just the BA who scheduled it) can jot down a small note about what it
+     * covered — not gated to BUSINESS_ANALYST/ADMIN the way {@link #update}'s full-field
+     * {@code minutes} write is. Requires the meeting to actually be {@code COMPLETED} (nothing to
+     * summarize about a meeting that hasn't happened yet) and the caller to be either its creator
+     * or one of its named attendees — an ADMIN may always write one, matching this codebase's
+     * "ADMIN bypasses ownership" convention elsewhere. */
+    @Transactional
+    public BaMeetingResponse addNote(Long id, Long callerUserId, String note) {
+        BaMeeting meeting = requireMeeting(id);
+        if (meeting.getStatus() != BaMeetingStatus.COMPLETED) {
+            throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION,
+                    "This discussion isn't over yet — a note can only be added once it's completed.");
+        }
+
+        boolean isAdmin = com.moriah.skillhub.common.security.SecurityUtils.currentUserRoles()
+                .contains(RoleCode.ADMIN.name());
+        boolean isCreator = meeting.getCreatedBy().equals(callerUserId);
+        boolean isAttendee = attendeeRepository.findUserIdsByMeetingId(id).contains(callerUserId);
+        if (!isAdmin && !isCreator && !isAttendee) {
+            throw new com.moriah.skillhub.common.exception.ForbiddenOperationException(ErrorCode.NOT_RESOURCE_OWNER);
+        }
+
+        meeting.setMinutes(note);
+        auditLogService.record(callerUserId, "BA_MEETING_NOTE_ADDED", "BaMeeting", meeting.getId(), null, meeting.getTitle());
+        log.info("[meetings] {} added a note to completed meeting {}", callerUserId, meeting.getId());
+
+        List<BaMeetingAttendee> attendeeRows = attendeeRepository.findByIdMeetingId(id);
+        return toResponse(meeting, resolveCreatorUuids(List.of(meeting)), attendeeRows);
     }
 
     private void requireInvitableRole(RoleCode role) {

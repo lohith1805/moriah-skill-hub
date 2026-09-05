@@ -47,8 +47,8 @@ public class BaMeetingController {
 
     @GetMapping("/staff-directory")
     @PreAuthorize("hasAnyRole('BUSINESS_ANALYST','ADMIN')")
-    @Operation(summary = "Active staff holding a given role — the attendee picker's second dropdown",
-            description = "role must be BUSINESS_ANALYST, DEVELOPER, or ADMIN")
+    @Operation(summary = "Active users holding a given role — the attendee picker's second dropdown",
+            description = "role must be BUSINESS_ANALYST, DEVELOPER, ADMIN, or CLIENT")
     public ResponseEntity<ApiResponse<List<StaffDirectoryEntryResponse>>> staffDirectory(
             @RequestParam RoleCode role) {
         return ResponseEntity.ok(ApiResponse.success(baMeetingService.staffDirectory(role)));

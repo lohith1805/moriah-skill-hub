@@ -14,6 +14,7 @@ import com.moriah.skillhub.client.repository.ClientProjectRepository;
 import com.moriah.skillhub.common.audit.AuditLogService;
 import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
+import com.moriah.skillhub.common.exception.ForbiddenOperationException;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
 import com.moriah.skillhub.common.notification.NotificationChannel;
 import com.moriah.skillhub.common.notification.NotificationService;
@@ -269,9 +270,75 @@ class BaMeetingServiceTest {
     }
 
     @Test
+    void staffDirectory_client_returnsActiveClientUsers() {
+        User clientUser = user(9L, "client-uuid", "client@acme.test");
+        when(userRepository.search(eq(UserStatus.ACTIVE), eq(RoleCode.CLIENT), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(clientUser)));
+
+        List<StaffDirectoryEntryResponse> result = service.staffDirectory(RoleCode.CLIENT);
+
+        assertThat(result).extracting(StaffDirectoryEntryResponse::uuid).containsExactly("client-uuid");
+    }
+
+    @Test
     void staffDirectory_nonInvitableRole_throwsValidationFailed() {
         assertThatThrownBy(() -> service.staffDirectory(RoleCode.STUDENT))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.VALIDATION_FAILED);
+    }
+
+    // ---- addNote (the user's own ask: any attendee, not just the BA, once it's COMPLETED) ----
+
+    private BaMeeting completedMeeting(long id, long createdBy) {
+        BaMeeting m = new BaMeeting();
+        m.setId(id);
+        m.setTitle("Kickoff");
+        m.setStatus(BaMeetingStatus.COMPLETED);
+        m.setCreatedBy(createdBy);
+        return m;
+    }
+
+    @Test
+    void addNote_meetingNotCompleted_throwsBusinessRuleViolation() {
+        BaMeeting scheduled = meeting(3L);
+        when(meetingRepository.findWithProjectById(3L)).thenReturn(Optional.of(scheduled));
+
+        assertThatThrownBy(() -> service.addNote(3L, 6L, "Went well."))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.BUSINESS_RULE_VIOLATION);
+    }
+
+    @Test
+    void addNote_creator_canAddNote() {
+        BaMeeting completed = completedMeeting(3L, 6L);
+        when(meetingRepository.findWithProjectById(3L)).thenReturn(Optional.of(completed));
+        when(attendeeRepository.findByIdMeetingId(3L)).thenReturn(List.of());
+
+        service.addNote(3L, 6L, "Client confirmed scope.");
+
+        assertThat(completed.getMinutes()).isEqualTo("Client confirmed scope.");
+    }
+
+    @Test
+    void addNote_namedAttendeeWhoIsNotTheCreator_canAddNote() {
+        BaMeeting completed = completedMeeting(3L, 6L);
+        when(meetingRepository.findWithProjectById(3L)).thenReturn(Optional.of(completed));
+        when(attendeeRepository.findUserIdsByMeetingId(3L)).thenReturn(List.of(7L));
+        when(attendeeRepository.findByIdMeetingId(3L)).thenReturn(List.of());
+
+        service.addNote(3L, 7L, "Developer's own summary.");
+
+        assertThat(completed.getMinutes()).isEqualTo("Developer's own summary.");
+    }
+
+    @Test
+    void addNote_uninvolvedCaller_throwsForbidden() {
+        BaMeeting completed = completedMeeting(3L, 6L);
+        when(meetingRepository.findWithProjectById(3L)).thenReturn(Optional.of(completed));
+        when(attendeeRepository.findUserIdsByMeetingId(3L)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.addNote(3L, 99L, "Not my meeting."))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.NOT_RESOURCE_OWNER);
     }
 }

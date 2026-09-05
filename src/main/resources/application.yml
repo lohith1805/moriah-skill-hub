@@ -262,6 +262,10 @@ moriah:
     # duration_minutes is what bounds staleness, not a fixed daily slot, so this runs frequently
     # (same 15-minute cadence/reasoning as moriah.submission.verification-retry-cron).
     attempt-expiry-cron: ${QUIZ_ATTEMPT_EXPIRY_CRON:0 */15 * * * *}
+  client:
+    # A meeting's own scheduledAt + durationMinutes is what bounds staleness, not a fixed daily
+    # slot — same reasoning/cadence as moriah.assessment.attempt-expiry-cron.
+    meeting-auto-complete-cron: ${BA_MEETING_AUTO_COMPLETE_CRON:0 */15 * * * *}
   jobs:
     # Shared by every scheduled job's cron zone (SubscriptionExpiryJob, AttendanceFinalisationJob
     # today; MetricsRefreshJob/PipEvaluationJob at features 16/17 read the same property).

@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 public interface BaMeetingRepository extends JpaRepository<BaMeeting, Long> {
@@ -34,4 +35,10 @@ public interface BaMeetingRepository extends JpaRepository<BaMeeting, Long> {
      * dashboard: every meeting they're invited to, regardless of who scheduled it. */
     @EntityGraph(attributePaths = "clientProject")
     Page<BaMeeting> findByIdIn(Collection<Long> ids, Pageable pageable);
+
+    /** {@code BaMeetingAutoCompleteService} — every still-{@code SCHEDULED} meeting, checked
+     * in-memory against its own {@code scheduledAt + durationMinutes} (varies per row, so it
+     * can't be pushed into a single {@code WHERE} cutoff) — same idiom {@code
+     * QuizAttemptExpiryService#expire} already establishes for {@code QuizAttempt}. */
+    List<BaMeeting> findByStatus(BaMeetingStatus status);
 }
