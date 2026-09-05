@@ -426,6 +426,86 @@ class RequirementDocumentApprovalServiceTest {
         verify(staffAssignmentService, never()).pickLeastBusy(any());
     }
 
+    // ---- reject ----
+
+    @Test
+    void reject_documentAlreadyApproved_throwsBusinessRuleViolation() {
+        RequirementDocument document = document(1L, RequirementDocumentType.SRS, project(10L, null, null), user(5L, "ba"));
+        document.setStatus(RequirementDocumentStatus.APPROVED);
+        when(requirementDocumentRepository.findWithAssociationsById(1L)).thenReturn(Optional.of(document));
+
+        assertThatThrownBy(() -> approvalService.reject(1L, 9L, "Doesn't match scope"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.BUSINESS_RULE_VIOLATION);
+    }
+
+    @Test
+    void reject_documentAlreadyRejected_throwsBusinessRuleViolation() {
+        RequirementDocument document = document(1L, RequirementDocumentType.SRS, project(10L, null, null), user(5L, "ba"));
+        document.setStatus(RequirementDocumentStatus.REJECTED);
+        when(requirementDocumentRepository.findWithAssociationsById(1L)).thenReturn(Optional.of(document));
+
+        assertThatThrownBy(() -> approvalService.reject(1L, 9L, "Doesn't match scope"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.BUSINESS_RULE_VIOLATION);
+    }
+
+    @Test
+    void reject_clientOwningTheProject_setsRejectedStatusReasonAndRejecter() {
+        User clientUser = user(3L, "client-uuid");
+        ClientProject project = project(10L, clientUser, null);
+        RequirementDocument document = document(1L, RequirementDocumentType.BRD, project, user(5L, "ba"));
+        when(requirementDocumentRepository.findWithAssociationsById(1L)).thenReturn(Optional.of(document));
+        when(userRepository.findById(3L)).thenReturn(Optional.of(clientUser));
+        when(approvalRepository.findByDocumentId(1L)).thenReturn(new ArrayList<>(List.of(
+                new RequirementDocumentApproval(document, RoleCode.CLIENT),
+                new RequirementDocumentApproval(document, RoleCode.BUSINESS_ANALYST),
+                new RequirementDocumentApproval(document, RoleCode.DEVELOPER))));
+        authenticateAs(3L, RoleCode.CLIENT);
+
+        RequirementDocument result = approvalService.reject(1L, 3L, "Scope doesn't match what we discussed");
+
+        assertThat(result.getStatus()).isEqualTo(RequirementDocumentStatus.REJECTED);
+        assertThat(result.getRejectedBy()).isEqualTo(clientUser);
+        assertThat(result.getRejectedAt()).isNotNull();
+        assertThat(result.getRejectionReason()).isEqualTo("Scope doesn't match what we discussed");
+        verify(auditLogService).recordAfterCommit(eq(3L), eq("REQUIREMENT_DOCUMENT_REJECTED"),
+                any(), eq(1L), any(), any());
+    }
+
+    @Test
+    void reject_callerWithNoApplicableSlot_isForbidden() {
+        RequirementDocument document = document(1L, RequirementDocumentType.SRS, project(10L, null, null), user(5L, "ba"));
+        when(requirementDocumentRepository.findWithAssociationsById(1L)).thenReturn(Optional.of(document));
+        when(userRepository.findById(99L)).thenReturn(Optional.of(user(99L, "stranger")));
+        when(approvalRepository.findByDocumentId(1L)).thenReturn(new ArrayList<>(List.of(
+                new RequirementDocumentApproval(document, RoleCode.BUSINESS_ANALYST),
+                new RequirementDocumentApproval(document, RoleCode.DEVELOPER))));
+        when(userRoleRepository.findRoleCodesByUserId(99L)).thenReturn(List.of(RoleCode.STUDENT));
+        authenticateAs(99L, RoleCode.STUDENT);
+
+        assertThatThrownBy(() -> approvalService.reject(1L, 99L, "Not relevant"))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.NOT_RESOURCE_OWNER);
+    }
+
+    @Test
+    void reject_admin_canRejectUnconditionallyWithoutResolvingASlot() {
+        User admin = user(1L, "admin-uuid");
+        RequirementDocument document = document(1L, RequirementDocumentType.BRD,
+                project(10L, user(3L, "client"), null), user(5L, "ba"));
+        when(requirementDocumentRepository.findWithAssociationsById(1L)).thenReturn(Optional.of(document));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(admin));
+        authenticateAs(1L, RoleCode.ADMIN);
+
+        RequirementDocument result = approvalService.reject(1L, 1L, "Client changed their mind on scope");
+
+        assertThat(result.getStatus()).isEqualTo(RequirementDocumentStatus.REJECTED);
+        assertThat(result.getRejectedBy()).isEqualTo(admin);
+        // ADMIN reject skips resolveCallerSlot entirely — no slot lookup needed.
+        verify(approvalRepository, never()).findByDocumentId(any());
+    }
+
     // ---- pendingFor ----
     //
     // Regression coverage for a real bug found live: approve()'s self-approval exception for a
@@ -484,5 +564,26 @@ class RequirementDocumentApprovalServiceTest {
         List<PendingApprovalResponse> pending = approvalService.pendingFor(3L);
 
         assertThat(pending).extracting(PendingApprovalResponse::documentId).containsExactly(1L);
+    }
+
+    /** Regression coverage for the companion bug reject() introduces the risk of: a document
+     * someone else already rejected has open slots forever (reject() only flips document.status,
+     * it never touches the approval rows) — without this filter every other party's inbox would
+     * keep showing a dead document indefinitely. */
+    @Test
+    void pendingFor_rejectedDocument_excludedFromClientInbox() {
+        User clientUser = user(3L, "client-uuid");
+        ClientProject project = project(10L, clientUser, null);
+        RequirementDocument document = document(1L, RequirementDocumentType.BRD, project, user(5L, "ba"));
+        document.setStatus(RequirementDocumentStatus.REJECTED);
+        RequirementDocumentApproval clientSlot = new RequirementDocumentApproval(document, RoleCode.CLIENT);
+        when(userRepository.findById(3L)).thenReturn(Optional.of(clientUser));
+        when(approvalRepository.findByApproverRoleAndApprovedByIsNull(RoleCode.CLIENT)).thenReturn(List.of(clientSlot));
+        when(approvalRepository.findByApproverRoleAndApprovedByIsNull(RoleCode.DEVELOPER)).thenReturn(List.of());
+        when(userRoleRepository.findRoleCodesByUserId(3L)).thenReturn(List.of(RoleCode.CLIENT));
+
+        List<PendingApprovalResponse> pending = approvalService.pendingFor(3L);
+
+        assertThat(pending).isEmpty();
     }
 }

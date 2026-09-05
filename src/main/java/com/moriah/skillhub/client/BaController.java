@@ -2,6 +2,7 @@ package com.moriah.skillhub.client;
 
 import com.moriah.skillhub.client.dto.CreateRequirementDocumentRequest;
 import com.moriah.skillhub.client.dto.CreateResourceAllocationRequest;
+import com.moriah.skillhub.client.dto.RejectRequirementDocumentRequest;
 import com.moriah.skillhub.client.dto.RequirementDocumentDetailResponse;
 import com.moriah.skillhub.client.dto.RequirementDocumentResponse;
 import com.moriah.skillhub.client.dto.ResourceAllocationResponse;
@@ -80,6 +81,17 @@ public class BaController {
     public ResponseEntity<ApiResponse<RequirementDocumentResponse>> approveDocument(@PathVariable Long id,
             @CurrentUser Long callerUserId) {
         return ResponseEntity.ok(ApiResponse.success(requirementDocumentService.approve(id, callerUserId)));
+    }
+
+    @PutMapping("/documents/{id}/reject")
+    @PreAuthorize("hasAnyRole('BUSINESS_ANALYST','ADMIN')")
+    @Operation(summary = "Reject a requirement document, with a reason — IN_REVIEW to REJECTED",
+            description = "Same underlying action as POST /requirement-documents/{id}/reject, kept on this URL "
+                    + "too for the BA portal's existing muscle memory. Returns 409 if already APPROVED/REJECTED.")
+    public ResponseEntity<ApiResponse<RequirementDocumentResponse>> rejectDocument(@PathVariable Long id,
+            @Valid @RequestBody RejectRequirementDocumentRequest request, @CurrentUser Long callerUserId) {
+        return ResponseEntity.ok(ApiResponse.success(
+                requirementDocumentService.reject(id, callerUserId, request.reason())));
     }
 
     @PostMapping("/allocations")

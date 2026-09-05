@@ -161,6 +161,55 @@ public class RequirementDocumentApprovalService {
         return document;
     }
 
+    /**
+     * The other outcome {@link #approve} always lacked: any one required party can reject a
+     * still-{@code IN_REVIEW} document outright, with a reason, instead of either signing off or
+     * leaving it stuck pending forever with no way to say what's wrong. Unlike {@code approve},
+     * this needs no per-slot bookkeeping — a reject from any single party kills the whole
+     * document version immediately, regardless of how many other slots were already filled.
+     * Existing approvals on this now-{@code REJECTED} version are left exactly as they are (a
+     * true record of who'd already signed off before the rejection); they're not reset, because
+     * the author's fix is a brand new version via {@code RequirementDocumentService#create} with
+     * its own fresh slots, never an edit-in-place of this one. Same role inference as {@link
+     * #resolveCallerSlot} (reused directly) — whoever can approve a slot can reject the whole
+     * document; ADMIN can reject unconditionally, same override reach as its approve fast-track.
+     */
+    @Transactional
+    public RequirementDocument reject(Long documentId, Long callerUserId, String reason) {
+        RequirementDocument document = requireDocument(documentId);
+        if (document.getStatus() == RequirementDocumentStatus.APPROVED) {
+            throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION, "This document has already been approved.");
+        }
+        if (document.getStatus() == RequirementDocumentStatus.REJECTED) {
+            throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION, "This document has already been rejected.");
+        }
+
+        User caller = userRepository.findById(callerUserId)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.USER_NOT_FOUND, callerUserId));
+        List<String> callerRoles = SecurityUtils.currentUserRoles();
+
+        if (!callerRoles.contains(RoleCode.ADMIN.name())) {
+            ClientProject project = document.getClientProject();
+            List<RequirementDocumentApproval> slots = approvalRepository.findByDocumentId(documentId);
+            // Authorization + role inference only — reject doesn't fill or care about a slot's
+            // own approved/pending state, so the slot resolveCallerSlot returns is discarded.
+            resolveCallerSlot(document, project, slots, caller);
+        }
+
+        document.setStatus(RequirementDocumentStatus.REJECTED);
+        document.setRejectedBy(caller);
+        document.setRejectedAt(Instant.now());
+        document.setRejectionReason(reason);
+        requirementDocumentRepository.save(document);
+
+        auditLogService.recordAfterCommit(callerUserId, "REQUIREMENT_DOCUMENT_REJECTED", "RequirementDocument",
+                document.getId(), null, Map.of("version", document.getVersion(), "reason", reason));
+        log.info("[requirement-documents] {} rejected document {} v{}: {}",
+                callerUserId, document.getId(), document.getVersion(), reason);
+
+        return document;
+    }
+
     /** Powers {@code GET /api/v1/requirement-documents/pending-my-approval} — every still-open
      * document where the caller's own role slot would resolve. ADMIN is deliberately excluded:
      * admins already have unrestricted {@code /ba/documents}/{@code /dev/requirement-documents}
@@ -203,6 +252,12 @@ public class RequirementDocumentApprovalService {
         }
 
         return results.stream()
+                // A REJECTED document's still-open slots (whichever parties never got to weigh
+                // in before someone else killed it) would otherwise linger in this inbox forever
+                // — reject() only flips document.status, it never touches the approval rows
+                // themselves. IN_REVIEW-only here; APPROVED is included defensively (a fully
+                // approved document has no null-approvedBy slots left to have matched above).
+                .filter(slot -> slot.getDocument().getStatus() == RequirementDocumentStatus.IN_REVIEW)
                 .map(slot -> {
                     RequirementDocument document = slot.getDocument();
                     ClientProject project = document.getClientProject();

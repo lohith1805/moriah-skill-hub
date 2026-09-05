@@ -103,6 +103,15 @@ public class RequirementDocumentService {
         return toResponse(document);
     }
 
+    /** {@code PUT /api/v1/ba/documents/{id}/reject} and {@code POST /api/v1/requirement-documents
+     * /{id}/reject} — same two-URL shape as {@link #approve}, same reason. All the actual role
+     * inference and status transition lives in {@link RequirementDocumentApprovalService#reject}. */
+    @Transactional
+    public RequirementDocumentResponse reject(Long documentId, Long callerUserId, String reason) {
+        RequirementDocument document = requirementDocumentApprovalService.reject(documentId, callerUserId, reason);
+        return toResponse(document);
+    }
+
     /** {@code GET /api/v1/ba/documents} and {@code GET /api/v1/dev/requirement-documents} — same
      * rows, the caller's role decides which route they came in on. */
     @Transactional(readOnly = true)
@@ -233,6 +242,7 @@ public class RequirementDocumentService {
         User author = document.getAuthoredBy();
         User approver = document.getApprovedBy();
         User devReviewer = document.getDevReviewedBy();
+        User rejecter = document.getRejectedBy();
         return new RequirementDocumentResponse(
                 document.getId(),
                 document.getClientProject() == null ? null : document.getClientProject().getId(),
@@ -247,6 +257,10 @@ public class RequirementDocumentService {
                 devReviewer == null ? null : devReviewer.getUuid(),
                 devReviewer == null ? null : devReviewer.getFullName(),
                 document.getDevReviewedAt(),
+                rejecter == null ? null : rejecter.getUuid(),
+                rejecter == null ? null : rejecter.getFullName(),
+                document.getRejectedAt(),
+                document.getRejectionReason(),
                 toApprovalResponses(approvals));
     }
 
@@ -254,6 +268,7 @@ public class RequirementDocumentService {
         User author = document.getAuthoredBy();
         User approver = document.getApprovedBy();
         User devReviewer = document.getDevReviewedBy();
+        User rejecter = document.getRejectedBy();
         List<RequirementDocumentApproval> approvals = requirementDocumentApprovalRepository.findByDocumentId(document.getId());
         return new RequirementDocumentDetailResponse(
                 document.getId(),
@@ -270,6 +285,10 @@ public class RequirementDocumentService {
                 devReviewer == null ? null : devReviewer.getUuid(),
                 devReviewer == null ? null : devReviewer.getFullName(),
                 document.getDevReviewedAt(),
+                rejecter == null ? null : rejecter.getUuid(),
+                rejecter == null ? null : rejecter.getFullName(),
+                document.getRejectedAt(),
+                document.getRejectionReason(),
                 toApprovalResponses(approvals));
     }
 }

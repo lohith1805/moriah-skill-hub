@@ -78,4 +78,18 @@ public class RequirementDocument extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "dev_reviewed_by")
     private User devReviewedBy;
+
+    /** Set together, once, when any required party rejects this version (see {@link
+     * RequirementDocumentStatus#REJECTED}) — {@code rejectionReason} is the one piece of
+     * required feedback a reject actually needs to be useful; there was previously no way to
+     * record it (or reject at all) anywhere in this flow. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "rejected_by")
+    private User rejectedBy;
+
+    @Column(name = "rejected_at")
+    private java.time.Instant rejectedAt;
+
+    @Column(name = "rejection_reason", columnDefinition = "TEXT")
+    private String rejectionReason;
 }

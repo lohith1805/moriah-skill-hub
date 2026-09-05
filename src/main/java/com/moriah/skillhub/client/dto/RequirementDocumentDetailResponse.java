@@ -26,6 +26,10 @@ public record RequirementDocumentDetailResponse(
         String devReviewedByUuid,
         String devReviewedByFullName,
         Instant devReviewedAt,
+        String rejectedByUuid,
+        String rejectedByFullName,
+        Instant rejectedAt,
+        String rejectionReason,
         List<RequirementDocumentApprovalResponse> approvals
 ) {
 }

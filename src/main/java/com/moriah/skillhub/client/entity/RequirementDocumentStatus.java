@@ -12,5 +12,12 @@ package com.moriah.skillhub.client.entity;
 public enum RequirementDocumentStatus {
     DRAFT,
     IN_REVIEW,
-    APPROVED
+    APPROVED,
+    /** Terminal, like {@code APPROVED} — any one required party (CLIENT/BUSINESS_ANALYST/
+     * DEVELOPER, or ADMIN overriding) can reject a document that's still {@code IN_REVIEW},
+     * recording why on {@code RequirementDocument.rejectionReason}. A rejected version is never
+     * reopened or edited in place — the author resubmits via {@code RequirementDocumentService
+     * #create} with the same {@code (clientProjectId, docType)} pair, which lands as a brand new
+     * version with its own fresh approval slots (the existing versioning model, unchanged). */
+    REJECTED
 }

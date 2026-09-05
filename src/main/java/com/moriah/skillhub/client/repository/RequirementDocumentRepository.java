@@ -24,7 +24,7 @@ public interface RequirementDocumentRepository extends JpaRepository<Requirement
              WHERE (:clientProjectId IS NULL OR d.clientProject.id = :clientProjectId)
                AND (:status IS NULL OR d.status = :status)
             """)
-    @EntityGraph(attributePaths = {"clientProject", "authoredBy", "approvedBy", "devReviewedBy"})
+    @EntityGraph(attributePaths = {"clientProject", "authoredBy", "approvedBy", "devReviewedBy", "rejectedBy"})
     Page<RequirementDocument> search(@Param("clientProjectId") Long clientProjectId,
                                      @Param("status") RequirementDocumentStatus status,
                                      Pageable pageable);
@@ -43,7 +43,7 @@ public interface RequirementDocumentRepository extends JpaRepository<Requirement
     /** {@code RequirementDocumentService#approve} needs {@code authoredBy}/{@code approvedBy}
      * eager for the response — {@code @EntityGraph}, same idiom as {@code
      * CertificateRepository.findWithAssociationsById}. */
-    @EntityGraph(attributePaths = {"clientProject", "authoredBy", "approvedBy", "devReviewedBy"})
+    @EntityGraph(attributePaths = {"clientProject", "authoredBy", "approvedBy", "devReviewedBy", "rejectedBy"})
     @Query("SELECT d FROM RequirementDocument d WHERE d.id = :id")
     Optional<RequirementDocument> findWithAssociationsById(@Param("id") Long id);
 }

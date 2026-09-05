@@ -1,6 +1,7 @@
 package com.moriah.skillhub.client;
 
 import com.moriah.skillhub.client.dto.PendingApprovalResponse;
+import com.moriah.skillhub.client.dto.RejectRequirementDocumentRequest;
 import com.moriah.skillhub.client.dto.RequirementDocumentDetailResponse;
 import com.moriah.skillhub.client.dto.RequirementDocumentResponse;
 import com.moriah.skillhub.client.entity.RequirementDocumentStatus;
@@ -9,6 +10,7 @@ import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.common.security.CurrentUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -18,6 +20,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -86,5 +89,19 @@ public class RequirementDocumentApprovalController {
     public ResponseEntity<ApiResponse<RequirementDocumentResponse>> approve(
             @PathVariable Long id, @CurrentUser Long callerUserId) {
         return ResponseEntity.ok(ApiResponse.success(requirementDocumentService.approve(id, callerUserId)));
+    }
+
+    @PostMapping("/{id}/reject")
+    @PreAuthorize("hasAnyRole('CLIENT','BUSINESS_ANALYST','DEVELOPER','ADMIN')")
+    @Operation(summary = "Reject this document, with a reason",
+            description = "Same role inference as /approve, but any one required party rejecting kills the "
+                    + "whole document version immediately — no need for every slot to weigh in. 403 if the "
+                    + "caller isn't a party to this document; 409 if it's already approved or already rejected. "
+                    + "The author resubmits by creating a new version, not by editing this one.")
+    public ResponseEntity<ApiResponse<RequirementDocumentResponse>> reject(
+            @PathVariable Long id, @Valid @RequestBody RejectRequirementDocumentRequest request,
+            @CurrentUser Long callerUserId) {
+        return ResponseEntity.ok(ApiResponse.success(
+                requirementDocumentService.reject(id, callerUserId, request.reason())));
     }
 }
