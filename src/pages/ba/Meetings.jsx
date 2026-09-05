@@ -19,14 +19,17 @@ const INVITE_ROLES = [
   { value: "BUSINESS_ANALYST", label: "Business Analyst" },
   { value: "DEVELOPER", label: "Developer" },
   { value: "ADMIN", label: "Admin" },
+  { value: "CLIENT", label: "Client" },
 ];
+
+const STATUS_TONE = { SCHEDULED: "primary", COMPLETED: "success", CANCELLED: "error" };
 
 const emptyValues = () => ({
   title: "",
   type: "Sprint Demo",
   clientProjectId: "",
   date: "",
-  time: "03:00 PM",
+  time: "15:00",
   meetLink: "",
   agenda: "",
 });
@@ -138,7 +141,7 @@ export default function BaMeetings() {
         client: project?.clientName || "",
         clientProjectId: values.clientProjectId || null,
         date: values.date,
-        time: values.time || "03:00 PM",
+        time: values.time || "15:00",
         meetLink: generatedLink,
         agenda: values.agenda || "Review sprint milestones and collect client sign-off.",
         attendeeUuids: selectedAttendees.map((a) => a.uuid),
@@ -227,19 +230,22 @@ export default function BaMeetings() {
                   <div>
                     <h3 className="font-semibold text-ink-900 text-sm">{m.title}</h3>
                     <p className="text-xs text-ink-500 flex items-center gap-1.5 mt-0.5">
-                      <CalendarClock size={13} /> {m.date} at {m.time}
+                      <CalendarClock size={13} /> {m.date} at {m.timeDisplay || m.time}
                       {m.client && <> · Client: <strong className="text-ink-800">{m.client}</strong></>}
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <Badge tone={STATUS_TONE[m.status] || "neutral"}>{m.status}</Badge>
                   <Badge tone={m.type === "Sprint Demo" ? "gold" : m.type === "Sign-off Meeting" ? "success" : "primary"}>
                     {m.type}
                   </Badge>
-                  <Button size="sm" icon={Video} onClick={() => window.open(m.meetLink, "_blank")}>
-                    Join Video Call
-                  </Button>
+                  {m.status !== "CANCELLED" && (
+                    <Button size="sm" icon={Video} onClick={() => window.open(m.meetLink, "_blank")}>
+                      Join Video Call
+                    </Button>
+                  )}
                   <Button size="sm" variant="secondary" icon={FileText} onClick={() => openMomModal(m)}>
                     {m.momNotes ? "View / Edit MOM" : "Log MOM"}
                   </Button>
@@ -340,6 +346,8 @@ export default function BaMeetings() {
             />
             <Input
               label="Time"
+              type="time"
+              required
               value={values.time}
               onChange={(e) => setValues((v) => ({ ...v, time: e.target.value }))}
             />

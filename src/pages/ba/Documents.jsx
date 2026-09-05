@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import mammoth from "mammoth";
-import { Plus, Eye, ShieldCheck, FileText, UploadCloud } from "lucide-react";
+import { Plus, Eye, ShieldCheck, FileText, UploadCloud, Download, Maximize2, Minimize2 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
 import Table from "../../components/ui/Table";
@@ -21,6 +21,7 @@ import { getClientProjects } from "../../services/clientService";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
 import { validateForm, required } from "../../utils/validators";
+import { downloadTextFile } from "../../utils/downloadTextFile";
 
 const DOC_TYPES = [
   { value: "BRD", label: "Business Requirements Document (BRD)" },
@@ -94,6 +95,7 @@ export default function BaDocuments() {
   const [viewingDoc, setViewingDoc] = useState(null);
   const [loadingView, setLoadingView] = useState(false);
   const [approvingId, setApprovingId] = useState(null);
+  const [docExpanded, setDocExpanded] = useState(false);
 
   useEffect(() => {
     getClientProjects()
@@ -164,6 +166,7 @@ export default function BaDocuments() {
   const openView = (doc) => {
     setViewingId(doc.id);
     setViewingDoc(null);
+    setDocExpanded(false);
     setLoadingView(true);
     getRequirementDocumentDetail(doc.id)
       .then(setViewingDoc)
@@ -214,6 +217,15 @@ export default function BaDocuments() {
           <div className="px-4 py-3 border-b border-border text-left">
             <h3 className="font-display font-semibold text-ink-900">{project?.title}</h3>
             <p className="text-xs text-ink-500 mt-0.5">{project?.clientName} · {project?.scope || "No scope description provided."}</p>
+            <p className="text-xs text-ink-500 mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span>BA: <strong className="text-ink-800">{project?.assignedBaName || "Unassigned"}</strong></span>
+              <span>
+                Developer: <strong className="text-ink-800">{project?.assignedDeveloperName || "Not yet assigned"}</strong>
+                {!project?.assignedDeveloperName && (
+                  <span className="text-ink-400"> — auto-assigned once a BA signs off a BRD/FRS</span>
+                )}
+              </span>
+            </p>
           </div>
 
           <Table
@@ -305,11 +317,19 @@ export default function BaDocuments() {
         open={!!viewingId}
         onClose={() => setViewingId(null)}
         title={viewingDoc?.title || "Document"}
-        size="lg"
+        size={docExpanded ? "full" : "lg"}
         footer={
           <div className="flex justify-between w-full items-center gap-3">
             {viewingDoc && <ApprovalSlots approvals={viewingDoc.approvals} />}
             <div className="flex gap-2 shrink-0">
+              <Button
+                variant="secondary"
+                icon={Download}
+                disabled={!viewingDoc}
+                onClick={() => downloadTextFile(viewingDoc.title || "document", viewingDoc.content)}
+              >
+                Download
+              </Button>
               {viewingDoc && viewingDoc.status !== "APPROVED" && viewingDoc.authoredByUuid !== user?.uuid && (
                 <Button icon={ShieldCheck} loading={approvingId === viewingDoc.id} onClick={() => approve(viewingDoc)}>Sign off as BA</Button>
               )}
@@ -321,7 +341,7 @@ export default function BaDocuments() {
         {loadingView ? (
           <div className="flex justify-center py-12"><LoadingSpinner label="Loading document…" /></div>
         ) : viewingDoc && (
-          <div className="flex flex-col gap-4 text-left font-sans">
+          <div className={`flex flex-col gap-4 text-left font-sans ${docExpanded ? "h-full" : ""}`}>
             <div className="flex justify-between items-start border-b border-border pb-3">
               <div>
                 <span className="text-xs font-bold uppercase tracking-wider text-primary-700">{viewingDoc.docType.replace("_", " ")} · v{viewingDoc.version}</span>
@@ -331,13 +351,16 @@ export default function BaDocuments() {
                   {viewingDoc.devReviewedAt && <> · Reviewed by developer {viewingDoc.devReviewedByName}</>}
                 </p>
               </div>
+              <Button size="sm" variant="ghost" icon={docExpanded ? Minimize2 : Maximize2} onClick={() => setDocExpanded((v) => !v)}>
+                {docExpanded ? "Shrink" : "Full screen"}
+              </Button>
             </div>
             {viewingDoc.status !== "APPROVED" && viewingDoc.authoredByUuid === user?.uuid && (
               <p className="text-xs text-ink-500 bg-cream-50 border border-border rounded-lg px-3 py-2">
                 You authored this document — another Business Analyst needs to sign off the BA slot.
               </p>
             )}
-            <div className="p-4 bg-cream-50 rounded-lg border border-border text-sm leading-relaxed text-ink-800 whitespace-pre-wrap max-h-[50vh] overflow-y-auto">
+            <div className={`p-4 bg-cream-50 rounded-lg border border-border text-sm leading-relaxed text-ink-800 whitespace-pre-wrap overflow-y-auto ${docExpanded ? "flex-1" : "max-h-[50vh]"}`}>
               {viewingDoc.content}
             </div>
           </div>

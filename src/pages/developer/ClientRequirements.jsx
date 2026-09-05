@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Eye, CheckCircle2, ClipboardCheck } from "lucide-react";
+import { Eye, CheckCircle2, ClipboardCheck, Download, Maximize2, Minimize2 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
 import Table from "../../components/ui/Table";
@@ -8,6 +8,7 @@ import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
 import { getDevRequirementDocs, getRequirementDocDetail, markDocReviewed } from "../../services/developerService";
 import { useToast } from "../../context/ToastContext";
+import { downloadTextFile } from "../../utils/downloadTextFile";
 
 const DOC_TYPE_LABEL = { BRD: "BRD", SRS: "SRS", FRS: "FRS", USER_STORY: "User Story" };
 
@@ -24,6 +25,7 @@ export default function DeveloperClientRequirements() {
   const [viewingDoc, setViewingDoc] = useState(null);
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const { notify } = useToast();
 
   const load = () => {
@@ -42,6 +44,7 @@ export default function DeveloperClientRequirements() {
   const openDoc = async (doc) => {
     setViewingDoc(doc);
     setDetail(null);
+    setExpanded(false);
     setDetailLoading(true);
     try {
       setDetail(await getRequirementDocDetail(doc.id));
@@ -120,11 +123,19 @@ export default function DeveloperClientRequirements() {
         open={!!viewingDoc}
         onClose={() => setViewingDoc(null)}
         title={viewingDoc?.title || "Document Viewer"}
-        size="lg"
+        size={expanded ? "full" : "lg"}
         footer={
           <div className="flex justify-between w-full items-center">
             <Badge tone="success">Status: {viewingDoc?.status}</Badge>
             <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                icon={Download}
+                disabled={!detail}
+                onClick={() => downloadTextFile(detail.title || "document", detail.content)}
+              >
+                Download
+              </Button>
               {viewingDoc && !viewingDoc.devReviewed && (
                 <Button icon={ClipboardCheck} onClick={() => handleMarkReviewed(viewingDoc)}>Mark as Reviewed</Button>
               )}
@@ -136,7 +147,7 @@ export default function DeveloperClientRequirements() {
         {detailLoading || !detail ? (
           <p className="text-sm text-ink-400 py-8 text-center">Loading…</p>
         ) : (
-          <div className="p-4 bg-white rounded-xl border border-border flex flex-col gap-4 text-left font-sans">
+          <div className={`p-4 bg-white rounded-xl border border-border flex flex-col gap-4 text-left font-sans ${expanded ? "h-full" : ""}`}>
             <div className="flex justify-between items-start border-b border-border pb-3">
               <div>
                 <span className="text-xs font-bold uppercase tracking-wider text-primary-700">
@@ -145,9 +156,14 @@ export default function DeveloperClientRequirements() {
                 <h3 className="text-base font-bold text-ink-900 mt-1">{detail.title}</h3>
                 <p className="text-xs text-ink-500">Authored by {detail.authoredBy} · Approved by {detail.approvedBy || "—"}</p>
               </div>
-              <Badge tone="success">{detail.status}</Badge>
+              <div className="flex items-center gap-2">
+                <Badge tone="success">{detail.status}</Badge>
+                <Button size="sm" variant="ghost" icon={expanded ? Minimize2 : Maximize2} onClick={() => setExpanded((v) => !v)}>
+                  {expanded ? "Shrink" : "Full screen"}
+                </Button>
+              </div>
             </div>
-            <div className="p-3 bg-cream-50 rounded-lg border border-border text-sm leading-relaxed text-ink-800 whitespace-pre-wrap max-h-96 overflow-y-auto">
+            <div className={`p-3 bg-cream-50 rounded-lg border border-border text-sm leading-relaxed text-ink-800 whitespace-pre-wrap overflow-y-auto ${expanded ? "flex-1" : "max-h-96"}`}>
               {detail.content || <span className="text-ink-400">No content.</span>}
             </div>
             {detail.devReviewed && (

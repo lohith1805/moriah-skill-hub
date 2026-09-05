@@ -155,30 +155,47 @@ const writeMeta = (id, patch) => {
 };
 
 // "2026-09-10" + "03:00 PM" -> ISO instant. Falls back to midnight / now.
+// `timeStr` comes from a native <input type="time"> now — plain 24-hour "HH:mm", no AM/PM — but
+// this still tolerates the old "hh:mm AM/PM" shape too, so a value round-tripped from an older
+// meeting (or saveMeetingMinutes, which reuses whatever splitInstant last produced) parses either
+// way instead of silently landing at the wrong hour.
 function toInstant(dateStr, timeStr) {
   if (!dateStr) return new Date().toISOString();
   let hh = 15;
   let mm = 0;
-  const m = /^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i.exec((timeStr || "").trim());
-  if (m) {
-    hh = Number(m[1]) % 12;
-    mm = Number(m[2]);
-    if (/pm/i.test(m[3] || "")) hh += 12;
+  const raw = (timeStr || "").trim();
+  const ampm = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(raw);
+  const plain = /^(\d{1,2}):(\d{2})$/.exec(raw);
+  if (ampm) {
+    hh = Number(ampm[1]) % 12;
+    mm = Number(ampm[2]);
+    if (/pm/i.test(ampm[3])) hh += 12;
+  } else if (plain) {
+    hh = Number(plain[1]);
+    mm = Number(plain[2]);
   }
   const d = new Date(`${dateStr}T00:00:00`);
   d.setHours(hh, mm, 0, 0);
   return d.toISOString();
 }
 
+// Returns time as plain 24-hour "HH:mm" — what <input type="time"> both accepts and displays.
 function splitInstant(iso) {
   if (!iso) return { date: "", time: "" };
   const d = new Date(iso);
   const date = d.toISOString().slice(0, 10);
-  let h = d.getHours();
+  const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return { date, time };
+}
+
+// "15:00" -> "3:00 PM", for read-only display only — the underlying data stays 24-hour.
+function formatTimeDisplay(time24) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec((time24 || "").trim());
+  if (!m) return time24 || "";
+  let h = Number(m[1]);
   const ap = h >= 12 ? "PM" : "AM";
   h = h % 12 || 12;
-  const time = `${String(h).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} ${ap}`;
-  return { date, time };
+  return `${h}:${m[2]} ${ap}`;
 }
 
 function toFeMeeting(m) {
@@ -193,6 +210,7 @@ function toFeMeeting(m) {
     clientProjectId: m.clientProjectId ?? null,
     date,
     time,
+    timeDisplay: formatTimeDisplay(time),
     scheduledAt: m.scheduledAt,
     durationMinutes: m.durationMinutes ?? null,
     meetLink: m.location || "",
@@ -269,4 +287,12 @@ export async function saveMeetingMinutes(id, minutes, current) {
 export async function deleteMeeting(id) {
   await apiClient.del(`/ba/meetings/${id}`);
   return true;
+}
+
+// POST /api/v1/meetings/{id}/note — any named attendee (or the scheduler), not just this BA,
+// may add one once the meeting is COMPLETED. Shared with the invitee-side page
+// (pages/shared/ClientPreProjectDiscussions.jsx via meetingService.js) — same endpoint either way.
+export async function addMeetingNote(id, note) {
+  const updated = await apiClient.post(`/meetings/${id}/note`, { note });
+  return toFeMeeting(updated);
 }

@@ -42,3 +42,12 @@ export async function getMyMeetings() {
   const rows = Array.isArray(res) ? res : res?.content ?? [];
   return rows.map(toFeMeeting);
 }
+
+// POST /api/v1/meetings/{id}/note — any named attendee may add one once the meeting is
+// COMPLETED, not just the BA who scheduled it (see baService.js's own addMeetingNote — same
+// endpoint, this is just the invitee-side copy so this module has no import dependency on the
+// BA-only service).
+export async function addMeetingNote(id, note) {
+  const updated = await apiClient.post(`/meetings/${id}/note`, { note });
+  return toFeMeeting(updated);
+}

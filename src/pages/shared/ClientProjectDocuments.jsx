@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Eye, CheckCircle2, Clock, FileText } from "lucide-react";
+import { Eye, CheckCircle2, Clock, FileText, Download, Maximize2, Minimize2 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
 import Table from "../../components/ui/Table";
@@ -10,6 +10,7 @@ import EmptyState from "../../components/ui/EmptyState";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
 import { ROLES } from "../../utils/constants";
+import { downloadTextFile } from "../../utils/downloadTextFile";
 import {
   getPendingMyApprovals,
   getClientProjectDocumentDetail,
@@ -57,6 +58,7 @@ export default function ClientProjectDocuments() {
   const [viewing, setViewing] = useState(null); // { ...pending row, detail: null | {...} }
   const [detailLoading, setDetailLoading] = useState(false);
   const [approving, setApproving] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -73,6 +75,7 @@ export default function ClientProjectDocuments() {
 
   const openRow = async (row) => {
     setViewing({ ...row, detail: null });
+    setExpanded(false);
     setDetailLoading(true);
     try {
       const detail = await getClientProjectDocumentDetail(row.documentId);
@@ -160,9 +163,17 @@ export default function ClientProjectDocuments() {
         open={!!viewing}
         onClose={() => setViewing(null)}
         title={viewing?.title || "Document"}
-        size="lg"
+        size={expanded ? "full" : "lg"}
         footer={
           <>
+            <Button
+              variant="secondary"
+              icon={Download}
+              disabled={!viewing?.detail}
+              onClick={() => downloadTextFile(viewing.title || "document", viewing.detail.content)}
+            >
+              Download
+            </Button>
             <Button variant="secondary" onClick={() => setViewing(null)}>Close</Button>
             <Button icon={CheckCircle2} loading={approving} disabled={detailLoading} onClick={approve}>
               Approve as {ROLE_LABEL[viewing?.approverRole] || viewing?.approverRole}
@@ -173,7 +184,7 @@ export default function ClientProjectDocuments() {
         {detailLoading || !viewing?.detail ? (
           <p className="text-sm text-ink-400 py-8 text-center">Loading…</p>
         ) : (
-          <div className="flex flex-col gap-4 text-left font-sans">
+          <div className={`flex flex-col gap-4 text-left font-sans ${expanded ? "h-full" : ""}`}>
             <div className="flex items-center justify-between border-b border-border pb-3">
               <div>
                 <span className="text-xs font-bold uppercase tracking-wider text-primary-700">
@@ -181,13 +192,18 @@ export default function ClientProjectDocuments() {
                 </span>
                 <p className="text-xs text-ink-500 mt-1">{viewing.clientProjectTitle} · Authored by {viewing.detail.authoredByName}</p>
               </div>
-              <Badge tone={viewing.detail.status === "APPROVED" ? "success" : "warning"}>{viewing.detail.statusLabel}</Badge>
+              <div className="flex items-center gap-2">
+                <Badge tone={viewing.detail.status === "APPROVED" ? "success" : "warning"}>{viewing.detail.statusLabel}</Badge>
+                <Button size="sm" variant="ghost" icon={expanded ? Minimize2 : Maximize2} onClick={() => setExpanded((v) => !v)}>
+                  {expanded ? "Shrink" : "Full screen"}
+                </Button>
+              </div>
             </div>
             <div>
               <p className="text-xs font-semibold text-ink-700 mb-1.5">Sign-off status</p>
               <ApprovalSlots approvals={viewing.detail.approvals} />
             </div>
-            <div className="p-3 bg-cream-50 rounded-lg border border-border text-sm leading-relaxed text-ink-800 whitespace-pre-wrap max-h-96 overflow-y-auto">
+            <div className={`p-3 bg-cream-50 rounded-lg border border-border text-sm leading-relaxed text-ink-800 whitespace-pre-wrap overflow-y-auto ${expanded ? "flex-1" : "max-h-96"}`}>
               {viewing.detail.content || <span className="text-ink-400">No content.</span>}
             </div>
           </div>
