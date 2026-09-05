@@ -31,8 +31,9 @@ export default function TrainerAssessments() {
 
   // Publish modal
   const [publishBank, setPublishBank] = useState(null);
-  const [pform, setPform] = useState({ batchId: "", title: "", durationMinutes: "20", passingScore: "60" });
+  const [pform, setPform] = useState({ batchId: "", title: "", durationMinutes: "20", passingScore: "60", questionCount: "", maxAttempts: "1" });
   const [publishing, setPublishing] = useState(false);
+  const [pformErrors, setPformErrors] = useState({});
 
   // Results
   const [rows, setRows] = useState([]);
@@ -74,11 +75,31 @@ export default function TrainerAssessments() {
 
   const openPublish = (bank) => {
     setPublishBank(bank);
-    setPform({ batchId: batches[0] ? String(batches[0].id) : "", title: bank.title, durationMinutes: "20", passingScore: "60" });
+    setPformErrors({});
+    // Defaults to every question in the bank — same "publish the whole bank" behavior as before
+    // this field existed; the trainer only needs to touch it to publish a smaller random sample.
+    setPform({
+      batchId: batches[0] ? String(batches[0].id) : "",
+      title: bank.title,
+      durationMinutes: "20",
+      passingScore: "60",
+      questionCount: String(bank.questionCount || ""),
+      maxAttempts: "1",
+    });
   };
 
   const doPublish = async () => {
-    if (!pform.batchId) return notify("Pick a batch.", { type: "error" });
+    const errors = {};
+    if (!pform.batchId) errors.batchId = "Pick a batch.";
+    const requestedCount = Number(pform.questionCount);
+    if (!pform.questionCount || requestedCount < 1) {
+      errors.questionCount = "Enter how many questions this assessment should draw from the bank.";
+    } else if (publishBank && requestedCount > publishBank.questionCount) {
+      errors.questionCount = `This bank only has ${publishBank.questionCount} question${publishBank.questionCount === 1 ? "" : "s"}.`;
+    }
+    setPformErrors(errors);
+    if (Object.keys(errors).length) return;
+
     setPublishing(true);
     try {
       await publishAssessmentFromBank({
@@ -87,8 +108,16 @@ export default function TrainerAssessments() {
         title: pform.title,
         durationMinutes: pform.durationMinutes,
         passingScore: pform.passingScore,
+        maxAttempts: pform.maxAttempts,
+        // Only send a subset when the trainer actually narrowed it — sending the bank's own full
+        // count is equivalent, but omitting it here keeps "publish everything" the literal
+        // no-op it always was for a bank whose size hasn't changed since the modal opened.
+        questionCount: requestedCount < (publishBank?.questionCount || 0) ? requestedCount : undefined,
       });
-      notify(`"${pform.title || publishBank.title}" is live for ${batchName(pform.batchId)}.`, { type: "success", title: "Published" });
+      notify(
+        `"${pform.title || publishBank.title}" is live for ${batchName(pform.batchId)} — ${requestedCount} question${requestedCount === 1 ? "" : "s"} per attempt.`,
+        { type: "success", title: "Published" }
+      );
       setPublishBank(null);
       loadCore();
     } catch (err) {
@@ -239,11 +268,24 @@ export default function TrainerAssessments() {
             options={batches.map((b) => ({ value: String(b.id), label: `${b.name} · ${b.track}` }))}
             value={pform.batchId}
             onChange={(e) => setPform((v) => ({ ...v, batchId: e.target.value }))}
+            error={pformErrors.batchId}
           />
           <Input label="Assessment title" value={pform.title} onChange={(e) => setPform((v) => ({ ...v, title: e.target.value }))} placeholder="Defaults to the bank name" />
-          <div className="grid sm:grid-cols-2 gap-4">
+          <Input
+            label="Number of questions"
+            required
+            type="number"
+            min="1"
+            max={publishBank?.questionCount || undefined}
+            value={pform.questionCount}
+            onChange={(e) => setPform((v) => ({ ...v, questionCount: e.target.value }))}
+            hint={publishBank ? `This bank has ${publishBank.questionCount} question${publishBank.questionCount === 1 ? "" : "s"} — a random subset is picked per attempt if you enter fewer.` : undefined}
+            error={pformErrors.questionCount}
+          />
+          <div className="grid sm:grid-cols-3 gap-4">
             <Input label="Duration (minutes)" type="number" min="1" value={pform.durationMinutes} onChange={(e) => setPform((v) => ({ ...v, durationMinutes: e.target.value }))} />
             <Input label="Passing score (%)" type="number" min="1" max="100" value={pform.passingScore} onChange={(e) => setPform((v) => ({ ...v, passingScore: e.target.value }))} />
+            <Input label="Max attempts" type="number" min="1" max="20" value={pform.maxAttempts} onChange={(e) => setPform((v) => ({ ...v, maxAttempts: e.target.value }))} />
           </div>
         </form>
       </Modal>

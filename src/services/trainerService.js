@@ -752,8 +752,10 @@ export async function getPublishedAssessments() {
 
 // POST /assessments/from-bank — snapshots the bank's questions (+ answer keys)
 // into a live assessment for one batch. The backend holds a TRAINER_PM to a
-// batch they own.
-export async function publishAssessmentFromBank({ bankId, batchId, title, durationMinutes, passingScore }) {
+// batch they own. questionCount lets a 200-question bank publish a random
+// subset instead of dumping every question into the assessment — omit it (or
+// leave it blank) to use the whole bank, same as before this existed.
+export async function publishAssessmentFromBank({ bankId, batchId, title, durationMinutes, passingScore, maxAttempts, questionCount }) {
   if (!bankId) throw new Error("Pick a question bank.");
   if (!batchId) throw new Error("Pick the batch this assessment is for.");
   const res = await apiClient.post("/assessments/from-bank", {
@@ -762,6 +764,8 @@ export async function publishAssessmentFromBank({ bankId, batchId, title, durati
     title: title || undefined,
     durationMinutes: Number(durationMinutes) || 20,
     passPercentage: passingScore ? Number(passingScore) : undefined,
+    maxAttempts: maxAttempts ? Number(maxAttempts) : undefined,
+    questionCount: questionCount ? Number(questionCount) : undefined,
   });
   return toFePublishedAssessment(res);
 }
