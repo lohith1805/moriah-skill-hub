@@ -437,7 +437,7 @@ class SubmissionFlowIT extends IntegrationTestBase {
         String email = uniqueEmail(fullName);
         Response response = given()
                 .contentType("application/json")
-                .body(Map.of("fullName", fullName, "email", email, "password", "correct horse battery"))
+                .body(Map.of("fullName", fullName, "email", email, "password", "correct horse battery", "agreedToTerms", true))
             .when()
                 .post("/api/v1/auth/register")
             .then()
@@ -451,7 +451,7 @@ class SubmissionFlowIT extends IntegrationTestBase {
         String email = uniqueEmail(fullName);
         given()
                 .contentType("application/json")
-                .body(Map.of("fullName", fullName, "email", email, "password", "correct horse battery"))
+                .body(Map.of("fullName", fullName, "email", email, "password", "correct horse battery", "agreedToTerms", true))
             .when()
                 .post("/api/v1/auth/register")
             .then()
@@ -468,7 +468,7 @@ class SubmissionFlowIT extends IntegrationTestBase {
         String email = uniqueEmail(fullName);
         given()
                 .contentType("application/json")
-                .body(Map.of("fullName", fullName, "email", email, "password", "correct horse battery"))
+                .body(Map.of("fullName", fullName, "email", email, "password", "correct horse battery", "agreedToTerms", true))
             .when()
                 .post("/api/v1/auth/register")
             .then()

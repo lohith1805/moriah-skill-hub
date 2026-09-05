@@ -390,7 +390,7 @@ class AdminMetricsFlowIT extends IntegrationTestBase {
     private String registerVerifyAndLogin(String fullName, String email) {
         given()
                 .contentType(ContentType.JSON)
-                .body(Map.of("fullName", fullName, "email", email, "password", "correct horse battery"))
+                .body(Map.of("fullName", fullName, "email", email, "password", "correct horse battery", "agreedToTerms", true))
             .when()
                 .post("/api/v1/auth/register")
             .then()
@@ -403,7 +403,7 @@ class AdminMetricsFlowIT extends IntegrationTestBase {
         String email = uniqueEmail(fullName);
         given()
                 .contentType(ContentType.JSON)
-                .body(Map.of("fullName", fullName, "email", email, "password", "correct horse battery"))
+                .body(Map.of("fullName", fullName, "email", email, "password", "correct horse battery", "agreedToTerms", true))
             .when()
                 .post("/api/v1/auth/register")
             .then()

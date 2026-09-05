@@ -110,6 +110,14 @@ public class AuthService {
 
         issueEmailVerificationToken(user);
 
+        // NFR-05 (GDPR/DPDP): the actual consent record — recordAfterCommit, not record(), for
+        // the exact reason ClientRegistrationService's own registration path already documents:
+        // user.getId() is a row THIS transaction just inserted and still holds exclusively;
+        // record()'s REQUIRES_NEW would need a lock on that same row to satisfy audit_logs' FK
+        // check and self-lock against this still-open transaction until innodb_lock_wait_timeout.
+        auditLogService.recordAfterCommit(user.getId(), "TERMS_AND_PRIVACY_ACCEPTED", "User", user.getId(),
+                null, Map.of("consentType", "TERMS_AND_PRIVACY", "context", "self-registration"));
+
         return new RegisterResponse(user.getUuid(), user.getFullName(), user.getEmail());
     }
 

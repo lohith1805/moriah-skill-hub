@@ -61,7 +61,7 @@ class ClientRegistrationServiceTest {
 
     private ClientRegisterRequest request() {
         return new ClientRegisterRequest("Jane Doe", "jane@acme.com", "919900001111",
-                "Password123!", "Acme Corp", "Retail");
+                "Password123!", "Acme Corp", "Retail", true);
     }
 
     @Test

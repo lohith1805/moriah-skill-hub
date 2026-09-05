@@ -301,7 +301,7 @@ class TwoFactorFlowIT extends IntegrationTestBase {
     private void registerAndVerify(String email, String password) {
         given()
             .contentType("application/json")
-            .body(Map.of("fullName", "2FA Test User", "email", email, "password", password))
+            .body(Map.of("fullName", "2FA Test User", "email", email, "password", password, "agreedToTerms", true))
         .when()
             .post("/api/v1/auth/register")
         .then()

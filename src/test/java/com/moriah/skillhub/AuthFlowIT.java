@@ -50,7 +50,7 @@ class AuthFlowIT extends IntegrationTestBase {
 
         given()
             .contentType("application/json")
-            .body(Map.of("fullName", "Ada Lovelace", "email", email, "password", "correct horse battery"))
+            .body(Map.of("fullName", "Ada Lovelace", "email", email, "password", "correct horse battery", "agreedToTerms", true))
         .when()
             .post("/api/v1/auth/register")
         .then()
@@ -288,7 +288,7 @@ class AuthFlowIT extends IntegrationTestBase {
         String email = uniqueEmail();
         given()
             .contentType("application/json")
-            .body(Map.of("fullName", "Test User", "email", email, "password", "correct horse battery"))
+            .body(Map.of("fullName", "Test User", "email", email, "password", "correct horse battery", "agreedToTerms", true))
         .when()
             .post("/api/v1/auth/register")
         .then()

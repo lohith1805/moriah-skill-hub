@@ -101,6 +101,13 @@ public class ClientRegistrationService {
         auditLogService.recordAfterCommit(user.getId(), "CLIENT_REGISTRATION_SUBMITTED", "User", user.getId(),
                 null, Map.of("companyName", request.companyName()));
 
+        // NFR-05 (GDPR/DPDP): the actual consent record, same recordAfterCommit reasoning as the
+        // CLIENT_REGISTRATION_SUBMITTED row just above — a separate row (not folded into it) so
+        // "did this user consent" is its own queryable action, not buried inside another event's
+        // detail payload.
+        auditLogService.recordAfterCommit(user.getId(), "TERMS_AND_PRIVACY_ACCEPTED", "User", user.getId(),
+                null, Map.of("consentType", "TERMS_AND_PRIVACY", "context", "client-self-registration"));
+
         log.info("[client/self-register] '{}' submitted, pending approval", request.companyName());
         return new RegisterResponse(user.getUuid(), user.getFullName(), user.getEmail());
     }

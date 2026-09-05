@@ -306,8 +306,13 @@ class BaClientFlowIT extends IntegrationTestBase {
     }
 
     @Test
-    void createProject_clientUserWithNoLinkedClientRow_returns404() {
-        String orphanToken = registerVerifyGrantRoleAndLogin("Ba Orphan Client", "CLIENT");
+    void createProject_clientUserWithNoLinkedClientRow_selfHealsClientRowAndReturns201() {
+        // A CLIENT role granted directly (e.g. via role management) without ever going through
+        // ClientService.create/ClientRegistrationService is exactly the "legacy account" gap
+        // ClientProjectService#resolveOrCreateClient's self-heal exists for — confirmed intended
+        // behavior, matching ClientProjectServiceTest#create_callerHasNoLinkedClientRow_selfHealsFromUser.
+        String orphanEmail = uniqueEmail("Ba Orphan Client");
+        String orphanToken = registerVerifyGrantRoleAndLogin("Ba Orphan Client", orphanEmail, "CLIENT");
 
         given()
                 .contentType(ContentType.JSON)
@@ -316,8 +321,17 @@ class BaClientFlowIT extends IntegrationTestBase {
             .when()
                 .post("/api/v1/clients/projects")
             .then()
-                .statusCode(404)
-                .body("error.code", equalTo("CLIENT_NOT_FOUND"));
+                .statusCode(201)
+                .body("data.status", equalTo("SUBMITTED"))
+                .body("data.clientName", equalTo("Ba Orphan Client"));
+
+        Map<String, Object> clientRow = jdbcTemplate.queryForMap(
+                "SELECT company_name, contact_person, email, status, user_id FROM clients WHERE email = ?",
+                orphanEmail);
+        assertThat(clientRow.get("company_name")).isEqualTo("Ba Orphan Client");
+        assertThat(clientRow.get("contact_person")).isEqualTo("Ba Orphan Client");
+        assertThat(clientRow.get("status")).isEqualTo("ACTIVE");
+        assertThat(clientRow.get("user_id")).isNotNull();
     }
 
     @Test
@@ -618,7 +632,7 @@ class BaClientFlowIT extends IntegrationTestBase {
     private String registerVerifyAndLogin(String fullName, String email) {
         given()
                 .contentType(ContentType.JSON)
-                .body(Map.of("fullName", fullName, "email", email, "password", "correct horse battery"))
+                .body(Map.of("fullName", fullName, "email", email, "password", "correct horse battery", "agreedToTerms", true))
             .when()
                 .post("/api/v1/auth/register")
             .then()
@@ -628,10 +642,13 @@ class BaClientFlowIT extends IntegrationTestBase {
     }
 
     private String registerVerifyGrantRoleAndLogin(String fullName, String roleCode) {
-        String email = uniqueEmail(fullName);
+        return registerVerifyGrantRoleAndLogin(fullName, uniqueEmail(fullName), roleCode);
+    }
+
+    private String registerVerifyGrantRoleAndLogin(String fullName, String email, String roleCode) {
         given()
                 .contentType(ContentType.JSON)
-                .body(Map.of("fullName", fullName, "email", email, "password", "correct horse battery"))
+                .body(Map.of("fullName", fullName, "email", email, "password", "correct horse battery", "agreedToTerms", true))
             .when()
                 .post("/api/v1/auth/register")
             .then()
