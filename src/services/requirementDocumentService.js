@@ -15,7 +15,7 @@ import { apiClient } from "./apiClient";
 // never has to know or send that itself.
 // ---------------------------------------------------------------------------
 
-const REQ_DOC_STATUS_TO_FE = { DRAFT: "Draft", IN_REVIEW: "In Review", APPROVED: "Approved" };
+const REQ_DOC_STATUS_TO_FE = { DRAFT: "Draft", IN_REVIEW: "In Review", APPROVED: "Approved", REJECTED: "Rejected" };
 const asRows = (res) => (Array.isArray(res) ? res : res?.content ?? []);
 
 function toFeApproval(a) {
@@ -42,6 +42,9 @@ function toFeDocument(d) {
     approvedByName: d.approvedByFullName || "",
     devReviewedByName: d.devReviewedByFullName || "",
     devReviewedAt: d.devReviewedAt || null,
+    rejectedByName: d.rejectedByFullName || "",
+    rejectedAt: d.rejectedAt || null,
+    rejectionReason: d.rejectionReason || "",
     approvals: (d.approvals || []).map(toFeApproval),
   };
 }
@@ -82,5 +85,13 @@ export async function getClientProjectDocumentDetail(id) {
 // ADMIN fast-tracks every remaining slot in this one call.
 export async function approveClientProjectDocument(id) {
   const d = await apiClient.post(`/requirement-documents/${id}/approve`);
+  return toFeDocument(d);
+}
+
+// Any one required party rejecting kills the whole document version immediately — no need for
+// every slot to weigh in first. reason is required; the author resubmits as a new version rather
+// than editing this one in place.
+export async function rejectClientProjectDocument(id, reason) {
+  const d = await apiClient.post(`/requirement-documents/${id}/reject`, { reason });
   return toFeDocument(d);
 }

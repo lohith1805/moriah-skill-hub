@@ -15,7 +15,7 @@ const DEFAULT_RESOURCE_PLANS = [];
 // pickers — not used by the Requirements Authoring Studio anymore.
 // ---------------------------------------------------------------------------
 
-const REQ_DOC_STATUS_TO_FE = { IN_REVIEW: "In Review", APPROVED: "Approved" };
+const REQ_DOC_STATUS_TO_FE = { IN_REVIEW: "In Review", APPROVED: "Approved", REJECTED: "Rejected" };
 const asRows = (res) => (Array.isArray(res) ? res : res?.content ?? []);
 
 function toFeRequirementDoc(d) {
@@ -33,6 +33,9 @@ function toFeRequirementDoc(d) {
     approvedByName: d.approvedByFullName || "",
     devReviewedByName: d.devReviewedByFullName || "",
     devReviewedAt: d.devReviewedAt || null,
+    rejectedByName: d.rejectedByFullName || "",
+    rejectedAt: d.rejectedAt || null,
+    rejectionReason: d.rejectionReason || "",
     // One required sign-off slot per role this docType needs (CLIENT/BUSINESS_ANALYST/
     // DEVELOPER for BRD/FRS; BUSINESS_ANALYST/DEVELOPER only for SRS/USER_STORY) —
     // see RequirementDocumentApprovalService on the backend.
@@ -77,6 +80,14 @@ export async function createRequirementDocument({ clientProjectId, docType, titl
 // PUT /api/v1/ba/documents/{id}/approve — IN_REVIEW -> APPROVED.
 export async function approveRequirementDocument(id) {
   const d = await apiClient.put(`/ba/documents/${id}/approve`, {});
+  return toFeRequirementDoc(d);
+}
+
+// PUT /api/v1/ba/documents/{id}/reject — IN_REVIEW -> REJECTED. reason is required; kills the
+// whole document immediately regardless of any other slot already signed off. The author
+// resubmits as a new version via POST /ba/documents — this one is never edited in place.
+export async function rejectRequirementDocument(id, reason) {
+  const d = await apiClient.put(`/ba/documents/${id}/reject`, { reason });
   return toFeRequirementDoc(d);
 }
 

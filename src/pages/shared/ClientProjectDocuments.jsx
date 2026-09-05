@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Eye, CheckCircle2, Clock, FileText, Download, Maximize2, Minimize2 } from "lucide-react";
+import { Eye, CheckCircle2, Clock, FileText, Download, Maximize2, Minimize2, XCircle } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
 import Table from "../../components/ui/Table";
@@ -7,6 +7,7 @@ import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
 import EmptyState from "../../components/ui/EmptyState";
+import { Textarea } from "../../components/ui/FormField";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
 import { ROLES } from "../../utils/constants";
@@ -15,6 +16,7 @@ import {
   getPendingMyApprovals,
   getClientProjectDocumentDetail,
   approveClientProjectDocument,
+  rejectClientProjectDocument,
 } from "../../services/requirementDocumentService";
 
 const DASHBOARD_PATH_BY_ROLE = {
@@ -59,6 +61,9 @@ export default function ClientProjectDocuments() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [approving, setApproving] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const [rejectMode, setRejectMode] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
 
   const load = () => {
     setLoading(true);
@@ -76,6 +81,8 @@ export default function ClientProjectDocuments() {
   const openRow = async (row) => {
     setViewing({ ...row, detail: null });
     setExpanded(false);
+    setRejectMode(false);
+    setRejectReason("");
     setDetailLoading(true);
     try {
       const detail = await getClientProjectDocumentDetail(row.documentId);
@@ -100,6 +107,22 @@ export default function ClientProjectDocuments() {
       notify(err?.message || "Couldn't record your approval. Please try again.", { type: "error" });
     } finally {
       setApproving(false);
+    }
+  };
+
+  const reject = async (e) => {
+    e.preventDefault();
+    if (!viewing || !rejectReason.trim()) return;
+    setRejecting(true);
+    try {
+      await rejectClientProjectDocument(viewing.documentId, rejectReason.trim());
+      notify(`Rejected "${viewing.title}" — the author will need to submit a revised version.`, { type: "success", title: "Rejected" });
+      setViewing(null);
+      load();
+    } catch (err) {
+      notify(err?.message || "Couldn't record the rejection. Please try again.", { type: "error" });
+    } finally {
+      setRejecting(false);
     }
   };
 
@@ -165,24 +188,59 @@ export default function ClientProjectDocuments() {
         title={viewing?.title || "Document"}
         size={expanded ? "full" : "lg"}
         footer={
-          <>
-            <Button
-              variant="secondary"
-              icon={Download}
-              disabled={!viewing?.detail}
-              onClick={() => downloadTextFile(viewing.title || "document", viewing.detail.content)}
-            >
-              Download
-            </Button>
-            <Button variant="secondary" onClick={() => setViewing(null)}>Close</Button>
-            <Button icon={CheckCircle2} loading={approving} disabled={detailLoading} onClick={approve}>
-              Approve as {ROLE_LABEL[viewing?.approverRole] || viewing?.approverRole}
-            </Button>
-          </>
+          rejectMode ? (
+            <>
+              <Button variant="secondary" onClick={() => setRejectMode(false)}>Back</Button>
+              <Button
+                variant="danger"
+                icon={XCircle}
+                loading={rejecting}
+                disabled={!rejectReason.trim()}
+                onClick={reject}
+              >
+                Confirm Rejection
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="secondary"
+                icon={Download}
+                disabled={!viewing?.detail}
+                onClick={() => downloadTextFile(viewing.title || "document", viewing.detail.content)}
+              >
+                Download
+              </Button>
+              <Button variant="secondary" onClick={() => setViewing(null)}>Close</Button>
+              <Button variant="secondary" icon={XCircle} disabled={detailLoading} onClick={() => setRejectMode(true)}>
+                Reject
+              </Button>
+              <Button icon={CheckCircle2} loading={approving} disabled={detailLoading} onClick={approve}>
+                Approve as {ROLE_LABEL[viewing?.approverRole] || viewing?.approverRole}
+              </Button>
+            </>
+          )
         }
       >
         {detailLoading || !viewing?.detail ? (
           <p className="text-sm text-ink-400 py-8 text-center">Loading…</p>
+        ) : rejectMode ? (
+          <form className="flex flex-col gap-4 text-left font-sans" onSubmit={reject}>
+            <p className="text-sm text-ink-600">
+              Rejecting <span className="font-semibold text-ink-900">"{viewing.title}"</span> — this kills the
+              document immediately, even if other parties already signed off. The author will need to submit a
+              revised version; this one can't be edited in place.
+            </p>
+            <Textarea
+              label="Reason for rejection"
+              required
+              autoFocus
+              rows={4}
+              placeholder="e.g. Scope doesn't cover the reporting dashboard we discussed on the kickoff call."
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+            />
+          </form>
         ) : (
           <div className={`flex flex-col gap-4 text-left font-sans ${expanded ? "h-full" : ""}`}>
             <div className="flex items-center justify-between border-b border-border pb-3">

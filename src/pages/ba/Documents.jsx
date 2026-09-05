@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import mammoth from "mammoth";
-import { Plus, Eye, ShieldCheck, FileText, UploadCloud, Download, Maximize2, Minimize2 } from "lucide-react";
+import { Plus, Eye, ShieldCheck, XCircle, FileText, UploadCloud, Download, Maximize2, Minimize2 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
 import Table from "../../components/ui/Table";
@@ -16,6 +16,7 @@ import {
   getRequirementDocumentDetail,
   createRequirementDocument,
   approveRequirementDocument,
+  rejectRequirementDocument,
 } from "../../services/baService";
 import { getClientProjects } from "../../services/clientService";
 import { useToast } from "../../context/ToastContext";
@@ -97,6 +98,9 @@ export default function BaDocuments() {
   const [loadingView, setLoadingView] = useState(false);
   const [approvingId, setApprovingId] = useState(null);
   const [docExpanded, setDocExpanded] = useState(false);
+  const [rejectMode, setRejectMode] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejecting, setRejecting] = useState(false);
 
   useEffect(() => {
     getClientProjects()
@@ -168,6 +172,8 @@ export default function BaDocuments() {
     setViewingId(doc.id);
     setViewingDoc(null);
     setDocExpanded(false);
+    setRejectMode(false);
+    setRejectReason("");
     setLoadingView(true);
     getRequirementDocumentDetail(doc.id)
       .then(setViewingDoc)
@@ -186,6 +192,22 @@ export default function BaDocuments() {
       notify(err?.message || "Couldn't approve this document.", { type: "error" });
     } finally {
       setApprovingId(null);
+    }
+  };
+
+  const reject = async (e) => {
+    e.preventDefault();
+    if (!viewingDoc || !rejectReason.trim()) return;
+    setRejecting(true);
+    try {
+      await rejectRequirementDocument(viewingDoc.id, rejectReason.trim());
+      notify(`"${viewingDoc.title}" rejected — a new version will need to be submitted.`, { type: "success" });
+      setViewingId(null);
+      loadDocs(projectId);
+    } catch (err) {
+      notify(err?.message || "Couldn't reject this document.", { type: "error" });
+    } finally {
+      setRejecting(false);
     }
   };
 
@@ -238,7 +260,12 @@ export default function BaDocuments() {
               { key: "docType", header: "Type", className: "text-left", render: (r) => <Badge tone={typeTone(r.docType)}>{r.docType.replace("_", " ")}</Badge> },
               { key: "title", header: "Title", className: "text-left font-medium text-ink-900" },
               { key: "version", header: "Version", className: "text-left font-mono text-xs", render: (r) => <span className="bg-cream-100 px-2 py-0.5 rounded font-semibold text-ink-800">v{r.version}</span> },
-              { key: "status", header: "Sign-off", className: "text-left", render: (r) => <ApprovalSlots approvals={r.approvals} /> },
+              {
+                key: "status", header: "Sign-off", className: "text-left",
+                render: (r) => r.status === "REJECTED"
+                  ? <Badge tone="error" title={r.rejectionReason}>Rejected by {r.rejectedByName}</Badge>
+                  : <ApprovalSlots approvals={r.approvals} />,
+              },
               { key: "authoredByName", header: "Authored by", className: "text-left text-xs text-ink-500" },
               {
                 key: "devReview", header: "Dev Check", className: "text-left",
@@ -251,7 +278,7 @@ export default function BaDocuments() {
                 render: (r) => (
                   <div className="flex gap-2 justify-end">
                     <Button size="sm" variant="secondary" icon={Eye} onClick={() => openView(r)}>View</Button>
-                    {r.status !== "APPROVED" && r.authoredByUuid !== user?.uuid && (
+                    {r.status !== "APPROVED" && r.status !== "REJECTED" && (
                       <Button size="sm" icon={ShieldCheck} loading={approvingId === r.id} onClick={() => approve(r)}>Sign off as BA</Button>
                     )}
                   </div>
@@ -320,27 +347,56 @@ export default function BaDocuments() {
         title={viewingDoc?.title || "Document"}
         size={docExpanded ? "full" : "lg"}
         footer={
-          <div className="flex justify-between w-full items-center gap-3">
-            {viewingDoc && <ApprovalSlots approvals={viewingDoc.approvals} />}
-            <div className="flex gap-2 shrink-0">
-              <Button
-                variant="secondary"
-                icon={Download}
-                disabled={!viewingDoc}
-                onClick={() => downloadTextFile(viewingDoc.title || "document", viewingDoc.content)}
-              >
-                Download
+          rejectMode ? (
+            <>
+              <Button variant="secondary" onClick={() => setRejectMode(false)}>Back</Button>
+              <Button variant="danger" icon={XCircle} loading={rejecting} disabled={!rejectReason.trim()} onClick={reject}>
+                Confirm Rejection
               </Button>
-              {viewingDoc && viewingDoc.status !== "APPROVED" && viewingDoc.authoredByUuid !== user?.uuid && (
-                <Button icon={ShieldCheck} loading={approvingId === viewingDoc.id} onClick={() => approve(viewingDoc)}>Sign off as BA</Button>
-              )}
-              <Button variant="secondary" onClick={() => setViewingId(null)}>Close</Button>
+            </>
+          ) : (
+            <div className="flex justify-between w-full items-center gap-3">
+              {viewingDoc && viewingDoc.status !== "REJECTED" && <ApprovalSlots approvals={viewingDoc.approvals} />}
+              <div className="flex gap-2 shrink-0 ml-auto">
+                <Button
+                  variant="secondary"
+                  icon={Download}
+                  disabled={!viewingDoc}
+                  onClick={() => downloadTextFile(viewingDoc.title || "document", viewingDoc.content)}
+                >
+                  Download
+                </Button>
+                {viewingDoc && viewingDoc.status !== "APPROVED" && viewingDoc.status !== "REJECTED" && (
+                  <>
+                    <Button variant="secondary" icon={XCircle} onClick={() => setRejectMode(true)}>Reject</Button>
+                    <Button icon={ShieldCheck} loading={approvingId === viewingDoc.id} onClick={() => approve(viewingDoc)}>Sign off as BA</Button>
+                  </>
+                )}
+                <Button variant="secondary" onClick={() => setViewingId(null)}>Close</Button>
+              </div>
             </div>
-          </div>
+          )
         }
       >
         {loadingView ? (
           <div className="flex justify-center py-12"><LoadingSpinner label="Loading document…" /></div>
+        ) : rejectMode ? (
+          <form className="flex flex-col gap-4 text-left font-sans" onSubmit={reject}>
+            <p className="text-sm text-ink-600">
+              Rejecting <span className="font-semibold text-ink-900">"{viewingDoc.title}"</span> — this kills the
+              document immediately, even if other parties already signed off. {viewingDoc.authoredByName} will need
+              to submit a revised version; this one can't be edited in place.
+            </p>
+            <Textarea
+              label="Reason for rejection"
+              required
+              autoFocus
+              rows={4}
+              placeholder="e.g. Missing the reporting requirements the client called out on the kickoff call."
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+            />
+          </form>
         ) : viewingDoc && (
           <div className={`flex flex-col gap-4 text-left font-sans ${docExpanded ? "h-full" : ""}`}>
             <div className="flex justify-between items-start border-b border-border pb-3">
@@ -356,9 +412,16 @@ export default function BaDocuments() {
                 {docExpanded ? "Shrink" : "Full screen"}
               </Button>
             </div>
-            {viewingDoc.status !== "APPROVED" && viewingDoc.authoredByUuid === user?.uuid && (
+            {viewingDoc.status === "REJECTED" && (
+              <div className="bg-error-50 border border-error-200 rounded-lg px-3 py-2.5">
+                <p className="text-xs font-semibold text-error-700">Rejected by {viewingDoc.rejectedByName}</p>
+                <p className="text-xs text-error-600 mt-1 italic">"{viewingDoc.rejectionReason}"</p>
+              </div>
+            )}
+            {viewingDoc.status !== "APPROVED" && viewingDoc.status !== "REJECTED" && viewingDoc.authoredByUuid === user?.uuid && (
               <p className="text-xs text-ink-500 bg-cream-50 border border-border rounded-lg px-3 py-2">
-                You authored this document — another Business Analyst needs to sign off the BA slot.
+                You authored this document — if another Business Analyst is on staff, they need to sign off the BA
+                slot instead of you.
               </p>
             )}
             <div className={`p-4 bg-cream-50 rounded-lg border border-border text-sm leading-relaxed text-ink-800 whitespace-pre-wrap overflow-y-auto ${docExpanded ? "flex-1" : "max-h-[50vh]"}`}>
