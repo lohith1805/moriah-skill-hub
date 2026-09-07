@@ -163,8 +163,30 @@ export async function saveRecruitments(list) {
   _snapshot = (list || []).map((r) => ({ ...r }));
 }
 
-// Offer-letter document artifacts stay client-local (the backend stores the
-// offer *text* in placement details, not a rendered letter object).
+// A placement's offer-letter fields -> the shape renderTemplateText() expects.
+// HR writes offerType / offerCtc / offerDesignation / offerDepartment /
+// offerTrack / offerClientName into Placement.details when it generates the
+// letter (see hr/Documents.jsx handleGenerate); the client and the student read
+// them straight off the placement record, so all three parties see the same
+// letter text from the backend — no per-browser doc store.
+export function offerFieldsFor(record) {
+  if (!record) return null;
+  return {
+    type: record.offerType || "placement_confirmation",
+    name: record.candidateName || "",
+    date: String(record.offerCreatedAt || record.updatedAt || new Date().toISOString()).slice(0, 10),
+    id: String(record.id ?? ""),
+    track: record.offerTrack || record.track || "Full Stack Engineering",
+    designation: record.offerDesignation || "Software Engineer",
+    department: record.offerDepartment || "Technology",
+    ctc: record.offerCtc || record.ctc || "₹6,00,000 / annum",
+    clientName: record.offerClientName || record.clientName || "the recruiting company",
+  };
+}
+
+// HR's own offer-letter ledger view stays client-local (the backend stores the
+// offer *fields* in placement details, not a rendered letter object). The client
+// and student pages no longer read this — they use offerFieldsFor() above.
 export function loadDocs() {
   try {
     const raw = localStorage.getItem(DOCS_KEY);

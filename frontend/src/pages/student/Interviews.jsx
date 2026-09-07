@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CalendarClock, Video, Briefcase, CalendarX2, ThumbsUp, ThumbsDown, FileSignature, ShieldCheck, UploadCloud, CheckCircle2, Users, Eye, Download } from "lucide-react";
+import { CalendarClock, Video, Briefcase, CalendarX2, FileSignature, ShieldCheck, UploadCloud, CheckCircle2, Users, Eye, Download } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
 import Badge from "../../components/ui/Badge";
@@ -11,9 +11,10 @@ import FileUpload from "../../components/ui/FileUpload";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
 import {
-  REJECTED, stageTone, stageIndex, stageMessage, loadRecruitments, saveRecruitments, loadDocs, saveDocs,
-  freshDocumentChecklist, REQUIRED_DOCUMENTS, fileToDataURL
+  REJECTED, stageTone, stageIndex, stageMessage, loadRecruitments, saveRecruitments,
+  freshDocumentChecklist, REQUIRED_DOCUMENTS, fileToDataURL, offerFieldsFor
 } from "../../utils/placementPipeline";
+import { advancePlacement } from "../../services/placementService";
 import { renderTemplateText } from "../../utils/letterTemplates";
 import { downloadPdf } from "../../utils/pdf";
 
@@ -56,31 +57,9 @@ export default function StudentInterviews() {
     load();
   }, [user]);
 
-  // Student Approval step: candidate reviews the (already client-signed)
-  // offer and decides to move forward or decline.
-  const handleApproval = (id, decision) => {
-    const updated = interviews.map((r) => {
-      if (r.id !== id) return r;
-      if (decision === "approve") {
-        return { ...r, stage: "Student Signed", studentApprovalStatus: "Approved" };
-      }
-      return { ...r, stage: REJECTED, rejectedAt: "Offer Letter Created", studentApprovalStatus: "Rejected" };
-    });
-    saveRecruitments(updated);
-    setInterviews(updated);
-    notify(
-      decision === "approve"
-        ? "Offer approved — add your digital signature to finish."
-        : "Offer declined.",
-      { type: decision === "approve" ? "success" : "info" }
-    );
-    setViewingOffer(null);
-  };
-
   // Lets the student download a copy of the offer letter for their own records.
   const downloadOfferLetter = (record) => {
-    const doc = loadDocs().find((d) => d.id === record?.offerDocId);
-    const text = doc ? renderTemplateText(doc) : "Offer letter not found.";
+    const text = renderTemplateText(offerFieldsFor(record)) || "Offer letter not found.";
     const name = (record?.candidateName || "candidate").toLowerCase().replace(/\s+/g, "_");
     downloadPdf(`offer_letter_${name}`, "Offer Letter", [
       { lines: text.split(/\n{2,}/).flatMap((p) => [p.trim(), ""]) },
@@ -88,32 +67,33 @@ export default function StudentInterviews() {
     notify("Downloading your offer letter…", { type: "info" });
   };
 
-  // Final step: student e-signs, and the system automatically marks the
-  // placement Completed/Placed. This is the ONLY path that can produce
-  // stage "Placed" — it can never be reached directly from interview
-  // approval, since Document Verification, Placement Confirmation, the
-  // offer letter, and both signatures all have to happen first.
-  const handleSign = () => {
+  // Review & sign: the candidate reviews the client-signed offer and adds their
+  // own digital signature. This is the ONLY path that produces STUDENT_SIGNED,
+  // and it can only run from CLIENT_SIGNED (Document Verification, the offer
+  // letter and the client's signature all had to happen first). Backend enforces
+  // that only this candidate may set STUDENT_SIGNED. There is no student "reject"
+  // — the backend only lets the client or HR move a placement to REJECTED.
+  const [signing, setSigning] = useState(false);
+  const handleSign = async () => {
     if (!signingOffer) return;
-    const docs = loadDocs();
-    const updatedDocs = docs.map((d) =>
-      d.id === signingOffer.offerDocId ? { ...d, signStatus: "Digitally Signed", signedAt: new Date().toISOString() } : d
-    );
-    saveDocs(updatedDocs);
-
-    const updated = interviews.map((r) =>
-      r.id === signingOffer.id
-        ? { ...r, stage: "Student Signed", studentSignedAt: new Date().toISOString() }
-        : r
-    );
-    saveRecruitments(updated);
-    setInterviews(updated);
-    notify("Digital signature captured — HR will finalise your placement.", { type: "success", title: "Signed" });
-    setSigningOffer(null);
+    setSigning(true);
+    try {
+      await advancePlacement(signingOffer.id, "Student Signed", {
+        studentSignedAt: new Date().toISOString(),
+        studentApprovalStatus: "Approved",
+      });
+      notify("Digital signature captured — HR will finalise your placement.", { type: "success", title: "Signed" });
+      setSigningOffer(null);
+      load();
+    } catch (e) {
+      notify(e?.message || "Couldn't record your signature. Please try again.", { type: "error" });
+    } finally {
+      setSigning(false);
+    }
   };
 
-  const offerDoc = signingOffer ? loadDocs().find((d) => d.id === signingOffer.offerDocId) : null;
-  const viewingOfferDoc = viewingOffer ? loadDocs().find((d) => d.id === viewingOffer.offerDocId) : null;
+  const offerDoc = offerFieldsFor(signingOffer);
+  const viewingOfferDoc = offerFieldsFor(viewingOffer);
 
   // Document Verification step: the student uploads their own resume, ID
   // proof and education certificates here so HR has something to actually
@@ -239,10 +219,10 @@ export default function StudentInterviews() {
                       <Button size="sm" variant={anyDocRejected ? "danger" : "primary"} icon={UploadCloud} onClick={() => openUpload(i)}>
                         {anyDocRejected ? "Re-upload Rejected Documents" : allStudentDocsUploaded ? "Update Documents" : "Upload Documents"}
                       </Button>
+                    ) : i.stage === "Client Signed" ? (
+                      <Button icon={FileSignature} onClick={() => setSigningOffer(i)}>Review &amp; Sign Offer</Button>
                     ) : i.stage === "Student Signed" ? (
                       <Button size="sm" icon={Eye} onClick={() => setViewingOffer(i)}>View Offer Letter</Button>
-                    ) : i.stage === "__never_student_signature__" ? (
-                      <Button icon={FileSignature} onClick={() => setSigningOffer(i)}>Sign Offer Letter</Button>
                     ) : i.stage === "Placed" ? (
                       <span className="text-xs text-success-600 font-medium flex items-center gap-1"><ShieldCheck size={14} /> Placement completed</span>
                     ) : i.stage === REJECTED ? (
@@ -368,8 +348,8 @@ export default function StudentInterviews() {
           <div className="flex justify-between w-full items-center">
             <Button variant="secondary" icon={Download} onClick={() => downloadOfferLetter(signingOffer)}>Download</Button>
             <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => setSigningOffer(null)}>Cancel</Button>
-              <Button icon={ShieldCheck} onClick={handleSign}>Digitally Sign & Complete Placement</Button>
+              <Button variant="secondary" onClick={() => setSigningOffer(null)} disabled={signing}>Cancel</Button>
+              <Button icon={ShieldCheck} loading={signing} onClick={handleSign}>Digitally Sign & Accept</Button>
             </div>
           </div>
         }
@@ -377,7 +357,7 @@ export default function StudentInterviews() {
         {signingOffer && (
           <div className="flex flex-col gap-4 text-left font-sans">
             <p className="text-sm text-ink-500">
-              This offer letter has already been reviewed and signed by <strong>{signingOffer.clientName || "the recruiting company"}</strong>. Add your digital signature below to finalize your placement.
+              This offer letter has already been reviewed and signed by <strong>{signingOffer.clientName || "the recruiting company"}</strong>. Review it and add your digital signature below to accept and finalise your placement.
             </p>
             <div className="whitespace-pre-line font-mono text-xs leading-relaxed text-ink-800 bg-cream-50/50 p-4 rounded-lg border border-border/80">
               {offerDoc ? renderTemplateText(offerDoc) : "Offer letter not found."}
@@ -386,26 +366,23 @@ export default function StudentInterviews() {
         )}
       </Modal>
 
-      {/* Offer Letter Preview — Student Approval step: view, download, accept or reject */}
+      {/* Offer Letter — read-only view once the student has signed */}
       <Modal
         open={!!viewingOffer}
         onClose={() => setViewingOffer(null)}
         title="Your Offer Letter"
         size="lg"
         footer={
-          <div className="flex justify-between w-full items-center">
-            <Button variant="danger" icon={ThumbsDown} onClick={() => handleApproval(viewingOffer.id, "reject")}>Reject</Button>
-            <div className="flex gap-2">
-              <Button variant="secondary" icon={Download} onClick={() => downloadOfferLetter(viewingOffer)}>Download</Button>
-              <Button icon={ThumbsUp} onClick={() => handleApproval(viewingOffer.id, "approve")}>Accept Offer</Button>
-            </div>
+          <div className="flex justify-end w-full items-center gap-2">
+            <Button variant="secondary" icon={Download} onClick={() => downloadOfferLetter(viewingOffer)}>Download</Button>
+            <Button variant="secondary" onClick={() => setViewingOffer(null)}>Close</Button>
           </div>
         }
       >
         {viewingOffer && (
           <div className="flex flex-col gap-4 text-left font-sans">
             <p className="text-sm text-ink-500">
-              Congratulations! <strong>{viewingOffer.clientName || "The recruiting company"}</strong> has sent you a placement offer. Review it below, then download a copy, accept to move on to signing, or reject if you'd like to decline.
+              You've signed this offer from <strong>{viewingOffer.clientName || "the recruiting company"}</strong>. HR will finalise your placement — your copy is below.
             </p>
             <div className="whitespace-pre-line font-mono text-xs leading-relaxed text-ink-800 bg-cream-50/50 p-4 rounded-lg border border-border/80">
               {viewingOfferDoc ? renderTemplateText(viewingOfferDoc) : "Offer letter not found."}

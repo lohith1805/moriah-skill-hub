@@ -191,12 +191,25 @@ export default function HrDocuments() {
     persistDocs(updatedDocs);
 
     // If this letter was generated from the placement pipeline (Placement
-    // Confirmed -> Offer Letter Created step), link it back so the
-    // pipeline can progress and Client Review & Signature can find it.
+    // Confirmed -> Offer Letter Created step), write the letter's fields into
+    // the placement itself (Placement.details, via persistRecruitments ->
+    // advancePlacement) so the Client and the Student render the exact same
+    // letter from the backend — offerFieldsFor() reads these keys.
     if (values.recruitmentId) {
       const updatedRecruitments = recruitments.map((r) =>
         r.id === values.recruitmentId
-          ? { ...r, stage: "Offer Letter Created", offerDocId: newDoc.id, offerLetterCreatedAt: new Date().toISOString(), ctc: values.ctc }
+          ? {
+              ...r,
+              stage: "Offer Letter Created",
+              offerType: values.type,
+              offerCtc: values.ctc,
+              offerDesignation: values.designation,
+              offerDepartment: values.department,
+              offerTrack: values.track,
+              offerClientName: values.clientName || undefined,
+              offerCreatedAt: new Date().toISOString(),
+              ctc: values.ctc,
+            }
           : r
       );
       persistRecruitments(updatedRecruitments);
@@ -228,50 +241,16 @@ export default function HrDocuments() {
     setModalOpen(true);
   };
 
-  const simulateCandidateSign = (docId) => {
-    const target = docs.find((d) => d.id === docId);
-    const updated = docs.map((d) => (d.id === docId ? { ...d, signStatus: "Digitally Signed", signedAt: new Date().toISOString() } : d));
-    persistDocs(updated);
-    notify("Digital signature captured successfully with audit timestamp.", { type: "success" });
-    if (viewingDoc && viewingDoc.id === docId) {
-      setViewingDoc({ ...viewingDoc, signStatus: "Digitally Signed", signedAt: new Date().toISOString() });
-    }
-    // If this letter is tied to a placement in "Student Signature", mirror
-    // the same completion the student would trigger themselves.
-    if (target?.recruitmentId) {
-      const updatedRecruitments = recruitments.map((r) =>
-        r.id === target.recruitmentId && r.stage === "Student Signature"
-          ? { ...r, stage: "Placed", studentSignedAt: new Date().toISOString() }
-          : r
-      );
-      persistRecruitments(updatedRecruitments);
-    }
-  };
-
-  // Ledger-level Approve / Reject — mirrors the Client Review & Signature
-  // decision so HR can action it directly from the Offer Letters tab too.
-  const handleLedgerApprove = (doc) => {
-    const updatedDocs = docs.map((d) => (d.id === doc.id ? { ...d, clientSignStatus: "Signed", clientSignedAt: new Date().toISOString() } : d));
-    persistDocs(updatedDocs);
-    if (doc.recruitmentId) {
-      const updatedRecruitments = recruitments.map((r) =>
-        r.id === doc.recruitmentId ? { ...r, stage: "Client Signed", clientSignedAt: new Date().toISOString() } : r
-      );
-      persistRecruitments(updatedRecruitments);
-    }
-    notify("Offer letter approved & signed on the client's behalf — sent to the candidate.", { type: "success" });
-  };
-
-  const handleLedgerReject = (doc) => {
-    const updatedDocs = docs.map((d) => (d.id === doc.id ? { ...d, clientSignStatus: "Rejected" } : d));
-    persistDocs(updatedDocs);
-    if (doc.recruitmentId) {
-      const updatedRecruitments = recruitments.map((r) =>
-        r.id === doc.recruitmentId ? { ...r, stage: REJECTED, rejectedAt: "Offer Letter Created" } : r
-      );
-      persistRecruitments(updatedRecruitments);
-    }
-    notify("Offer letter rejected.", { type: "info" });
+  // HR's final step: once the client and the student have both signed their own
+  // offer letter (backend-authorized actions on their own dashboards), HR marks
+  // the placement complete. This is the only path to the terminal PLACED stage.
+  const markPlacementComplete = (recruitmentId) => {
+    const target = recruitments.find((r) => r.id === recruitmentId);
+    const updated = recruitments.map((r) =>
+      r.id === recruitmentId ? { ...r, stage: "Placed" } : r
+    );
+    persistRecruitments(updated);
+    notify(`Placement finalised for ${target?.candidateName}. 🎉`, { type: "success", title: "Placed" });
   };
 
   const triggerUpload = (doc) => {
@@ -505,6 +484,7 @@ export default function HrDocuments() {
   const verifiedAwaitingPlacement = recruitments.filter((r) => r.stage === "Document Verification" && r.docsVerifiedAt && !r.placementConfirmedAt);
   const placementConfirmedAwaitingOffer = recruitments.filter((r) => r.stage === "Document Verification" && r.placementConfirmedAt);
   const offerCreatedAwaitingSend = recruitments.filter((r) => r.stage === "Offer Letter Created");
+  const bothSignedAwaitingPlacement = recruitments.filter((r) => r.stage === "Student Signed");
 
   return (
     <div className="flex flex-col gap-6">
@@ -870,6 +850,25 @@ export default function HrDocuments() {
                     />
                   </Card>
                 )}
+
+                {bothSignedAwaitingPlacement.length > 0 && (
+                  <Card>
+                    <div className="px-1 pb-4 text-left">
+                      <h3 className="font-display font-semibold text-ink-900">Both Parties Signed — Awaiting Final Confirmation</h3>
+                      <p className="text-xs text-ink-500">The client and the candidate have signed the offer letter. Mark the placement complete to finish.</p>
+                    </div>
+                    <Table
+                      data={bothSignedAwaitingPlacement}
+                      columns={[
+                        { key: "candidateName", header: "Candidate", className: "text-left font-medium text-ink-900" },
+                        { key: "clientName", header: "Recruiting Company", className: "text-left", render: (r) => r.clientName || "—" },
+                        { key: "action", header: "", className: "text-right", render: (r) => (
+                          <Button size="sm" icon={CheckCircle2} onClick={() => markPlacementComplete(r.id)}>Mark Placement Complete</Button>
+                        ) },
+                      ]}
+                    />
+                  </Card>
+                )}
               </div>
             )}
 
@@ -973,9 +972,6 @@ export default function HrDocuments() {
                             <Button size="sm" variant="secondary" icon={Eye} onClick={() => setViewingDoc(r)}>View</Button>
                             <Button size="sm" variant="secondary" icon={Download} onClick={() => downloadDocument(r)}>Download</Button>
                             <Button size="sm" variant="secondary" icon={UploadCloud} onClick={() => triggerUpload(r)}>Upload</Button>
-                            <Button size="sm" variant="secondary" icon={ThumbsUp} onClick={() => handleLedgerApprove(r)}>Approve</Button>
-                            <Button size="sm" variant="secondary" icon={ThumbsDown} onClick={() => handleLedgerReject(r)}>Reject</Button>
-                            <Button size="sm" variant="secondary" icon={ShieldCheck} onClick={() => simulateCandidateSign(r.id)}>Sign</Button>
                             <Button size="sm" variant="danger" icon={Trash2} onClick={() => handleDelete(r.id)}>Delete</Button>
                           </div>
                         )
@@ -1153,12 +1149,12 @@ export default function HrDocuments() {
         size="lg"
         footer={
           <div className="flex justify-between w-full items-center">
-            {viewingDoc?.signStatus !== "Digitally Signed" ? (
-              <Button size="sm" icon={ShieldCheck} onClick={() => simulateCandidateSign(viewingDoc.id)}>
-                Simulate Candidate e-Sign
-              </Button>
-            ) : (
+            {viewingDoc?.signStatus === "Digitally Signed" ? (
               <Badge tone="success">✅ Verified Tamper-Proof Signature</Badge>
+            ) : (
+              <span className="text-xs text-ink-400">
+                The client and student sign this on their own dashboards.
+              </span>
             )}
             <div className="flex gap-2">
               <Button variant="secondary" onClick={() => setViewingDoc(null)}>Close</Button>

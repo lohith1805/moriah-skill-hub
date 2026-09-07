@@ -20,7 +20,7 @@ import { useAuth } from "../../context/AuthContext";
 import { validateForm, required, isUrl } from "../../utils/validators";
 import {
   REJECTED, stageTone, stageMessage,
-  loadRecruitments, saveRecruitments, loadDocs, saveDocs
+  loadRecruitments, saveRecruitments, offerFieldsFor
 } from "../../utils/placementPipeline";
 import { renderTemplateText } from "../../utils/letterTemplates";
 
@@ -306,14 +306,6 @@ export default function ClientTalentPool() {
   // signature) or rejects it outright, which is terminal.
   const handleClientOfferDecision = (decision) => {
     if (!reviewingOffer) return;
-    const docs = loadDocs();
-    const updatedDocs = docs.map((d) =>
-      d.id === reviewingOffer.offerDocId
-        ? { ...d, clientSignStatus: decision === "approve" ? "Signed" : "Rejected", clientSignedAt: new Date().toISOString() }
-        : d
-    );
-    saveDocs(updatedDocs);
-
     const updated = recruitments.map((r) => {
       if (r.id !== reviewingOffer.id) return r;
       if (decision === "approve") {
@@ -333,7 +325,7 @@ export default function ClientTalentPool() {
     setReviewingOffer(null);
   };
 
-  const offerDoc = reviewingOffer ? loadDocs().find((d) => d.id === reviewingOffer.offerDocId) : null;
+  const offerDoc = offerFieldsFor(reviewingOffer);
 
   return (
     <div>
