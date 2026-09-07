@@ -198,6 +198,7 @@ function toFeEmployee(e) {
     hourlyRate: e.hourlyRate != null ? Number(e.hourlyRate) : null,
     reportingManagerId: e.reportingManagerId ?? null,
     status: e.status,
+    provisioningStatus: e.provisioningStatus || "CONFIRMED", // PENDING_HR until HR fills + approves
   };
 }
 
@@ -208,6 +209,34 @@ export async function getEmployees({ status, department, search } = {}) {
   if (search) params.search = search;
   const res = await apiClient.get("/hr/employees", Object.keys(params).length ? params : undefined);
   return asRows(res).map(toFeEmployee);
+}
+
+// GET /api/v1/hr/employees/pending — records auto-created on invite-accept that HR
+// still has to fill in and approve.
+export async function getPendingEmployeeRecords() {
+  const res = await apiClient.get("/hr/employees/pending", { size: 100 });
+  return asRows(res).map(toFeEmployee);
+}
+
+// PUT /api/v1/hr/employees/{id} — fill in / correct an employee record. Pass
+// confirm: true to also approve it (PENDING_HR -> CONFIRMED). Send exactly one of
+// baseSalary / hourlyRate.
+export async function updateEmployee(id, input) {
+  const salaried = input.compensationMode !== "HOURLY";
+  const body = {
+    department: (input.department || "").trim(),
+    designation: (input.designation || "").trim(),
+    employmentType: input.employmentType || "FULL_TIME",
+    dateOfJoining: input.dateOfJoining,
+    baseSalary: salaried ? Number(input.baseSalary) || 0 : null,
+    hourlyRate: salaried ? null : Number(input.hourlyRate) || 0,
+    reportingManagerId:
+      input.reportingManagerId === "" || input.reportingManagerId == null
+        ? null
+        : Number(input.reportingManagerId),
+    confirm: !!input.confirm,
+  };
+  return toFeEmployee(await apiClient.put(`/hr/employees/${id}`, body));
 }
 
 // -- Exits ------------------------------------------------------------------

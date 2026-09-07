@@ -74,6 +74,7 @@ import HrPayroll from "../pages/hr/Payroll";
 import HrDocuments from "../pages/hr/Documents";
 import HrExitManagement from "../pages/hr/ExitManagement";
 import HrOnboarding from "../pages/hr/Onboarding";
+import HrPendingEmployeeRecords from "../pages/hr/PendingEmployeeRecords";
 
 // Business Analyst
 import BaDashboard from "../pages/ba/Dashboard";
@@ -191,6 +192,7 @@ export default function AppRoutes() {
           <Route path="/hr/payroll" element={<HrPayroll />} />
           <Route path="/hr/documents" element={<HrDocuments />} />
           <Route path="/hr/onboarding" element={<HrOnboarding />} />
+          <Route path="/hr/pending-records" element={<HrPendingEmployeeRecords />} />
           <Route path="/hr/exit" element={<HrExitManagement />} />
           <Route path="/hr/profile" element={<SharedProfile />} />
           <Route path="/hr/settings" element={<SharedSettings />} />
