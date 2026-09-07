@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { UserCheck, ClipboardCheck, ShieldCheck } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { ClipboardCheck, ShieldCheck, FileCheck2 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
 import Table from "../../components/ui/Table";
@@ -20,6 +21,7 @@ const humanize = (s) => (s || "").replace(/_/g, " ").toLowerCase().replace(/\b\w
 
 export default function HrPendingEmployeeRecords() {
   const { notify } = useToast();
+  const navigate = useNavigate();
   const [rows, setRows] = useState([]);
   const [managers, setManagers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -122,7 +124,13 @@ export default function HrPendingEmployeeRecords() {
               header: "",
               className: "text-right",
               render: (r) => (
-                <Button size="sm" icon={ClipboardCheck} onClick={() => openReview(r)}>Review &amp; Approve</Button>
+                <div className="flex gap-2 justify-end">
+                  <Button size="sm" variant="secondary" icon={FileCheck2}
+                    onClick={() => navigate(`/hr/employee-documents/${r.userUuid}`)}>
+                    Documents
+                  </Button>
+                  <Button size="sm" icon={ClipboardCheck} onClick={() => openReview(r)}>Review &amp; Approve</Button>
+                </div>
               ),
             },
           ]}

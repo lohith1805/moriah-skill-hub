@@ -24,6 +24,7 @@ import SharedProfile from "../pages/shared/Profile";
 import SharedSettings from "../pages/shared/Settings";
 import ClientProjectDocuments from "../pages/shared/ClientProjectDocuments";
 import ClientPreProjectDiscussions from "../pages/shared/ClientPreProjectDiscussions";
+import OnboardingDocuments from "../pages/shared/OnboardingDocuments";
 
 // Student
 import StudentDashboard from "../pages/student/Dashboard";
@@ -150,6 +151,7 @@ export default function AppRoutes() {
           <Route path="/trainer/pip" element={<TrainerPipManagement />} />
           <Route path="/trainer/graduation" element={<TrainerGraduation />} />
           <Route path="/trainer/resources" element={<TrainerResources />} />
+          <Route path="/trainer/onboarding-documents" element={<OnboardingDocuments />} />
           <Route path="/trainer/profile" element={<SharedProfile />} />
           <Route path="/trainer/settings" element={<SharedSettings />} />
         </Route>
@@ -167,6 +169,7 @@ export default function AppRoutes() {
           <Route path="/developer/video-lessons" element={<DeveloperVideoLessons />} />
           <Route path="/developer/assessment-bank" element={<DeveloperAssessmentBank />} />
           <Route path="/developer/resources" element={<DeveloperResources />} />
+          <Route path="/developer/onboarding-documents" element={<OnboardingDocuments />} />
           <Route path="/developer/profile" element={<SharedProfile />} />
           <Route path="/developer/settings" element={<SharedSettings />} />
         </Route>
@@ -179,6 +182,7 @@ export default function AppRoutes() {
           <Route path="/leads/pipeline" element={<LeadPipeline />} />
           <Route path="/leads/campaigns" element={<LeadCampaigns />} />
           <Route path="/leads/targets" element={<LeadTargets />} />
+          <Route path="/leads/onboarding-documents" element={<OnboardingDocuments />} />
           <Route path="/leads/profile" element={<SharedProfile />} />
           <Route path="/leads/settings" element={<SharedSettings />} />
         </Route>
@@ -193,6 +197,8 @@ export default function AppRoutes() {
           <Route path="/hr/documents" element={<HrDocuments />} />
           <Route path="/hr/onboarding" element={<HrOnboarding />} />
           <Route path="/hr/pending-records" element={<HrPendingEmployeeRecords />} />
+          <Route path="/hr/onboarding-documents" element={<OnboardingDocuments />} />
+          <Route path="/hr/employee-documents/:userUuid" element={<OnboardingDocuments />} />
           <Route path="/hr/exit" element={<HrExitManagement />} />
           <Route path="/hr/profile" element={<SharedProfile />} />
           <Route path="/hr/settings" element={<SharedSettings />} />
@@ -208,6 +214,7 @@ export default function AppRoutes() {
           <Route path="/ba/resource-planning" element={<BaResourcePlanning />} />
           <Route path="/ba/client-review" element={<BaClientReview />} />
           <Route path="/ba/meetings" element={<BaMeetings />} />
+          <Route path="/ba/onboarding-documents" element={<OnboardingDocuments />} />
           <Route path="/ba/profile" element={<SharedProfile />} />
           <Route path="/ba/settings" element={<SharedSettings />} />
         </Route>

@@ -12,6 +12,7 @@ public record EmployeeOnboardingResponse(
         Long employeeId,
         String employeeCode,
         String employeeName,
+        String employeeUserUuid,
         Long buddyId,
         LocalDate startDate,
         OnboardingStatus status,

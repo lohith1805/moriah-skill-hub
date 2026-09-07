@@ -313,6 +313,7 @@ function toFeOnboarding(o) {
     employeeId: o.employeeId,
     employeeCode: o.employeeCode || "",
     name: o.employeeName || "",
+    userUuid: o.employeeUserUuid || "",
     buddyId: o.buddyId ?? null,
     startDate: o.startDate || null,
     status: o.status,
@@ -510,14 +511,26 @@ export async function getHrDocuments({ status, userUuid, documentType } = {}) {
 }
 
 // POST /api/v1/hr/documents — multipart (field `file` PDF + `documentType`).
-export async function uploadHrDocument(file, documentType) {
+export async function uploadHrDocument(file, documentType, onBehalfOfUserUuid) {
+  const fields = { documentType: documentType || "OTHER" };
+  if (onBehalfOfUserUuid) fields.onBehalfOfUserUuid = onBehalfOfUserUuid; // HR uploading for a joiner (e.g. background check)
   const res = await apiClient.requestMultipart("/hr/documents", {
     method: "POST",
-    fields: { documentType: documentType || "OTHER" },
+    fields,
     files: { file },
   });
   return toFeHrDocument(res);
 }
+
+// The staff onboarding document set. First three are employee uploads; the
+// background check is uploaded by HR (onBehalfOfUserUuid). Codes match the
+// backend's HrDocumentService.ONBOARDING_DOC_TYPES.
+export const ONBOARDING_DOC_SECTIONS = [
+  { code: "ID_PROOF", label: "ID Proof", hint: "Aadhaar, Passport or Voter ID — single PDF", who: "EMPLOYEE" },
+  { code: "EDUCATION", label: "Education Certificate", hint: "Your highest degree certificate — PDF", who: "EMPLOYEE" },
+  { code: "NDA", label: "Signed NDA", hint: "The NDA from your offer, signed — PDF", who: "EMPLOYEE" },
+  { code: "BACKGROUND_CHECK", label: "Background Check", hint: "HR uploads the verification report", who: "HR" },
+];
 
 // PUT /api/v1/hr/documents/{id}/verify — feDecision "Verified" | "Rejected".
 export async function verifyHrDocument(id, feDecision, rejectionReason = "") {

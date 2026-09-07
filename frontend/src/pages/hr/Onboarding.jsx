@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { UserPlus, FileCheck, Edit } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { UserPlus, FileCheck, Edit, FileCheck2 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
 import Table from "../../components/ui/Table";
@@ -32,6 +33,7 @@ export default function HrOnboarding() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const { notify } = useToast();
+  const navigate = useNavigate();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [values, setValues] = useState({ employeeId: "", startDate: "", buddyUuid: "" });
@@ -203,6 +205,12 @@ export default function HrOnboarding() {
         title={editItem ? `Onboarding — ${editItem.name}` : "Onboarding"}
         footer={
           <>
+            {editItem?.userUuid && (
+              <Button variant="secondary" icon={FileCheck2}
+                onClick={() => navigate(`/hr/employee-documents/${editItem.userUuid}`)}>
+                Review Documents
+              </Button>
+            )}
             <Button variant="secondary" onClick={() => setEditItem(null)} disabled={saving}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
           </>

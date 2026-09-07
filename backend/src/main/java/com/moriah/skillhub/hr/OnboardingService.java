@@ -151,6 +151,7 @@ public class OnboardingService {
                 e.getId(),
                 e.getEmployeeCode(),
                 e.getUser().getFullName(),
+                e.getUser().getUuid(),
                 o.getBuddyId(),
                 o.getStartDate(),
                 o.getStatus(),

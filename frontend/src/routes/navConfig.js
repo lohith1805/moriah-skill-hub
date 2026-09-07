@@ -3,7 +3,7 @@ import {
   Users, CalendarClock, GitPullRequest, BarChart3, GraduationCap, FolderKanban, Bug, Library,
   Target, Megaphone, Trophy, Wallet, FileText, LogOut as LogOutIcon, FilePenLine,
   CalendarCheck, MonitorCheck, ShieldCheck, Settings2, ScrollText, FileBarChart, Briefcase, Rocket,
-  PlayCircle, Video, UserPlus, UserCheck,
+  PlayCircle, Video, UserPlus, UserCheck, FileCheck2,
 } from "lucide-react";
 import { ROLES } from "../utils/constants";
 
@@ -36,6 +36,7 @@ export const NAV_CONFIG = {
     { to: "/trainer/pip", label: "PIP Management", icon: AlertTriangle },
     { to: "/trainer/graduation", label: "Graduation Approval", icon: GraduationCap },
     { to: "/trainer/resources", label: "Resource Library", icon: Library },
+    { to: "/trainer/onboarding-documents", label: "Onboarding Documents", icon: FileCheck2 },
     { to: "/trainer/profile", label: "My Profile", icon: User },
     { to: "/trainer/settings", label: "Account Settings", icon: Settings2 },
   ],
@@ -49,6 +50,7 @@ export const NAV_CONFIG = {
     { to: "/developer/video-lessons", label: "Video Lessons", icon: PlayCircle },
     { to: "/developer/assessment-bank", label: "Assessment Bank", icon: ClipboardList },
     { to: "/developer/resources", label: "Resource Library", icon: Library },
+    { to: "/developer/onboarding-documents", label: "Onboarding Documents", icon: FileCheck2 },
     { to: "/developer/profile", label: "My Profile", icon: User },
     { to: "/developer/settings", label: "Account Settings", icon: Settings2 },
   ],
@@ -57,6 +59,7 @@ export const NAV_CONFIG = {
     { to: "/leads/pipeline", label: "Lead Pipeline", icon: Target },
     { to: "/leads/campaigns", label: "Campaigns", icon: Megaphone },
     { to: "/leads/targets", label: "Targets & Leaderboard", icon: Trophy },
+    { to: "/leads/onboarding-documents", label: "Onboarding Documents", icon: FileCheck2 },
     { to: "/leads/profile", label: "My Profile", icon: User },
     { to: "/leads/settings", label: "Account Settings", icon: Settings2 },
   ],
@@ -67,6 +70,7 @@ export const NAV_CONFIG = {
     { to: "/hr/documents", label: "Letters & Certifications", icon: FileText },
     { to: "/hr/pending-records", label: "Pending Employee Records", icon: UserCheck },
     { to: "/hr/onboarding", label: "Onboarding", icon: UserPlus },
+    { to: "/hr/onboarding-documents", label: "My Onboarding Documents", icon: FileCheck2 },
     { to: "/hr/exit", label: "Exit Management", icon: LogOutIcon },
     { to: "/hr/profile", label: "My Profile", icon: User },
     { to: "/hr/settings", label: "Account Settings", icon: Settings2 },
@@ -78,6 +82,7 @@ export const NAV_CONFIG = {
     { to: "/ba/resource-planning", label: "Sprint & Resource Planning", icon: BarChart3 },
     { to: "/ba/client-review", label: "Client Project Review", icon: MonitorCheck },
     { to: "/ba/meetings", label: "Client Pre-Project Discussions", icon: CalendarClock },
+    { to: "/ba/onboarding-documents", label: "Onboarding Documents", icon: FileCheck2 },
     { to: "/ba/profile", label: "My Profile", icon: User },
     { to: "/ba/settings", label: "Account Settings", icon: Settings2 },
   ],
