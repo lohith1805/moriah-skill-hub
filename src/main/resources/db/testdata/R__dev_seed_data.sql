@@ -262,17 +262,27 @@ WHERE NOT EXISTS (
     WHERE s.agent_id = (SELECT id FROM users WHERE email = 'sales@moriah.test')
       AND s.period_month = DATE_FORMAT(CURDATE(), '%Y-%m-01'));
 
--- ---- Two employee records (HR + payroll testing) -----------------------------------
+-- ---- Employee records for every non-student staff role -----------------------------
+--   HR + payroll testing needs these, and (feature: self-service attendance / leave)
+--   the check-in and Apply-for-Leave widgets 404 for any staff user without an
+--   `employees` row. So the HR / Developer / BA / Lead Gen / Trainer seed users all
+--   get one, all reporting to the HR manager (EMP-0001).
 INSERT INTO employees (user_id, employee_code, department, designation, employment_type, date_of_joining, base_salary, status)
 SELECT u.id, 'EMP-0001', 'People', 'HR Manager', 'FULL_TIME', DATE_SUB(CURDATE(), INTERVAL 400 DAY), 90000.00, 'ACTIVE'
 FROM users u WHERE u.email = 'hr@moriah.test'
   AND NOT EXISTS (SELECT 1 FROM employees e WHERE e.user_id = u.id);
 
 INSERT INTO employees (user_id, employee_code, department, designation, employment_type, date_of_joining, base_salary, reporting_manager_id, status)
-SELECT u.id, 'EMP-0002', 'Engineering', 'Content Developer', 'FULL_TIME', DATE_SUB(CURDATE(), INTERVAL 200 DAY), 80000.00,
+SELECT u.id, v.code, v.dept, v.designation, 'FULL_TIME', DATE_SUB(CURDATE(), INTERVAL v.tenure_days DAY), v.salary,
        (SELECT id FROM employees WHERE employee_code = 'EMP-0001'), 'ACTIVE'
-FROM users u WHERE u.email = 'dev@moriah.test'
-  AND NOT EXISTS (SELECT 1 FROM employees e WHERE e.user_id = u.id);
+FROM (
+    SELECT 'dev@moriah.test'   AS email, 'EMP-0002' AS code, 'Engineering' AS dept, 'Content Developer'         AS designation, 200 AS tenure_days, 80000.00 AS salary
+    UNION ALL SELECT 'ba@moriah.test',    'EMP-0003', 'Product',  'Business Analyst',           180, 78000.00
+    UNION ALL SELECT 'sales@moriah.test', 'EMP-0004', 'Growth',   'Lead Generation Executive',  160, 55000.00
+    UNION ALL SELECT 'pm@moriah.test',    'EMP-0005', 'Training', 'Trainer / Program Manager',  300, 88000.00
+) v
+JOIN users u ON u.email = v.email
+WHERE NOT EXISTS (SELECT 1 FROM employees e WHERE e.user_id = u.id);
 
 -- =============================================================================================
 -- Expanded sample data (2026-09) — more students, batches, sprints/tasks, a question-bank
