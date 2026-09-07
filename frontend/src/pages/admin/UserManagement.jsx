@@ -256,10 +256,17 @@ export default function AdminUserManagement() {
 
     const before = users.find((u) => u.id === editingUserId) || {};
     try {
-      // Full name is the only field PUT /admin/users/{uuid} accepts. Email is
-      // immutable server-side (UpdateUserRequest omits it by design); role and
-      // status each have their own dedicated endpoint.
-      await updateUserRecord(editingUserId, { name: editValues.name });
+      // Full name is the only field this modal edits, but PUT /admin/users/{uuid}
+      // is a full replace of the profile block — carry the other fields through
+      // from the loaded row so a name edit doesn't blank phone/GitHub/LinkedIn.
+      // Email is immutable server-side (UpdateUserRequest omits it by design);
+      // role and status each have their own dedicated endpoint.
+      await updateUserRecord(editingUserId, {
+        name: editValues.name,
+        phone: before.phone,
+        githubUsername: before.githubUsername,
+        linkedinUrl: before.linkedinUrl,
+      });
 
       if (editValues.role && editValues.role !== before.role) {
         await updateUserRoles(editingUserId, [editValues.role]);
