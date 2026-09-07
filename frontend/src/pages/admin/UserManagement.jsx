@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   MoreVertical, Ban, CheckCircle2, Edit, UserPlus,
-  Building2, Copy, Check, XCircle, Mail, VolumeX, Trash2, Users2, Shuffle
+  Building2, Copy, Check, XCircle, Mail, Trash2, Users2, Shuffle
 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
@@ -15,10 +15,10 @@ import Tabs from "../../components/ui/Tabs";
 import EmptyState from "../../components/ui/EmptyState";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { Input, Select } from "../../components/ui/FormField";
-import { getAllUsers, updateUserRecord, deleteUserRecord, getStaffWorkload, assignClientProjectStaff } from "../../services/adminService";
+import { getAllUsers, updateUserRecord, updateUserRoles, updateUserStatus, deleteUserRecord, getStaffWorkload, assignClientProjectStaff } from "../../services/adminService";
 import { getPendingClients, setClientApproval, inviteStaffMember } from "../../services/authService";
 import { getClientProjects } from "../../services/clientService";
-import { ROLES, ROLE_LABELS } from "../../utils/constants";
+import { ROLES, ROLE_LABELS, ACCOUNT_STATUS } from "../../utils/constants";
 import { useToast } from "../../context/ToastContext";
 import { useDebounce } from "../../hooks/useDebounce";
 import { validateForm, required, isEmail } from "../../utils/validators";
@@ -26,6 +26,22 @@ import { validateForm, required, isEmail } from "../../utils/validators";
 const INVITABLE_ROLES = [
   ROLES.TRAINER, ROLES.DEVELOPER, ROLES.LEAD_GENERATOR, ROLES.HR, ROLES.BUSINESS_ANALYST, ROLES.ADMIN,
 ].map((r) => ({ value: r, label: ROLE_LABELS[r] }));
+
+// The backend UserStatus enum only has these lifecycle states. "Muted" was a
+// frontend-only fiction with no server support, so it's gone.
+const STATUS_LABEL = {
+  [ACCOUNT_STATUS.ACTIVE]: "Active",
+  [ACCOUNT_STATUS.SUSPENDED]: "Suspended",
+  [ACCOUNT_STATUS.TERMINATED]: "Terminated",
+  [ACCOUNT_STATUS.PENDING_VERIFICATION]: "Pending Verification",
+  [ACCOUNT_STATUS.INVITED]: "Invited",
+  [ACCOUNT_STATUS.PENDING_APPROVAL]: "Pending Approval",
+  [ACCOUNT_STATUS.REJECTED]: "Rejected",
+};
+const EDITABLE_STATUSES = [
+  { value: ACCOUNT_STATUS.ACTIVE, label: "Active" },
+  { value: ACCOUNT_STATUS.SUSPENDED, label: "Suspended" },
+];
 
 export default function AdminUserManagement() {
   const [users, setUsers] = useState([]);
@@ -38,7 +54,7 @@ export default function AdminUserManagement() {
   // Edit Account state
   const [editOpen, setEditOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState(null);
-  const [editValues, setEditValues] = useState({ name: "", email: "", role: "", status: "Active" });
+  const [editValues, setEditValues] = useState({ name: "", email: "", role: "", status: ACCOUNT_STATUS.ACTIVE });
 
   const [errors, setErrors] = useState({});
 
@@ -187,17 +203,6 @@ export default function AdminUserManagement() {
     loadUsers();
   }, []);
 
-  const persistUsers = (data) => {
-    setUsers(data);
-    // Only persist the admin-editable status override — identity fields
-    // (name/email/role) always come fresh from the registered-user list on
-    // next load, so they can't go stale here.
-    localStorage.setItem(
-      "msh_users_list",
-      JSON.stringify(data.map((u) => ({ id: u.id, status: u.status })))
-    );
-  };
-
   const filtered = users.filter((u) => {
     const matchesSearch = u.name.toLowerCase().includes(debouncedSearch.toLowerCase()) || u.email.toLowerCase().includes(debouncedSearch.toLowerCase());
     const matchesRole = !roleFilter || u.role === roleFilter;
@@ -205,9 +210,16 @@ export default function AdminUserManagement() {
   });
 
   const toggleStatus = async (user, targetStatus) => {
-    const updated = users.map((u) => (u.id === user.id ? { ...u, status: targetStatus } : u));
-    persistUsers(updated);
-    notify(`${user.name}'s account status set to ${targetStatus}.`, { type: targetStatus === "Suspended" ? "warning" : "success" });
+    try {
+      await updateUserStatus(user.id, targetStatus);
+      notify(
+        `${user.name}'s account status set to ${STATUS_LABEL[targetStatus] || targetStatus}.`,
+        { type: targetStatus === ACCOUNT_STATUS.ACTIVE ? "success" : "warning" }
+      );
+      loadUsers();
+    } catch (e) {
+      notify(e?.message || "Could not update the account status.", { type: "error" });
+    }
   };
 
   // Deleting is only offered once an account is Suspended — it's a
@@ -230,7 +242,7 @@ export default function AdminUserManagement() {
       name: user.name,
       email: user.email,
       role: user.role,
-      status: user.status || "Active"
+      status: user.status || ACCOUNT_STATUS.ACTIVE
     });
     setErrors({});
     setEditOpen(true);
@@ -238,36 +250,31 @@ export default function AdminUserManagement() {
 
   const handleEditSave = async (e) => {
     e.preventDefault();
-    const validation = validateForm(editValues, { name: [required], email: [required], role: [required] });
+    const validation = validateForm(editValues, { name: [required], role: [required] });
     setErrors(validation);
     if (Object.keys(validation).length) return;
 
-    // Name/email/role are identity fields on the real registered-user
-    // record, so they need to persist there — otherwise the next
-    // getAllUsers() refresh would silently discard them.
-    await updateUserRecord(editingUserId, {
-      name: editValues.name,
-      email: editValues.email,
-      role: editValues.role,
-    });
+    const before = users.find((u) => u.id === editingUserId) || {};
+    try {
+      // Full name is the only field PUT /admin/users/{uuid} accepts. Email is
+      // immutable server-side (UpdateUserRequest omits it by design); role and
+      // status each have their own dedicated endpoint.
+      await updateUserRecord(editingUserId, { name: editValues.name });
 
-    const updated = users.map((u) => {
-      if (u.id === editingUserId) {
-        return {
-          ...u,
-          name: editValues.name,
-          email: editValues.email,
-          role: editValues.role,
-          status: editValues.status
-        };
+      if (editValues.role && editValues.role !== before.role) {
+        await updateUserRoles(editingUserId, [editValues.role]);
       }
-      return u;
-    });
+      if (editValues.status && editValues.status !== before.status) {
+        await updateUserStatus(editingUserId, editValues.status);
+      }
 
-    persistUsers(updated);
-    notify("User account details updated.", { type: "success" });
-    setEditOpen(false);
-    setEditingUserId(null);
+      notify("User account details updated.", { type: "success" });
+      setEditOpen(false);
+      setEditingUserId(null);
+      loadUsers();
+    } catch (err) {
+      notify(err?.message || "Could not update the account.", { type: "error" });
+    }
   };
 
   return (
@@ -314,8 +321,8 @@ export default function AdminUserManagement() {
                   ) },
                   { key: "role", header: "Role", className: "text-left", render: (r) => <Badge tone="primary">{ROLE_LABELS[r.role] || r.role}</Badge> },
                   { key: "status", header: "Account Status", className: "text-left", render: (r) => (
-                    <Badge tone={r.status === "Suspended" ? "error" : r.status === "Muted" ? "warning" : "success"}>
-                      {r.status || "Active"}
+                    <Badge tone={r.status === ACCOUNT_STATUS.SUSPENDED || r.status === ACCOUNT_STATUS.TERMINATED ? "error" : r.status === ACCOUNT_STATUS.ACTIVE ? "success" : "warning"}>
+                      {STATUS_LABEL[r.status] || r.status || "Active"}
                     </Badge>
                   ) },
                   { key: "actions", header: "", className: "text-right", render: (r) => (
@@ -324,11 +331,10 @@ export default function AdminUserManagement() {
                       items={[
                         { label: "Edit account", icon: Edit, onClick: () => openEdit(r) },
                         { divider: true },
-                        r.status !== "Active" && { label: "Activate account", icon: CheckCircle2, onClick: () => toggleStatus(r, "Active") },
-                        r.status !== "Muted" && { label: "Mute (Read-Only)", icon: VolumeX, onClick: () => toggleStatus(r, "Muted") },
-                        r.status !== "Suspended" && { label: "Suspend account", icon: Ban, danger: true, onClick: () => toggleStatus(r, "Suspended") },
-                        r.status === "Suspended" && { divider: true },
-                        r.status === "Suspended" && { label: "Delete account", icon: Trash2, danger: true, onClick: () => setDeleteTarget(r) },
+                        r.status !== ACCOUNT_STATUS.ACTIVE && { label: "Activate account", icon: CheckCircle2, onClick: () => toggleStatus(r, ACCOUNT_STATUS.ACTIVE) },
+                        r.status !== ACCOUNT_STATUS.SUSPENDED && r.status !== ACCOUNT_STATUS.TERMINATED && { label: "Suspend account", icon: Ban, danger: true, onClick: () => toggleStatus(r, ACCOUNT_STATUS.SUSPENDED) },
+                        r.status === ACCOUNT_STATUS.SUSPENDED && { divider: true },
+                        r.status === ACCOUNT_STATUS.SUSPENDED && { label: "Delete account", icon: Trash2, danger: true, onClick: () => setDeleteTarget(r) },
                       ].filter(Boolean)}
                     />
                   ) },
@@ -483,10 +489,10 @@ export default function AdminUserManagement() {
       >
         <form className="flex flex-col gap-4 text-left font-sans" onSubmit={handleEditSave}>
           <Input label="Full Name" required value={editValues.name} onChange={(e) => setEditValues((v) => ({ ...v, name: e.target.value }))} error={errors.name} />
-          <Input label="Email Address" required type="email" value={editValues.email} onChange={(e) => setEditValues((v) => ({ ...v, email: e.target.value }))} error={errors.email} />
+          <Input label="Email Address" type="email" value={editValues.email} disabled hint="Email can't be changed here." />
           <div className="grid sm:grid-cols-2 gap-4">
-            <Select label="Role" required options={Object.entries(ROLE_LABELS).map(([value, label]) => ({ value, label }))} value={editValues.role} onChange={(e) => setEditValues((v) => ({ ...v, role: e.target.value }))} />
-            <Select label="Status" options={[{ value: "Active", label: "Active" }, { value: "Muted", label: "Muted (Read-Only)" }, { value: "Suspended", label: "Suspended" }]} value={editValues.status} onChange={(e) => setEditValues((v) => ({ ...v, status: e.target.value }))} />
+            <Select label="Role" required options={Object.entries(ROLE_LABELS).map(([value, label]) => ({ value, label }))} value={editValues.role} onChange={(e) => setEditValues((v) => ({ ...v, role: e.target.value }))} error={errors.role} />
+            <Select label="Status" options={EDITABLE_STATUSES} value={editValues.status} onChange={(e) => setEditValues((v) => ({ ...v, status: e.target.value }))} />
           </div>
         </form>
       </Modal>

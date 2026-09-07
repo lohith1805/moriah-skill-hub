@@ -11,7 +11,7 @@ import FileUpload from "../../components/ui/FileUpload";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
-import { getPerformanceSummary, getMyTasks, getMyPipStatus, getVideoLessons, getResumeStatus, saveResumeFile, getMySubscription, getMyBatch, getMyStandups, getMyAttendance } from "../../services/studentService";
+import { getPerformanceSummary, getMyTasks, getMyPipStatus, getVideoLessons, saveResumeFile, getMyResumeUrl, getMySubscription, getMyBatch, getMyStandups, getMyAttendance } from "../../services/studentService";
 import { loadRecruitments, stageTone, stageMessage, REJECTED } from "../../utils/placementPipeline";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { Input } from "../../components/ui/FormField";
@@ -77,9 +77,12 @@ export default function StudentDashboard() {
     loadStandup();
   }, []);
 
-  // Resume upload — required before the student becomes eligible for
-  // client job opportunities (see HR Exit → Client Talent Pool handoff).
-  const [resume, setResume] = useState(user?.profileDetails?.resume || null);
+  // Resume upload — required before the student becomes eligible for client
+  // job opportunities. The real state is GET /api/v1/users/me/resume: a
+  // presigned URL means one is on file, null means it isn't. (There is no
+  // user.profileDetails.resume anywhere — that old reference was always
+  // undefined, so the banner used to be stuck on "Not Uploaded".)
+  const [resumeUrl, setResumeUrl] = useState(null);
   const [resumeModalOpen, setResumeModalOpen] = useState(false);
   const [pendingResumeFile, setPendingResumeFile] = useState([]);
   const [savingResume, setSavingResume] = useState(false);
@@ -91,12 +94,14 @@ export default function StudentDashboard() {
       getMyTasks().catch(() => []),
       getMyPipStatus().catch(() => null),
       getVideoLessons().catch(() => []),
+      getMyResumeUrl().catch(() => null),
     ])
-      .then(([s, t, p, vl]) => {
+      .then(([s, t, p, vl, ru]) => {
         setSummary(s);
         setTasks(t);
         setPip(p);
         setLessons(vl);
+        setResumeUrl(ru);
 
         // Surface the most advanced non-rejected client recruitment record so
         // the student can see e.g. "Shortlisted" status right on their
@@ -114,24 +119,22 @@ export default function StudentDashboard() {
   }, [user]);
 
   const openResumeModal = () => {
-    setPendingResumeFile(resume?.name ? [new File([], resume.name, { type: "application/pdf" })] : []);
+    setPendingResumeFile([]);
     setResumeModalOpen(true);
   };
 
   const handleSaveResume = async () => {
     const file = pendingResumeFile[0];
-    // The placeholder reconstructed from a previously-saved resume (see
-    // openResumeModal) is a real but empty (0-byte) File used only so
-    // FileUpload has something to display — it isn't a fresh selection, so
-    // don't try to persist it as new content.
     if (!file || !(file instanceof File) || file.size === 0) {
       notify("Please choose a resume file to upload.", { type: "error" });
       return;
     }
     setSavingResume(true);
     try {
-      const { resumeMeta } = await saveResumeFile(user, file);
-      setResume(resumeMeta);
+      await saveResumeFile(user, file);
+      // Re-read the real status so the banner reflects what's actually stored.
+      const url = await getMyResumeUrl().catch(() => null);
+      setResumeUrl(url);
       notify("Resume uploaded successfully.", { type: "success", title: "Resume saved" });
       setResumeModalOpen(false);
     } catch (e) {
@@ -142,24 +145,11 @@ export default function StudentDashboard() {
   };
 
   const handleViewResume = () => {
-    if (!resume?.fileData) return;
-    try {
-      const [header, base64] = resume.fileData.split(",");
-      const mimeMatch = header.match(/data:(.*?);base64/);
-      const mime = mimeMatch ? mimeMatch[1] : "application/octet-stream";
-      const binary = atob(base64);
-      const array = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) array[i] = binary.charCodeAt(i);
-      const blob = new Blob([array], { type: mime });
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank", "noopener,noreferrer");
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (e) {
-      notify("Could not open your resume.", { type: "error" });
-    }
+    if (resumeUrl) window.open(resumeUrl, "_blank", "noopener,noreferrer");
   };
 
-  const resumeStatus = getResumeStatus(resume);
+  const hasResume = !!resumeUrl;
+  const resumeStatus = hasResume ? "Uploaded" : "Not Uploaded";
 
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -243,7 +233,7 @@ export default function StudentDashboard() {
               {resumeStatus}
             </Badge>
             <div className="flex gap-2">
-              {resume?.fileData && (
+              {hasResume && (
                 <Button size="sm" variant="secondary" icon={Eye} onClick={handleViewResume}>View</Button>
               )}
               <Button
