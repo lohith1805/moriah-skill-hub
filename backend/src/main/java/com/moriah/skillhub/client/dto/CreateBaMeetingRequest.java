@@ -1,0 +1,24 @@
+package com.moriah.skillhub.client.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
+
+import java.time.Instant;
+import java.util.List;
+
+/** {@code POST /api/v1/ba/meetings} (gap B1.14). A new meeting is always {@code SCHEDULED};
+ * {@code minutes} is not accepted here — it is written after the meeting via {@code PUT}.
+ * {@code attendeeUuids} — the role -> employee checkbox picker's flat result — is optional; each
+ * checked person is invited (emailed + sees this on their own dashboard) and none is required. */
+public record CreateBaMeetingRequest(
+        @NotBlank @Size(max = 200) String title,
+        @Size(max = 5000) String agenda,
+        Long clientProjectId,
+        @NotNull Instant scheduledAt,
+        @Positive Integer durationMinutes,
+        @Size(max = 255) String location,
+        List<String> attendeeUuids
+) {
+}

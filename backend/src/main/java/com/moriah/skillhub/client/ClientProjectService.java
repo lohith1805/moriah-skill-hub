@@ -1,0 +1,279 @@
+package com.moriah.skillhub.client;
+
+import com.moriah.skillhub.batch.entity.Batch;
+import com.moriah.skillhub.client.dto.AssignClientProjectRequest;
+import com.moriah.skillhub.client.dto.ClientProjectProgressResponse;
+import com.moriah.skillhub.client.dto.ClientProjectProgressResponse.SprintBurndown;
+import com.moriah.skillhub.client.dto.ClientProjectResponse;
+import com.moriah.skillhub.client.dto.CreateClientProjectRequest;
+import com.moriah.skillhub.common.audit.AuditLogService;
+import com.moriah.skillhub.common.dto.PageResponse;
+import com.moriah.skillhub.client.entity.Client;
+import com.moriah.skillhub.client.entity.ClientProject;
+import com.moriah.skillhub.client.entity.ClientProjectStatus;
+import com.moriah.skillhub.client.entity.ClientStatus;
+import com.moriah.skillhub.client.repository.ClientProjectRepository;
+import com.moriah.skillhub.client.repository.ClientRepository;
+import com.moriah.skillhub.common.exception.BusinessException;
+import com.moriah.skillhub.common.exception.ErrorCode;
+import com.moriah.skillhub.common.exception.ForbiddenOperationException;
+import com.moriah.skillhub.common.exception.ResourceNotFoundException;
+import com.moriah.skillhub.common.security.SecurityUtils;
+import com.moriah.skillhub.sprint.SprintService;
+import com.moriah.skillhub.sprint.dto.SprintProgressProjection;
+import com.moriah.skillhub.sprint.entity.SprintStatus;
+import com.moriah.skillhub.sprint.entity.TaskStatus;
+import com.moriah.skillhub.user.entity.RoleCode;
+import com.moriah.skillhub.user.entity.User;
+import com.moriah.skillhub.user.repository.UserRepository;
+import com.moriah.skillhub.user.repository.UserRoleRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+
+/**
+ * build-plan.md feature 21: "Clients submit scope" ({@link #create}, CLIENT-only) and "GET
+ * /clients/projects/{id}/progress returns burndown and milestone completion for that client's
+ * project only" ({@link #progress} — owner-CLIENT or BUSINESS_ANALYST/ADMIN staff oversight, the
+ * same "owner or staff role" shape {@code BatchService#requireOwnerOrAdmin} already establishes,
+ * reimplemented by hand here since {@code Client}/{@code ClientProject} aren't {@code Batch}).
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class ClientProjectService {
+
+    private final ClientProjectRepository clientProjectRepository;
+    private final ClientRepository clientRepository;
+    private final UserRepository userRepository;
+    private final UserRoleRepository userRoleRepository;
+    private final SprintService sprintService;
+    private final StaffAssignmentService staffAssignmentService;
+    private final AuditLogService auditLogService;
+
+    /** Resolves the caller's own {@code client_id} via {@code clients.user_id = callerUserId}
+     * (build-plan.md feature 21 decision). A CLIENT user with no linked {@code clients} row is a
+     * data-integrity gap that shouldn't happen given {@code ClientService#create}'s provisioning
+     * flow — every portal login it creates is linked in the same transaction — but a CLIENT role
+     * granted some other way (direct role grant, a legacy account, an OAuth signup) can still hit
+     * it; see {@link #resolveOrCreateClient}, which self-heals a minimal row rather than
+     * dead-ending the submission with {@link ErrorCode#CLIENT_NOT_FOUND}. */
+    @Transactional
+    public ClientProjectResponse create(CreateClientProjectRequest request, Long callerUserId) {
+        Client client = resolveOrCreateClient(callerUserId);
+
+        ClientProject project = new ClientProject();
+        project.setClient(client);
+        project.setTitle(request.title());
+        project.setScopeDescription(request.scopeDescription());
+        project.setBudgetRange(request.budgetRange());
+        project.setAdditionalNotes(blankToNull(request.additionalNotes()));
+        project.setStatus(ClientProjectStatus.SUBMITTED);
+        project.setSubmittedAt(Instant.now());
+        // Workload-aware round-robin: route to whichever active BA currently has the fewest open
+        // projects. null (no active BA exists at all) leaves it for an admin to assign by hand.
+        staffAssignmentService.pickLeastBusy(RoleCode.BUSINESS_ANALYST).ifPresent(project::setAssignedBa);
+        clientProjectRepository.save(project);
+
+        return toResponse(project);
+    }
+
+    /**
+     * {@code GET /api/v1/clients/projects} — a CLIENT sees only their own company's submissions;
+     * a BUSINESS_ANALYST / ADMIN sees every client's (staff oversight, the same unconditional
+     * split {@link #progress} already uses). A CLIENT with no linked {@code clients} row gets an
+     * empty page, not a 404 — nothing to show is not an error on a list.
+     */
+    /** {@code allProjects} (default {@code false}) is a BA's own "assigned to me" toggle — off,
+     * they see their own assigned projects plus anything still unassigned (round-robin found no
+     * active BA); on, the same full oversight view ADMIN always gets regardless of the flag. */
+    @Transactional(readOnly = true)
+    public PageResponse<ClientProjectResponse> list(Long callerUserId, ClientProjectStatus status,
+                                                     boolean allProjects, Pageable pageable) {
+        List<String> roles = SecurityUtils.currentUserRoles();
+        boolean isAdmin = roles.contains(RoleCode.ADMIN.name());
+        boolean isBa = roles.contains(RoleCode.BUSINESS_ANALYST.name());
+        boolean isStaff = isAdmin || isBa;
+
+        Long clientId = null;
+        Long assignedBaId = null;
+        if (!isStaff) {
+            clientId = clientRepository.findByUserId(callerUserId).map(Client::getId).orElse(null);
+            if (clientId == null) {
+                return PageResponse.from(org.springframework.data.domain.Page.<ClientProjectResponse>empty(pageable));
+            }
+        } else if (isBa && !isAdmin && !allProjects) {
+            assignedBaId = callerUserId;
+        }
+        return PageResponse.from(
+                clientProjectRepository.search(clientId, status, assignedBaId, pageable).map(this::toResponse));
+    }
+
+    /** {@code PUT /api/v1/admin/client-projects/{id}/assignment} — ADMIN manual override of the
+     * round-robin pick (a BA out sick, a developer better suited to the stack, etc.). Either field
+     * may be omitted to leave that half untouched; validates the target actually holds the
+     * relevant role so a typo'd uuid can't silently assign, say, a STUDENT as a project's BA. */
+    @Transactional
+    public ClientProjectResponse assign(Long projectId, AssignClientProjectRequest request, Long callerUserId) {
+        ClientProject project = clientProjectRepository.findById(projectId)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.CLIENT_PROJECT_NOT_FOUND, projectId));
+        if (request.baUuid() == null && request.developerUuid() == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "Provide baUuid and/or developerUuid.");
+        }
+
+        if (request.baUuid() != null) {
+            User ba = requireUserWithRole(request.baUuid(), RoleCode.BUSINESS_ANALYST);
+            project.setAssignedBa(ba);
+        }
+        if (request.developerUuid() != null) {
+            User dev = requireUserWithRole(request.developerUuid(), RoleCode.DEVELOPER);
+            project.setAssignedDeveloper(dev);
+        }
+
+        auditLogService.record(callerUserId, "CLIENT_PROJECT_ASSIGNED", "ClientProject", project.getId(),
+                null, java.util.Map.of(
+                        "baUuid", request.baUuid() == null ? "" : request.baUuid(),
+                        "developerUuid", request.developerUuid() == null ? "" : request.developerUuid()));
+
+        return toResponse(project);
+    }
+
+    private User requireUserWithRole(String userUuid, RoleCode role) {
+        User user = userRepository.findByUuid(userUuid)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.USER_NOT_FOUND, userUuid));
+        if (!userRoleRepository.findRoleCodesByUserId(user.getId()).contains(role)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                    "User " + userUuid + " does not hold the " + role + " role.");
+        }
+        return user;
+    }
+
+    /** build-plan.md feature 21 "Verify": "A client requesting another client's project gets
+     * 403." {@code target_batch_id IS NULL} returns a zeroed shape rather than an error (the
+     * feature's own decision — "if target_batch_id is null ... return an empty/zeroed progress
+     * shape, not an error"). */
+    @Transactional(readOnly = true)
+    public ClientProjectProgressResponse progress(Long clientProjectId, Long callerUserId) {
+        ClientProject project = clientProjectRepository.findWithClientById(clientProjectId)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.CLIENT_PROJECT_NOT_FOUND, clientProjectId));
+        requireOwningClientOrStaff(callerUserId, project);
+
+        Batch targetBatch = project.getTargetBatch();
+        if (targetBatch == null) {
+            return ClientProjectProgressResponse.empty(project.getId(), project.getTitle());
+        }
+
+        List<SprintProgressProjection> sprints = sprintService.progressForBatch(targetBatch.getId());
+        long totalSprints = sprints.size();
+        long completedSprints = sprints.stream().filter(s -> s.status() == SprintStatus.COMPLETED).count();
+        double milestoneCompletion = totalSprints == 0 ? 0.0 : (double) completedSprints / totalSprints;
+
+        // FRS MSH-FR-PM-02/MSH-FR-BA-03: task-level detail (counts per status) alongside the
+        // existing story-point burndown — a second cross-module call, same boundary as
+        // progressForBatch (never TaskRepository directly from this module).
+        Map<Long, Map<TaskStatus, Long>> taskCountsBySprint = sprintService.taskStatusCountsForBatch(targetBatch.getId());
+
+        List<SprintBurndown> burndown = sprints.stream()
+                .map(s -> new SprintBurndown(
+                        s.sprintId(),
+                        s.sprintNumber(),
+                        s.status().name(),
+                        s.plannedPoints() == null ? 0 : s.plannedPoints(),
+                        s.completedPoints() == null ? 0 : s.completedPoints(),
+                        toTaskStatusCountsResponse(taskCountsBySprint.get(s.sprintId()))))
+                .toList();
+
+        return new ClientProjectProgressResponse(project.getId(), project.getTitle(), targetBatch.getId(),
+                milestoneCompletion, burndown);
+    }
+
+    /** {@code null} (no row at all for this sprint in {@code taskCountsBySprint} — a sprint with
+     * zero tasks) becomes an empty map, not a null field on the response; a status with zero
+     * tasks is simply absent from the map either way, per {@link SprintBurndown}'s own Javadoc.
+     * {@link LinkedHashMap} keeps {@code TaskStatus} declaration order in the JSON output rather
+     * than whatever order {@code EnumMap} iteration happens to produce vs. a plain sort. */
+    private Map<String, Long> toTaskStatusCountsResponse(Map<TaskStatus, Long> countsByStatus) {
+        if (countsByStatus == null || countsByStatus.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Long> result = new LinkedHashMap<>();
+        for (TaskStatus status : TaskStatus.values()) {
+            Long count = countsByStatus.get(status);
+            if (count != null) {
+                result.put(status.name(), count);
+            }
+        }
+        return result;
+    }
+
+    /** No ownership check at all for {@code BUSINESS_ANALYST}/{@code ADMIN} — staff oversight is
+     * unconditional, matching {@code BatchService.requireOwnerOrAdmin}'s own ADMIN-bypasses-
+     * ownership shape. {@code SecurityUtils.currentUserRoles()} — no DB round trip, same
+     * technique {@code BatchService}/{@code TaskService} already use for this exact kind of
+     * check. */
+    /** A CLIENT user should always have a linked {@code clients} row — {@code
+     * ClientRegistrationService} and {@code ClientService.create} both create one in the same
+     * transaction as the user. If one is somehow missing (a legacy account, an OAuth signup),
+     * self-heal a minimal row from the {@code User} so the portal still works instead of
+     * dead-ending every action with {@code CLIENT_NOT_FOUND}. */
+    private Client resolveOrCreateClient(Long callerUserId) {
+        return clientRepository.findByUserId(callerUserId).orElseGet(() -> {
+            User user = userRepository.findById(callerUserId)
+                    .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.USER_NOT_FOUND, callerUserId));
+            Client fresh = new Client();
+            fresh.setCompanyName(user.getFullName());
+            fresh.setContactPerson(user.getFullName());
+            fresh.setEmail(user.getEmail());
+            fresh.setPhone(user.getPhone());
+            fresh.setStatus(ClientStatus.ACTIVE);
+            fresh.setUser(user);
+            clientRepository.save(fresh);
+            log.warn("[client] self-healed a missing clients row for user {} ({})", callerUserId, user.getEmail());
+            return fresh;
+        });
+    }
+
+    private void requireOwningClientOrStaff(Long callerUserId, ClientProject project) {
+        List<String> roles = SecurityUtils.currentUserRoles();
+        boolean isStaff = roles.contains(RoleCode.BUSINESS_ANALYST.name()) || roles.contains(RoleCode.ADMIN.name());
+        if (isStaff) {
+            return;
+        }
+        User owner = project.getClient().getUser();
+        if (owner == null || !Objects.equals(owner.getId(), callerUserId)) {
+            throw new ForbiddenOperationException(ErrorCode.NOT_RESOURCE_OWNER);
+        }
+    }
+
+    private ClientProjectResponse toResponse(ClientProject project) {
+        User ba = project.getAssignedBa();
+        User dev = project.getAssignedDeveloper();
+        return new ClientProjectResponse(
+                project.getId(),
+                project.getClient().getId(),
+                project.getClient().getCompanyName(),
+                project.getTitle(),
+                project.getScopeDescription(),
+                project.getBudgetRange(),
+                project.getAdditionalNotes(),
+                project.getTargetBatch() == null ? null : project.getTargetBatch().getId(),
+                project.getStatus(),
+                ba == null ? null : ba.getUuid(),
+                ba == null ? null : ba.getFullName(),
+                dev == null ? null : dev.getUuid(),
+                dev == null ? null : dev.getFullName(),
+                project.getSubmittedAt());
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
+    }
+}

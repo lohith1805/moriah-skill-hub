@@ -1,0 +1,138 @@
+package com.moriah.skillhub.assessment;
+
+import com.moriah.skillhub.assessment.dto.AssessmentResponse;
+import com.moriah.skillhub.assessment.dto.AssessmentResultRow;
+import com.moriah.skillhub.assessment.dto.CreateAssessmentFromBankRequest;
+import com.moriah.skillhub.assessment.dto.CreateAssessmentRequest;
+import com.moriah.skillhub.assessment.dto.MyAssessmentAttemptRow;
+import com.moriah.skillhub.assessment.dto.QuizAttemptResponse;
+import com.moriah.skillhub.assessment.dto.SubmitAttemptRequest;
+import com.moriah.skillhub.common.dto.ApiResponse;
+import com.moriah.skillhub.common.dto.PageResponse;
+import com.moriah.skillhub.common.security.CurrentUser;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+/** build-plan.md feature 14. Mutation endpoints that create/own a quiz are {@code TRAINER_PM}/
+ * {@code ADMIN} only, ownership enforced in the service layer via {@code
+ * BatchService.requireOwnerOrAdmin} (same reasoning {@code SprintController}'s own Javadoc
+ * gives). Attempt lifecycle endpoints ({@code startAttempt}/{@code submit}) are {@code STUDENT}
+ * only; {@code getAttempt} is open to all three roles, ownership/PM-scoping enforced in {@code
+ * QuizService#authorizeView}. */
+@RestController
+@RequiredArgsConstructor
+@Tag(name = "Assessments")
+public class AssessmentController {
+
+    private final QuizService quizService;
+
+    @PostMapping("/api/v1/assessments")
+    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @Operation(summary = "Create an assessment (quiz) with its questions")
+    public ResponseEntity<ApiResponse<AssessmentResponse>> create(
+            @Valid @RequestBody CreateAssessmentRequest request, @CurrentUser Long callerUserId) {
+
+        AssessmentResponse response = quizService.create(callerUserId, request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
+    }
+
+    @PostMapping("/api/v1/assessments/from-bank")
+    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @Operation(summary = "Publish a question bank as a live, batch-scoped assessment — the bank's "
+            + "questions (with answer keys) are snapshotted into the new quiz")
+    public ResponseEntity<ApiResponse<AssessmentResponse>> createFromBank(
+            @Valid @RequestBody CreateAssessmentFromBankRequest request, @CurrentUser Long callerUserId) {
+
+        AssessmentResponse response = quizService.createFromBank(callerUserId, request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
+    }
+
+    @GetMapping("/api/v1/assessments")
+    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN','STUDENT')")
+    @Operation(summary = "List assessments — for students, batchId is required; TRAINER_PM / ADMIN "
+            + "may omit it to list every assessment (for the publish / results screen)")
+    public ResponseEntity<ApiResponse<PageResponse<AssessmentResponse>>> list(
+            @RequestParam(required = false) Long batchId,
+            @CurrentUser Long callerUserId,
+            @PageableDefault(size = 20) Pageable pageable) {
+
+        return ResponseEntity.ok(ApiResponse.success(quizService.list(callerUserId, batchId, pageable)));
+    }
+
+    @GetMapping("/api/v1/assessments/results")
+    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @Operation(summary = "Student attempt results across assessments — filter by assessmentId, "
+            + "batchId and cohort track")
+    public ResponseEntity<ApiResponse<PageResponse<AssessmentResultRow>>> results(
+            @RequestParam(required = false) Long assessmentId,
+            @RequestParam(required = false) Long batchId,
+            @RequestParam(required = false) String track,
+            @RequestParam(defaultValue = "true") boolean onlyFinished,
+            @PageableDefault(size = 50) Pageable pageable) {
+
+        return ResponseEntity.ok(ApiResponse.success(
+                quizService.results(assessmentId, batchId, track, onlyFinished, pageable)));
+    }
+
+    @org.springframework.web.bind.annotation.DeleteMapping("/api/v1/assessments/{id}")
+    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @Operation(summary = "Deactivate an assessment (is_active = false) — never row-deletes, so "
+            + "attempt history survives")
+    public ResponseEntity<ApiResponse<Void>> deactivate(
+            @PathVariable Long id, @CurrentUser Long callerUserId) {
+
+        quizService.deactivate(callerUserId, id);
+        return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
+    @PostMapping("/api/v1/assessments/{id}/attempts")
+    @PreAuthorize("hasRole('STUDENT')")
+    @Operation(summary = "Start (or resume) an attempt at an assessment")
+    public ResponseEntity<ApiResponse<QuizAttemptResponse>> startAttempt(
+            @PathVariable Long id, @CurrentUser Long callerUserId) {
+
+        QuizAttemptResponse response = quizService.startAttempt(callerUserId, id);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
+    }
+
+    @GetMapping("/api/v1/assessments/attempts/me")
+    @PreAuthorize("hasRole('STUDENT')")
+    @Operation(summary = "The calling student's own attempts across every assessment — drives the "
+            + "\"Completed / Passed / Failed\" state on the student assessment list")
+    public ResponseEntity<ApiResponse<PageResponse<MyAssessmentAttemptRow>>> myAttempts(
+            @CurrentUser Long callerUserId, @PageableDefault(size = 100) Pageable pageable) {
+
+        return ResponseEntity.ok(ApiResponse.success(quizService.myAttempts(callerUserId, pageable)));
+    }
+
+    @GetMapping("/api/v1/assessments/attempts/{id}")
+    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN','STUDENT')")
+    @Operation(summary = "Get an attempt — its questions while in progress, its graded result once terminal")
+    public ResponseEntity<ApiResponse<QuizAttemptResponse>> getAttempt(
+            @PathVariable Long id, @CurrentUser Long callerUserId) {
+
+        return ResponseEntity.ok(ApiResponse.success(quizService.getAttempt(callerUserId, id)));
+    }
+
+    @PostMapping("/api/v1/assessments/attempts/{id}/submit")
+    @PreAuthorize("hasRole('STUDENT')")
+    @Operation(summary = "Submit an attempt for grading")
+    public ResponseEntity<ApiResponse<QuizAttemptResponse>> submit(
+            @PathVariable Long id, @Valid @RequestBody SubmitAttemptRequest request, @CurrentUser Long callerUserId) {
+
+        return ResponseEntity.ok(ApiResponse.success(quizService.submit(callerUserId, id, request)));
+    }
+}

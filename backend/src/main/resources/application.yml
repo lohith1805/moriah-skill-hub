@@ -1,0 +1,272 @@
+spring:
+  application:
+    name: skillhub
+  profiles:
+    default: dev
+
+  datasource:
+    # Audit 2026-08-31 (M11): sslMode is explicit and defaults to REQUIRED — the connection must
+    # be TLS or it fails, instead of the legacy `useSSL=true` (== PREFERRED, which silently falls
+    # back to plaintext). Set DB_SSL_MODE=VERIFY_CA with a pinned trustCertificateKeyStoreUrl in
+    # any environment where the DB host can be spoofed (see application-prod.yml).
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?sslMode=${DB_SSL_MODE:REQUIRED}&serverTimezone=UTC
+    username: ${DB_USERNAME}          # moriah_app — no DDL rights
+    password: ${DB_PASSWORD}
+    hikari:
+      # Audit 2026-08-31 (L2): fixed-size pool (min == max) for predictable latency under bursts —
+      # HikariCP's own guidance for latency-sensitive services; a cold pool ramp opening dozens of
+      # TLS connections mid-burst was a contributor to the load-test p95. connection-timeout is
+      # env-driven (default = Hikari's own 30s): production can tighten it to fail fast on
+      # saturation, but the default must stay tolerant enough for the co-located concurrent
+      # integration tests (a 3s value made 150-thread ConnectionPoolLoadIT reject ~12 requests).
+      maximum-pool-size: ${DB_POOL_MAX:50}
+      minimum-idle: ${DB_POOL_MIN:50}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:30000}
+      max-lifetime: 1500000          # 25m — below MySQL's 8h wait_timeout and any LB idle cutoff
+      keepalive-time: 120000
+      leak-detection-threshold: 60000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate.jdbc.batch_size: 50
+      hibernate.order_inserts: true
+      # Audit 2026-08-31 (M4): batch-fetch any lazy @ManyToOne touched off a path without an
+      # explicit @EntityGraph/JOIN FETCH, instead of one SELECT per parent.
+      hibernate.default_batch_fetch_size: 100
+      hibernate.order_updates: true
+
+  flyway:
+    enabled: true
+    user: ${MIGRATE_DB_USERNAME}      # moriah_migrate — DDL, Flyway only
+    password: ${MIGRATE_DB_PASSWORD}
+    baseline-on-migrate: false
+
+  threads:
+    virtual:
+      enabled: true
+
+  # Matches Constants.MAX_UPLOAD_BYTES (10MB) — without this, Spring's own multipart resolver
+  # default (1MB) rejects a resume upload with a bare MaxUploadSizeExceededException before
+  # StorageService.upload's own magic-byte/size check ever runs (build-plan.md feature 09).
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+    web:
+      pageable:
+        # Audit 2026-08-31 (M14): @PageableDefault only sets the default; without this a caller
+        # can request ?size=2000 on any list endpoint (Spring's built-in cap). Bound it globally.
+        max-page-size: 100
+
+  security:
+    oauth2:
+      client:
+        registration:
+          # "google"/"github" are Spring Boot's recognized CommonOAuth2Provider ids — only
+          # client-id/secret/scope/redirect-uri need setting; authorization-uri/token-uri/
+          # user-info-uri/jwk-set-uri all come from the built-in provider defaults.
+          #
+          # redirect-uri MUST be spelled out here: SecurityConfig's
+          # .redirectionEndpoint().baseUri("/api/v1/auth/oauth2/callback/*") moves the path the
+          # login filter listens on, but it does NOT change the redirect_uri Spring sends to the
+          # provider — that still comes from this property, whose default is
+          # {baseUrl}/login/oauth2/code/{registrationId}. Left at the default, the provider bounces
+          # the browser to /login/oauth2/code/google, which no filter handles, so the callback
+          # dies as a raw 401 "UNAUTHENTICATED" JSON page instead of completing. Pin it to the
+          # custom path so the two halves line up. {baseUrl} expands from the incoming request
+          # (scheme://host:port/context) at authorize time — whatever it resolves to is what must
+          # be listed as an "Authorized redirect URI" in the Google / GitHub OAuth app.
+          google:
+            client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+            scope: openid, profile, email
+            redirect-uri: "{baseUrl}/api/v1/auth/oauth2/callback/google"
+          github:
+            client-id: ${GITHUB_CLIENT_ID}
+            client-secret: ${GITHUB_CLIENT_SECRET}
+            # user:email is required to read GithubOAuth2UserService's /user/emails call —
+            # GitHub's default profile response omits email when it's set private.
+            scope: read:user, user:email
+            redirect-uri: "{baseUrl}/api/v1/auth/oauth2/callback/github"
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+moriah:
+  datasource:
+    # build-plan.md feature 22 / ReplicaDataSourceConfig: exports and heavy metrics/audit reads
+    # target this pool instead of the primary. Same moriah_app credentials as the primary
+    # (architecture.md: "the replica has the same schema/users via real replication" — no new DB
+    # user needed), pointed at the docker-compose mysql-replica service instead of mysql.
+    replica:
+      url: jdbc:mysql://${DB_REPLICA_HOST}:${DB_REPLICA_PORT:3307}/${DB_NAME}?sslMode=${DB_SSL_MODE:REQUIRED}&serverTimezone=UTC
+      username: ${DB_USERNAME}
+      password: ${DB_PASSWORD}
+      max-pool-size: ${DB_REPLICA_POOL_MAX:10}
+  security:
+    cors:
+      allowed-origins: []
+    rate-limit:
+      # auth-requests-per-minute is IP-scoped (login/2FA/reset carry no bearer token); keep it
+      # tight. global-requests-per-minute is per-bearer-token for authenticated calls (audit
+      # 2026-08-31 C4), so it is a per-user budget — a dashboard that fans out to a dozen /me
+      # endpoints on load must fit comfortably inside one window.
+      auth-requests-per-minute: ${AUTH_RATE_LIMIT_PER_MIN:10}
+      global-requests-per-minute: ${GLOBAL_RATE_LIMIT_PER_MIN:300}
+    # IPs allowed to set X-Forwarded-For and be believed (the load balancer / reverse proxy
+    # fronting this service). Empty by default — no deployment target is chosen yet, so every
+    # request's client IP falls back to getRemoteAddr() until a real proxy's IP is set here
+    # per-environment. See ClientIpResolver / TrustedProxyProperties.
+    trusted-proxies: []
+    two-factor:
+      # How long a 2FA login-challenge token (ChallengeTokenService, Redis-backed) stays valid.
+      challenge-ttl-minutes: 5
+    oauth2:
+      # How long HttpCookieOAuth2AuthorizationRequestRepository's cookie survives — the whole
+      # authorize -> provider -> callback round trip should take seconds, not minutes.
+      authorization-cookie-max-age-seconds: 180
+      # Where OAuth2AuthenticationSuccessHandler / FailureHandler send the browser after the
+      # provider round trip. The SPA reads the result from the URL *fragment* (never the query
+      # string, so tokens are not sent to any server or written to access logs). See
+      # frontend src/pages/auth/OAuthCallback.jsx.
+      frontend-redirect-uri: ${OAUTH2_FRONTEND_REDIRECT_URI:http://localhost:5173/auth/oauth/callback}
+  jwt:
+    secret: ${JWT_SECRET}
+    key-id: ${JWT_KEY_ID:v1}
+    access-token-minutes: 60
+    refresh-token-days: 30
+  totp:
+    # Base64-encoded 256-bit AES key — bare env var for now, same treatment as JWT_SECRET
+    # (`/architect feature 05` decision; see TotpProperties).
+    encryption-key: ${TOTP_ENCRYPTION_KEY}
+  cache:
+    # EntitlementGuard's active-subscription read (build-plan.md feature 04) — an upgrade must
+    # take effect within a minute, not stay stale for the longer default TTL below.
+    entitlements-ttl-seconds: 60
+    # Fallback TTL for any future cache that doesn't declare its own per-cache entry in
+    # RedisConfig. GET /plans (feature 07) uses this default — rarely-changing reference data.
+    default-ttl-minutes: 10
+    # build-plan.md feature 12: "Cache verification results in Redis 5 min keyed owner/repo/pr."
+    github-pr-ttl-minutes: 5
+    # build-plan.md feature 22: "Overview cached 5 minutes."
+    admin-metrics-overview-ttl-minutes: 5
+  razorpay:
+    key-id: ${RAZORPAY_KEY_ID}
+    key-secret: ${RAZORPAY_KEY_SECRET}
+    webhook-secret: ${RAZORPAY_WEBHOOK_SECRET}
+  stripe:
+    secret-key: ${STRIPE_SECRET_KEY}
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET}
+    success-url: ${STRIPE_SUCCESS_URL}
+    cancel-url: ${STRIPE_CANCEL_URL}
+  storage:
+    # library-docs.md "AWS SDK v2 (S3 / R2)" / architecture.md's sample application.yml. endpoint
+    # blank in a real AWS deployment; set to the MinIO/R2 endpoint everywhere else (local dev,
+    # this project's own IntegrationTestBase, and any environment not using AWS directly).
+    bucket: ${S3_BUCKET:moriah-skillhub}
+    endpoint: ${S3_ENDPOINT:}
+    region: ${S3_REGION:us-east-1}
+    access-key: ${S3_ACCESS_KEY}
+    secret-key: ${S3_SECRET_KEY}
+  notification:
+    # `/architect feature 08` decision: every 60s — frequent enough that a dead worker's messages
+    # are redelivered promptly, cheap enough not to matter. The 5-minute staleness threshold
+    # itself is Constants.NOTIFICATION_PROCESSING_STALE_MINUTES, not a config value (library-docs.md
+    # "Reliable Queue" fixes it in the code sample; no per-environment reason to change it).
+    reaper-cron: ${NOTIFICATION_REAPER_CRON:0 * * * * *}
+    email:
+      api-key: ${SENDGRID_API_KEY}
+      from-address: ${SENDGRID_FROM_ADDRESS:no-reply@moriahskillhub.example}
+      from-name: ${SENDGRID_FROM_NAME:Moriah Skill Hub}
+    whatsapp:
+      api-base-url: ${WHATSAPP_API_BASE_URL:https://graph.facebook.com/v18.0}
+      phone-number-id: ${WHATSAPP_PHONE_NUMBER_ID}
+      access-token: ${WHATSAPP_ACCESS_TOKEN}
+      app-secret: ${WHATSAPP_APP_SECRET}
+  auth-links:
+    # {token} is substituted with the raw (unhashed) verification/reset token. Same per-purpose
+    # full-URL treatment as STRIPE_SUCCESS_URL/CANCEL_URL (feature 07) — no shared frontend-base-
+    # URL config exists (`/architect feature 08` decision).
+    email-verification-url-template: ${EMAIL_VERIFICATION_URL_TEMPLATE:http://localhost:3000/verify-email?token={token}}
+    password-reset-url-template: ${PASSWORD_RESET_URL_TEMPLATE:http://localhost:3000/reset-password?token={token}}
+    staff-invite-url-template: ${STAFF_INVITE_URL_TEMPLATE:http://localhost:3000/accept-invite?token={token}}
+  certificates:
+    # build-plan.md feature 20: the certificate QR encodes "{APP_BASE_URL}/verify/{verification_code}"
+    # — {code} substituted with verification_code. Same per-purpose full-URL-template convention as
+    # moriah.auth-links immediately above (see CertificateProperties' own Javadoc for why: no shared
+    # frontend-base-URL config exists in this build, a decision already made twice before this one).
+    verify-url-template: ${CERTIFICATE_VERIFY_URL_TEMPLATE:http://localhost:3000/verify/{code}}
+  webhook:
+    # Audit 2026-08-31 (C3): backstop sweep that surfaces any webhook_events row stuck in
+    # RECEIVED (handler process killed between the business commit and the claim release). Does
+    # not re-drive anything — the gateway owns redelivery — just makes a stuck event visible.
+    reconciliation-cron: ${WEBHOOK_RECONCILIATION_CRON:0 */10 * * * *}
+  subscription:
+    # `/architect feature 07` decision: 03:00 IST, after the 01:30->02:00 PIP pipeline finishes.
+    expiry-cron: ${SUBSCRIPTION_EXPIRY_CRON:0 0 3 * * *}
+  github:
+    # A server-side personal access token — separate from GITHUB_CLIENT_ID/SECRET above, which
+    # only ever drives the interactive OAuth2 login flow (`/architect feature 12` decision).
+    api-token: ${GITHUB_API_TOKEN}
+    api-base-url: ${GITHUB_API_BASE_URL:https://api.github.com}
+  submission:
+    # `/architect feature 12` decision: every 15 minutes — frequent enough that a GitHub outage
+    # (typically resolved within minutes to a couple of hours) doesn't leave a submission
+    # unverified for long, cheap enough to run indefinitely with no attempt cap.
+    verification-retry-cron: ${SUBMISSION_VERIFICATION_RETRY_CRON:0 */15 * * * *}
+  attendance:
+    # build-plan.md feature 13 / architecture.md: the nightly chain's first slot — attendance
+    # finalisation (01:30) -> metrics refresh (01:45, feature 16) -> PIP evaluation (02:00,
+    # feature 17). Reordering silently corrupts the attendance denominator (AGENTS.md).
+    finalisation-cron: ${ATTENDANCE_FINALISATION_CRON:0 30 1 * * *}
+  metrics:
+    # build-plan.md feature 16 / architecture.md nightly chain: 01:45 IST, strictly between
+    # attendance finalisation (01:30) and PIP evaluation (02:00, feature 17).
+    refresh-cron: ${METRICS_REFRESH_CRON:0 45 1 * * *}
+  pip:
+    # build-plan.md feature 17 / architecture.md nightly chain: 02:00 IST, strictly after metrics
+    # refresh (01:45) — reading student_metrics before it's refreshed for the night is worse than
+    # not running at all (AGENTS.md).
+    evaluation-cron: ${PIP_EVALUATION_CRON:0 0 2 * * *}
+    clearance:
+      # build-plan.md feature 17: "clearance requires task completion >= 85%." Not a pip_rules row
+      # (no seventh "clearance" rule code exists) — see PipClearanceProperties' own Javadoc.
+      min-task-completion-percent: ${PIP_CLEARANCE_MIN_TASK_COMPLETION_PERCENT:85}
+  assessment:
+    # build-plan.md feature 14: not part of the nightly 01:30->02:00 chain — a quiz attempt's own
+    # duration_minutes is what bounds staleness, not a fixed daily slot, so this runs frequently
+    # (same 15-minute cadence/reasoning as moriah.submission.verification-retry-cron).
+    attempt-expiry-cron: ${QUIZ_ATTEMPT_EXPIRY_CRON:0 */15 * * * *}
+  client:
+    # A meeting's own scheduledAt + durationMinutes is what bounds staleness, not a fixed daily
+    # slot — same reasoning/cadence as moriah.assessment.attempt-expiry-cron.
+    meeting-auto-complete-cron: ${BA_MEETING_AUTO_COMPLETE_CRON:0 */15 * * * *}
+  jobs:
+    # Shared by every scheduled job's cron zone (SubscriptionExpiryJob, AttendanceFinalisationJob
+    # today; MetricsRefreshJob/PipEvaluationJob at features 16/17 read the same property).
+    zone: ${JOBS_ZONE:Asia/Kolkata}
