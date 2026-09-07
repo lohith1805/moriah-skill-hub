@@ -1,0 +1,32 @@
+# Root safety net — each subtree also carries its own .gitignore
+# (backend/.gitignore, frontend/.gitignore) which still applies within it.
+
+# Secrets — never commit real values
+.env
+*.env.local
+.env.*.local
+
+# Build output
+target/
+*.class
+node_modules/
+dist/
+dist-ssr/
+
+# Logs
+*.log
+logs/
+
+# Backup / integration bundles that get dropped in the working tree locally
+backups/
+backups.zip
+*_Integration*.zip
+*_Latest*.zip
+bun.lock
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
