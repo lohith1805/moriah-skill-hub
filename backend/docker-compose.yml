@@ -98,6 +98,25 @@ services:
       timeout: 5s
       retries: 10
 
+  # One-shot: create the app's bucket once MinIO is up. Nothing else provisions it — the
+  # application never calls CreateBucket (a real R2/S3 bucket is IaC, not app-managed), so
+  # without this a fresh `docker compose up` leaves every upload failing with NoSuchBucket
+  # (STORAGE_UPLOAD_FAILED). `--ignore-existing` makes re-runs a no-op.
+  minio-init:
+    image: minio/mc:latest
+    container_name: skillhub-minio-init
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MC_HOST_local: http://${MINIO_ROOT_USER:-skillhub_minio}:${MINIO_ROOT_PASSWORD:-minio_dev_only}@minio:9000
+    entrypoint: >
+      /bin/sh -c "
+      mc mb --ignore-existing local/${S3_BUCKET:-moriah-skillhub} &&
+      echo 'minio bucket ${S3_BUCKET:-moriah-skillhub} ready'
+      "
+
 volumes:
   skillhub-mysql-data:
   skillhub-mysql-replica-data:

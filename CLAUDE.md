@@ -39,6 +39,13 @@ See the root `README.md` for which keys actually need real values in dev
   skillhub-mysql mysql -uroot -p<MYSQL_ROOT_PASSWORD> moriah_skillhub` always works.
 - Backend log file: `backend/logs/skillhub.log` (large — grep it).
 - Jobs/cron zone: `Asia/Kolkata`.
+- **`STORAGE_UPLOAD_FAILED`** on a resume/invoice/certificate upload → object storage
+  problem, not app code. Check `[storage] upload failed` in the log for the real S3
+  error. Usual causes: the `moriah-skillhub` bucket is missing (the `minio-init`
+  compose service creates it — `docker compose logs minio-init`), `S3_ENDPOINT` unset
+  in `.env`, or `S3_ACCESS_KEY`/`SECRET` ≠ `MINIO_ROOT_USER`/`PASSWORD`. The
+  `InvoiceGenerationJob` has **no retry** — a failed invoice stays PENDING; re-drive it
+  with `POST /api/v1/dev/jobs/invoice-generation?paymentId=<id>` (ADMIN, dev profile).
 
 ## Build / test
 
