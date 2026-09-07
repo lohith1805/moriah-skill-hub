@@ -512,6 +512,16 @@ const FE_STAFF_ATT_STATUS = {
 };
 const fmtTime = (iso) =>
   iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "--";
+const nn = (t) => (t === "--" ? null : t);
+
+// The staff-attendance row is keyed on the *server's* calendar date (workDate,
+// Asia/Kolkata). `new Date().toISOString()` is UTC and rolls to the next day from
+// ~18:30 IST onwards, so a check-in logged in the evening would never be found by
+// a UTC-dated lookup. Use the browser's local date instead — it matches IST here.
+const localToday = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 // Returns the "Live Biometric / Web Check-ins" row shape. Role/department are
 // enriched client-side from the employee directory (the attendance row itself
@@ -546,6 +556,9 @@ export async function getClockinLogs({ from, to, userUuid } = {}) {
 // POST /api/v1/hr/attendance/checkin — { userUuid?, device }. Omitting userUuid
 // (or passing your own) is a self check-in; HR passes another staff member's uuid
 // to log a terminal check-in on their behalf.
+// Returns the full row (checkIn/checkOut/status) so a caller can update its UI
+// straight from the write response instead of re-fetching — the check-in is
+// idempotent server-side, so a repeat click is harmless but shouldn't be needed.
 export async function logCheckin({ userUuid, device } = {}) {
   const res = await apiClient.post("/hr/attendance/checkin", {
     userUuid: userUuid || null,
@@ -555,25 +568,41 @@ export async function logCheckin({ userUuid, device } = {}) {
     id: res.id,
     userUuid: res.userUuid,
     status: STAFF_ATT_STATUS_TO_FE[res.status] || res.status,
+    checkIn: nn(fmtTime(res.checkedInAt)),
+    checkOut: nn(fmtTime(res.checkedOutAt)),
+    workDate: res.workDate || null,
   };
 }
 
-// POST /api/v1/hr/attendance/checkout — own, or (HR) ?userUuid=.
+// POST /api/v1/hr/attendance/checkout — own, or (HR) ?userUuid=. Same row shape as logCheckin.
 export async function clockOut(userUuid) {
-  return apiClient.post(`/hr/attendance/checkout${userUuid ? `?userUuid=${encodeURIComponent(userUuid)}` : ""}`);
+  const res = await apiClient.post(
+    `/hr/attendance/checkout${userUuid ? `?userUuid=${encodeURIComponent(userUuid)}` : ""}`
+  );
+  return {
+    id: res.id,
+    userUuid: res.userUuid,
+    status: STAFF_ATT_STATUS_TO_FE[res.status] || res.status,
+    checkIn: nn(fmtTime(res.checkedInAt)),
+    checkOut: nn(fmtTime(res.checkedOutAt)),
+    workDate: res.workDate || null,
+  };
 }
 
 // The caller's own attendance row for today (for the dashboard clock-in widget).
 // null = they haven't checked in yet. A non-HR caller is auto-scoped server-side.
 export async function getMyStaffAttendanceToday(myUuid) {
-  const today = new Date().toISOString().slice(0, 10);
-  const res = await apiClient.get("/hr/attendance", { from: today, to: today, size: 20 });
+  const today = localToday();
+  const res = await apiClient.get("/hr/attendance", { from: today, to: today, size: 50 });
   const rows = asRows(res);
-  const mine = myUuid ? rows.find((r) => r.userUuid === myUuid) : rows[0];
+  // A non-HR caller is auto-scoped server-side, so a single returned row is
+  // theirs even if the uuid string didn't line up; HR gets everyone's rows and
+  // must match on uuid.
+  const mine = (myUuid && rows.find((r) => r.userUuid === myUuid)) || (rows.length === 1 ? rows[0] : null);
   if (!mine) return null;
   return {
-    checkIn: fmtTime(mine.checkedInAt) === "--" ? null : fmtTime(mine.checkedInAt),
-    checkOut: fmtTime(mine.checkedOutAt) === "--" ? null : fmtTime(mine.checkedOutAt),
+    checkIn: nn(fmtTime(mine.checkedInAt)),
+    checkOut: nn(fmtTime(mine.checkedOutAt)),
     status: STAFF_ATT_STATUS_TO_FE[mine.status] || mine.status,
   };
 }

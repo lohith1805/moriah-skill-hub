@@ -23,6 +23,7 @@ export default function ApplyLeaveWidget({ role }) {
   const [submitting, setSubmitting] = useState(false);
   const [values, setValues] = useState({ type: "CASUAL", from: "", to: "", reason: "" });
   const [errors, setErrors] = useState({});
+  const [notEnrolled, setNotEnrolled] = useState(false);
 
   const load = () => {
     if (!user?.uuid) return;
@@ -46,6 +47,9 @@ export default function ApplyLeaveWidget({ role }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const validation = validateForm(values, { from: [required], to: [required] });
+    if (values.from && values.to && values.to < values.from) {
+      validation.to = "The end date can't be before the start date.";
+    }
     setErrors(validation);
     if (Object.keys(validation).length) return;
 
@@ -61,7 +65,14 @@ export default function ApplyLeaveWidget({ role }) {
       setModalOpen(false);
       load();
     } catch (err) {
-      notify(err.message || "Could not submit the leave request.", { type: "error" });
+      if (err?.status === 404) {
+        // Backend: EMPLOYEE_NOT_FOUND — no employees row is linked to this account.
+        setNotEnrolled(true);
+        setModalOpen(false);
+        notify("No employee record is linked to your account yet — ask HR to add you.", { type: "error" });
+      } else {
+        notify(err.message || "Could not submit the leave request.", { type: "error" });
+      }
     } finally {
       setSubmitting(false);
     }
@@ -74,8 +85,13 @@ export default function ApplyLeaveWidget({ role }) {
       <Card>
         <div className="flex items-center justify-between mb-4">
           <CardHeader title="My Leave Requests" subtitle="Apply for time off — HR will approve or reject it" />
-          <Button size="sm" icon={CalendarPlus} onClick={openModal}>Apply for Leave</Button>
+          <Button size="sm" icon={CalendarPlus} onClick={openModal} disabled={notEnrolled}>Apply for Leave</Button>
         </div>
+        {notEnrolled && (
+          <p className="text-xs text-warning-700 bg-warning-50 border border-warning-100 rounded-md px-3 py-2 mb-3">
+            No employee record is linked to your account yet — ask HR to add you on the Employees screen before you can apply for leave.
+          </p>
+        )}
         {loading ? (
           <p className="text-sm text-ink-400 py-6 text-center">Loading…</p>
         ) : myLeaves.length === 0 ? (

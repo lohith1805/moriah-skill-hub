@@ -115,6 +115,19 @@ export default function LeadPipeline() {
     const lead = leads.find((l) => l.id === leadId);
     if (!lead || lead.stage === targetStage) return;
 
+    // Pre-flight the two rules the backend rejects with a 409 — do it here so the
+    // card doesn't optimistically jump and then snap back with a cryptic toast.
+    if (lead.stage === "Won / Enrolled" || lead.stage === "Lost") {
+      notify(`"${lead.name}" is already ${lead.stage} — that's a final stage, it can't be moved from the board.`, { type: "warning" });
+      return;
+    }
+    const fromIdx = PIPELINE_STAGES.indexOf(lead.stage);
+    const toIdx = PIPELINE_STAGES.indexOf(targetStage);
+    if (fromIdx !== -1 && toIdx > fromIdx + 1) {
+      notify(`Advance "${lead.name}" one stage at a time — it can't skip straight to "${targetStage}".`, { type: "warning" });
+      return;
+    }
+
     const opts = {};
     if (isBackwardStage(lead.stage, targetStage)) {
       const reason = window.prompt(`Moving "${lead.name}" back to "${targetStage}". Reason for the move?`);
@@ -360,6 +373,18 @@ export default function LeadPipeline() {
     // same as the board drag.
     const stageChanged = editValues.stage && editValues.stage !== editingLead.stage;
     const opts = {};
+    if (stageChanged) {
+      if (editingLead.stage === "Won / Enrolled" || editingLead.stage === "Lost") {
+        notify(`"${editingLead.name}" is already ${editingLead.stage} — a final stage can't be changed.`, { type: "warning" });
+        return;
+      }
+      const fromIdx = PIPELINE_STAGES.indexOf(editingLead.stage);
+      const toIdx = PIPELINE_STAGES.indexOf(editValues.stage);
+      if (fromIdx !== -1 && toIdx > fromIdx + 1) {
+        notify(`Advance this lead one stage at a time — it can't skip straight to "${editValues.stage}".`, { type: "warning" });
+        return;
+      }
+    }
     if (stageChanged && editValues.stage === "Won / Enrolled") {
       const email = window.prompt(
         `Mark "${editingLead.name}" as enrolled.\nEnter the email the student registered with:`,

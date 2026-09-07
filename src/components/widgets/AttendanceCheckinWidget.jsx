@@ -37,6 +37,8 @@ export default function AttendanceCheckinWidget() {
     setCheckingIn(true);
     try {
       const res = await logCheckin({ device: "WEB-AUTH-PORTAL" });
+      // Reflect the write immediately — don't wait on (or depend on) the re-fetch.
+      setToday((t) => ({ ...(t || {}), checkIn: res.checkIn, checkOut: res.checkOut, status: res.status }));
       notify(`Checked in — marked ${res.status}.`, { type: "success" });
       load();
     } catch (err) {
@@ -53,7 +55,8 @@ export default function AttendanceCheckinWidget() {
   const handleCheckOut = async () => {
     setCheckingOut(true);
     try {
-      await clockOut();
+      const res = await clockOut();
+      setToday((t) => ({ ...(t || {}), checkIn: res.checkIn ?? t?.checkIn, checkOut: res.checkOut, status: res.status }));
       notify("Checked out.", { type: "success" });
       load();
     } catch (err) {

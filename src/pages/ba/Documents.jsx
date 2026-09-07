@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import mammoth from "mammoth";
-import { Plus, Eye, ShieldCheck, XCircle, FileText, UploadCloud, Download, Maximize2, Minimize2 } from "lucide-react";
+import { Plus, Eye, ShieldCheck, XCircle, FileText, UploadCloud, Download, Maximize2, Minimize2, PencilLine } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
 import Table from "../../components/ui/Table";
@@ -40,6 +40,12 @@ function typeTone(t) {
 }
 
 const emptyValues = () => ({ docType: "BRD", title: "", content: "" });
+
+// A "Revise" of a rejected doc reuses the create form, pre-filled from the last
+// version. Submitting hits the same POST /ba/documents — the backend bumps the
+// version (max for this project+docType, +1), so v1 (REJECTED) stays as history
+// and the resubmission lands as v2, IN_REVIEW, with fresh sign-off slots.
+const reviseValues = (doc, content) => ({ docType: doc.docType, title: doc.title, content: content || "" });
 
 const APPROVAL_ROLE_ORDER = ["CLIENT", "BUSINESS_ANALYST", "DEVELOPER"];
 const APPROVAL_ROLE_LABEL = { CLIENT: "Client", BUSINESS_ANALYST: "BA", DEVELOPER: "Developer" };
@@ -85,12 +91,14 @@ export default function BaDocuments() {
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [loadingDocs, setLoadingDocs] = useState(false);
 
-  // Create
+  // Create / revise
   const [modalOpen, setModalOpen] = useState(false);
   const [values, setValues] = useState(emptyValues());
   const [errors, setErrors] = useState({});
   const [importing, setImporting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [revisingFrom, setRevisingFrom] = useState(null); // the rejected doc being revised, or null
+  const [loadingRevision, setLoadingRevision] = useState(false);
 
   // View
   const [viewingId, setViewingId] = useState(null);
@@ -129,9 +137,28 @@ export default function BaDocuments() {
   const project = projects.find((p) => String(p.id) === String(projectId));
 
   const openCreate = () => {
+    setRevisingFrom(null);
     setValues(emptyValues());
     setErrors({});
     setModalOpen(true);
+  };
+
+  // Rejected doc -> new version. Opens the create form pre-filled with the last
+  // version's type/title, then fetches its full content to seed the editor.
+  const openRevise = async (doc) => {
+    setRevisingFrom(doc);
+    setErrors({});
+    setValues(reviseValues(doc, ""));
+    setModalOpen(true);
+    setLoadingRevision(true);
+    try {
+      const detail = await getRequirementDocumentDetail(doc.id);
+      setValues(reviseValues(doc, detail.content));
+    } catch (err) {
+      notify(err?.message || "Couldn't load the previous version — you can paste its content in.", { type: "error" });
+    } finally {
+      setLoadingRevision(false);
+    }
   };
 
   const handleImport = async (files) => {
@@ -158,8 +185,14 @@ export default function BaDocuments() {
     setSubmitting(true);
     try {
       await createRequirementDocument({ clientProjectId: projectId, ...values });
-      notify(`${values.docType} submitted for review.`, { type: "success", title: "Document created" });
+      notify(
+        revisingFrom
+          ? `Revised ${values.docType} resubmitted as a new version.`
+          : `${values.docType} submitted for review.`,
+        { type: "success", title: revisingFrom ? "New version submitted" : "Document created" }
+      );
       setModalOpen(false);
+      setRevisingFrom(null);
       loadDocs(projectId);
     } catch (err) {
       notify(err?.message || "Couldn't create this document.", { type: "error" });
@@ -268,16 +301,13 @@ export default function BaDocuments() {
               },
               { key: "authoredByName", header: "Authored by", className: "text-left text-xs text-ink-500" },
               {
-                key: "devReview", header: "Dev Check", className: "text-left",
-                render: (r) => r.devReviewedAt
-                  ? <Badge tone="success">Reviewed by {r.devReviewedByName}</Badge>
-                  : <Badge tone="neutral">Pending</Badge>,
-              },
-              {
                 key: "action", header: "", className: "text-right",
                 render: (r) => (
                   <div className="flex gap-2 justify-end">
                     <Button size="sm" variant="secondary" icon={Eye} onClick={() => openView(r)}>View</Button>
+                    {r.status === "REJECTED" && (
+                      <Button size="sm" icon={PencilLine} onClick={() => openRevise(r)}>Revise</Button>
+                    )}
                     {r.status !== "APPROVED" && r.status !== "REJECTED" && (
                       <Button size="sm" icon={ShieldCheck} loading={approvingId === r.id} onClick={() => approve(r)}>Sign off as BA</Button>
                     )}
@@ -292,17 +322,31 @@ export default function BaDocuments() {
       {/* Create */}
       <Modal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title={`New requirement document — ${project?.title || ""}`}
+        onClose={() => { setModalOpen(false); setRevisingFrom(null); }}
+        title={
+          revisingFrom
+            ? `Revise ${revisingFrom.docType} v${revisingFrom.version} — ${project?.title || ""}`
+            : `New requirement document — ${project?.title || ""}`
+        }
         size="lg"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
-            <Button loading={submitting} icon={Plus} onClick={submit}>Submit for review</Button>
+            <Button variant="secondary" onClick={() => { setModalOpen(false); setRevisingFrom(null); }}>Cancel</Button>
+            <Button loading={submitting} icon={Plus} onClick={submit}>
+              {revisingFrom ? "Resubmit as new version" : "Submit for review"}
+            </Button>
           </>
         }
       >
         <form className="flex flex-col gap-4 text-left font-sans" onSubmit={submit}>
+          {revisingFrom && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Revising after rejection by <span className="font-semibold">{revisingFrom.rejectedByName || "a reviewer"}</span>
+              {revisingFrom.rejectionReason ? <> — “{revisingFrom.rejectionReason}”</> : null}.
+              {" "}v{revisingFrom.version} stays on record as rejected; this resubmits as v{revisingFrom.version + 1} for a fresh sign-off round.
+              {loadingRevision && <span className="ml-1 italic">Loading previous content…</span>}
+            </div>
+          )}
           <Select
             label="Document type"
             required
@@ -405,7 +449,6 @@ export default function BaDocuments() {
                 <p className="text-xs text-ink-500 mt-1">
                   Authored by {viewingDoc.authoredByName || "—"}
                   {viewingDoc.approvedByName && <> · Approved by {viewingDoc.approvedByName}</>}
-                  {viewingDoc.devReviewedAt && <> · Reviewed by developer {viewingDoc.devReviewedByName}</>}
                 </p>
               </div>
               <Button size="sm" variant="ghost" icon={docExpanded ? Minimize2 : Maximize2} onClick={() => setDocExpanded((v) => !v)}>
