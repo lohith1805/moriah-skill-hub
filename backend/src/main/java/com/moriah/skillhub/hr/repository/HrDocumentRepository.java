@@ -9,7 +9,13 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Optional;
+
 public interface HrDocumentRepository extends JpaRepository<HrDocument, Long> {
+
+    /** The newest upload of a given type for a user — a re-upload after a rejection creates a new
+     * row, so "is this document type verified?" is a question about the latest one. */
+    Optional<HrDocument> findFirstByUserIdAndDocumentTypeOrderByCreatedAtDesc(Long userId, String documentType);
 
     /** {@code GET /api/v1/hr/documents} — optional (userId, status, documentType) filter, all
      * nullable. {@code user}/{@code verifiedBy} fetched in the same query (both feed {@code

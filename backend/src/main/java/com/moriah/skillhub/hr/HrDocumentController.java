@@ -54,12 +54,15 @@ public class HrDocumentController {
 
     @PostMapping
     @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Upload a document (PDF). Employees upload their own; HR_MANAGER / ADMIN "
+            + "may pass onBehalfOfUserUuid to upload for someone else (e.g. a background-check report).")
     public ResponseEntity<ApiResponse<HrDocumentResponse>> upload(
             @RequestParam("file") MultipartFile file,
             @RequestParam String documentType,
+            @RequestParam(required = false) String onBehalfOfUserUuid,
             @CurrentUser Long callerUserId) {
 
-        HrDocumentResponse response = hrDocumentService.upload(callerUserId, documentType, file);
+        HrDocumentResponse response = hrDocumentService.upload(callerUserId, onBehalfOfUserUuid, documentType, file);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
     }
 

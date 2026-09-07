@@ -5,11 +5,16 @@ import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ForbiddenOperationException;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
+import com.moriah.skillhub.common.notification.NotificationChannel;
+import com.moriah.skillhub.common.notification.NotificationService;
 import com.moriah.skillhub.common.storage.StorageService;
 import com.moriah.skillhub.hr.dto.HrDocumentResponse;
 import com.moriah.skillhub.hr.dto.VerifyHrDocumentRequest;
+import com.moriah.skillhub.hr.entity.Employee;
 import com.moriah.skillhub.hr.entity.HrDocument;
 import com.moriah.skillhub.hr.entity.HrDocumentStatus;
+import com.moriah.skillhub.hr.repository.EmployeeOnboardingRepository;
+import com.moriah.skillhub.hr.repository.EmployeeRepository;
 import com.moriah.skillhub.hr.repository.HrDocumentRepository;
 import com.moriah.skillhub.common.security.AuthenticatedPrincipal;
 import com.moriah.skillhub.user.entity.User;
@@ -17,6 +22,7 @@ import com.moriah.skillhub.user.repository.UserRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
@@ -34,6 +40,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -48,11 +56,18 @@ class HrDocumentServiceTest {
     private StorageService storageService;
     @Mock
     private AuditLogService auditLogService;
+    @Mock
+    private NotificationService notificationService;
+    @Mock
+    private EmployeeRepository employeeRepository;
+    @Mock
+    private EmployeeOnboardingRepository employeeOnboardingRepository;
 
     // Built per-test, not as a field initializer — a field initializer runs during construction,
     // before MockitoExtension's beforeEach injects @Mock fields, leaving them null.
     private HrDocumentService service() {
-        return new HrDocumentService(hrDocumentRepository, userRepository, storageService, auditLogService);
+        return new HrDocumentService(hrDocumentRepository, userRepository, storageService, auditLogService,
+                notificationService, employeeRepository, employeeOnboardingRepository);
     }
 
     private User user(long id, String uuid) {
@@ -68,7 +83,7 @@ class HrDocumentServiceTest {
         when(storageService.upload(anyString(), any(), anyString())).thenReturn("hr-documents/user-uuid/AADHAAR-x.pdf");
         MockMultipartFile file = new MockMultipartFile("file", "id.pdf", "application/pdf", new byte[]{1, 2, 3});
 
-        HrDocumentResponse response = service().upload(1L, "AADHAAR", file);
+        HrDocumentResponse response = service().upload(1L, null, "AADHAAR",file);
 
         assertThat(response.documentType()).isEqualTo("AADHAAR");
         assertThat(response.verificationStatus()).isEqualTo(HrDocumentStatus.PENDING);
@@ -78,7 +93,7 @@ class HrDocumentServiceTest {
     void upload_emptyFile_throwsUnsupportedFileType() {
         MockMultipartFile empty = new MockMultipartFile("file", "id.pdf", "application/pdf", new byte[0]);
 
-        assertThatThrownBy(() -> service().upload(1L, "AADHAAR", empty))
+        assertThatThrownBy(() -> service().upload(1L, null, "AADHAAR",empty))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UNSUPPORTED_FILE_TYPE);
     }
@@ -87,7 +102,7 @@ class HrDocumentServiceTest {
     void upload_blankDocumentType_throwsValidationFailed() {
         MockMultipartFile file = new MockMultipartFile("file", "id.pdf", "application/pdf", new byte[]{1, 2, 3});
 
-        assertThatThrownBy(() -> service().upload(1L, "  ", file))
+        assertThatThrownBy(() -> service().upload(1L, null, "  ", file))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.VALIDATION_FAILED);
     }
@@ -160,7 +175,7 @@ class HrDocumentServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.HR_DOCUMENT_NOT_FOUND);
     }
 
-    // --- list ---
+    // --- HR on-behalf upload + onboarding notifications ---
 
     @AfterEach
     void clearContext() {
@@ -170,6 +185,80 @@ class HrDocumentServiceTest {
     private void authenticateAs(long userId, List<String> roles) {
         SecurityContextHolder.getContext().setAuthentication(
                 new TestingAuthenticationToken(new AuthenticatedPrincipal(userId, "uuid-" + userId, roles), null));
+    }
+
+    @Test
+    void upload_onBehalfOfAnother_asHr_storesForTargetUser() {
+        authenticateAs(9L, List.of("HR_MANAGER"));
+        when(userRepository.findByUuid("u-target")).thenReturn(Optional.of(user(5L, "u-target")));
+        when(storageService.upload(anyString(), any(), anyString())).thenReturn("hr-documents/u-target/BACKGROUND_CHECK-x.pdf");
+        MockMultipartFile file = new MockMultipartFile("file", "bg.pdf", "application/pdf", new byte[]{1, 2, 3});
+
+        service().upload(9L, "u-target", "BACKGROUND_CHECK", file);
+
+        ArgumentCaptor<HrDocument> captor = ArgumentCaptor.forClass(HrDocument.class);
+        verify(hrDocumentRepository).save(captor.capture());
+        assertThat(captor.getValue().getUser().getUuid()).isEqualTo("u-target");
+    }
+
+    @Test
+    void upload_onBehalfOfAnother_nonHr_forbidden() {
+        authenticateAs(3L, List.of("DEVELOPER"));
+        MockMultipartFile file = new MockMultipartFile("file", "x.pdf", "application/pdf", new byte[]{1, 2, 3});
+
+        assertThatThrownBy(() -> service().upload(3L, "u-target", "ID_PROOF", file))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INSUFFICIENT_ROLE);
+    }
+
+    @Test
+    void verify_rejected_notifiesDocumentOwner() {
+        HrDocument document = pendingDocument(); // owner = user 1
+        when(hrDocumentRepository.findById(1L)).thenReturn(Optional.of(document));
+        when(userRepository.getReferenceById(9L)).thenReturn(user(9L, "hr-uuid"));
+
+        service().verify(1L, new VerifyHrDocumentRequest(HrDocumentStatus.REJECTED, "Blurry"), 9L);
+
+        verify(notificationService).enqueueAfterCommit(
+                eq(1L), eq(NotificationChannel.IN_APP), eq("HR_DOCUMENT_REJECTED"), any());
+    }
+
+    @Test
+    void verify_finalOnboardingDoc_marksOnboardingCompleteAndNotifies() {
+        HrDocument bgCheck = pendingDocument();
+        bgCheck.setDocumentType("BACKGROUND_CHECK");
+        when(hrDocumentRepository.findById(1L)).thenReturn(Optional.of(bgCheck));
+        when(userRepository.getReferenceById(9L)).thenReturn(user(9L, "hr-uuid"));
+
+        HrDocument verified = new HrDocument();
+        verified.setVerificationStatus(HrDocumentStatus.VERIFIED);
+        lenient().when(hrDocumentRepository.findFirstByUserIdAndDocumentTypeOrderByCreatedAtDesc(eq(1L), anyString()))
+                .thenReturn(Optional.of(verified));
+        Employee employee = new Employee();
+        employee.setId(50L);
+        when(employeeRepository.findByUserId(1L)).thenReturn(Optional.of(employee));
+        when(employeeOnboardingRepository.search(isNull(), eq(50L), any())).thenReturn(new PageImpl<>(List.of()));
+
+        service().verify(1L, new VerifyHrDocumentRequest(HrDocumentStatus.VERIFIED, null), 9L);
+
+        verify(employeeOnboardingRepository).save(any());
+        verify(notificationService).enqueueAfterCommit(
+                eq(1L), eq(NotificationChannel.IN_APP), eq("ONBOARDING_COMPLETE"), any());
+    }
+
+    @Test
+    void verify_verifiedButNotEveryDocIn_doesNotComplete() {
+        HrDocument nda = pendingDocument();
+        nda.setDocumentType("NDA");
+        when(hrDocumentRepository.findById(1L)).thenReturn(Optional.of(nda));
+        when(userRepository.getReferenceById(9L)).thenReturn(user(9L, "hr-uuid"));
+        lenient().when(hrDocumentRepository.findFirstByUserIdAndDocumentTypeOrderByCreatedAtDesc(eq(1L), anyString()))
+                .thenReturn(Optional.empty());
+
+        service().verify(1L, new VerifyHrDocumentRequest(HrDocumentStatus.VERIFIED, null), 9L);
+
+        verify(employeeOnboardingRepository, never()).save(any());
+        verify(notificationService, never()).enqueueAfterCommit(any(), any(), any(), any());
     }
 
     @Test
