@@ -16,6 +16,8 @@ import com.moriah.skillhub.hr.entity.ExitType;
 import com.moriah.skillhub.hr.repository.EmployeeExitRepository;
 import com.moriah.skillhub.hr.repository.EmployeeRepository;
 import com.moriah.skillhub.user.entity.User;
+import com.moriah.skillhub.user.entity.UserStatus;
+import com.moriah.skillhub.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -45,6 +47,8 @@ class EmployeeExitServiceTest {
     private EmployeeExitRepository exitRepository;
     @Mock
     private EmployeeRepository employeeRepository;
+    @Mock
+    private UserRepository userRepository;
     @Mock
     private AuditLogService auditLogService;
     @Spy
@@ -163,6 +167,21 @@ class EmployeeExitServiceTest {
         service.complete(3L, 7L);
 
         assertThat(x.getEmployee().getStatus()).isEqualTo(EmployeeStatus.TERMINATED);
+    }
+
+    @Test
+    void complete_terminatesLoginAccountAndKillsSessions() {
+        EmployeeExit x = exit(3L, ExitType.RESIGNATION, EmployeeExitStatus.IN_PROGRESS);
+        User u = x.getEmployee().getUser();
+        u.setStatus(UserStatus.ACTIVE);
+        int tokenVersionBefore = u.getTokenVersion();
+        when(exitRepository.findWithEmployeeById(3L)).thenReturn(Optional.of(x));
+
+        service.complete(3L, 7L);
+
+        assertThat(u.getStatus()).isEqualTo(UserStatus.TERMINATED);
+        assertThat(u.getTokenVersion()).isEqualTo(tokenVersionBefore + 1);
+        verify(userRepository).save(u);
     }
 
     @Test

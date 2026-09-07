@@ -17,6 +17,9 @@ import com.moriah.skillhub.hr.entity.EmployeeStatus;
 import com.moriah.skillhub.hr.entity.ExitType;
 import com.moriah.skillhub.hr.repository.EmployeeExitRepository;
 import com.moriah.skillhub.hr.repository.EmployeeRepository;
+import com.moriah.skillhub.user.entity.User;
+import com.moriah.skillhub.user.entity.UserStatus;
+import com.moriah.skillhub.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
@@ -47,6 +50,7 @@ public class EmployeeExitService {
 
     private final EmployeeExitRepository exitRepository;
     private final EmployeeRepository employeeRepository;
+    private final UserRepository userRepository;
     private final AuditLogService auditLogService;
     private final ObjectMapper objectMapper;
 
@@ -119,9 +123,24 @@ public class EmployeeExitService {
                 ? EmployeeStatus.TERMINATED : EmployeeStatus.EXITED);
         employee.setDateOfExit(exit.getLastWorkingDay());
 
+        // Finalising an exit has to actually revoke access, not just update the HR record.
+        // Mirror AdminUserService.updateStatus: flip the login account to TERMINATED and bump
+        // token_version so any live session is rejected on its next request. Both a clean EXITED
+        // and a for-cause TERMINATED departure end login access — the EXITED/TERMINATED
+        // distinction on the employees row is what HrLetterService reads for letter eligibility.
+        User user = employee.getUser();
+        UserStatus previousUserStatus = user.getStatus();
+        if (previousUserStatus != UserStatus.TERMINATED) {
+            user.setStatus(UserStatus.TERMINATED);
+            user.setTokenVersion(user.getTokenVersion() + 1);
+            userRepository.save(user);
+            auditLogService.record(callerUserId, "USER_STATUS_CHANGED", "User", user.getId(),
+                    previousUserStatus, UserStatus.TERMINATED);
+        }
+
         auditLogService.record(callerUserId, "EMPLOYEE_EXIT_COMPLETED", "EmployeeExit", exit.getId(),
                 null, employee.getStatus());
-        log.info("[hr/exits] {} completed exit {} — employee {} is now {}",
+        log.info("[hr/exits] {} completed exit {} — employee {} is now {}, login account terminated",
                 callerUserId, exit.getId(), employee.getEmployeeCode(), employee.getStatus());
         return toResponse(exit);
     }
