@@ -1,6 +1,7 @@
 package com.moriah.skillhub.hr.repository;
 
 import com.moriah.skillhub.hr.entity.Employee;
+import com.moriah.skillhub.hr.entity.EmployeeProvisioningStatus;
 import com.moriah.skillhub.hr.entity.EmployeeStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -39,6 +40,12 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
     @EntityGraph(attributePaths = {"user", "reportingManager"})
     Optional<Employee> findWithAssociationsById(Long id);
+
+    /** HR's "Pending Employee Records" queue — records auto-created on invite-accept that HR
+     * has not filled in and approved yet. */
+    @EntityGraph(attributePaths = {"user", "reportingManager"})
+    Page<Employee> findByProvisioningStatusOrderByCreatedAtAsc(EmployeeProvisioningStatus provisioningStatus,
+                                                              Pageable pageable);
 
     /** Batch fetch with {@code user} eagerly joined — used by {@code PayrollService.generate} to
      * avoid one {@code findById} + one lazy {@code user} load per payroll line. */

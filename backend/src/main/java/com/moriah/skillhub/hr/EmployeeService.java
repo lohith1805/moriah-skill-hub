@@ -6,7 +6,9 @@ import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
 import com.moriah.skillhub.hr.dto.CreateEmployeeRequest;
 import com.moriah.skillhub.hr.dto.EmployeeResponse;
+import com.moriah.skillhub.hr.dto.UpdateEmployeeRequest;
 import com.moriah.skillhub.hr.entity.Employee;
+import com.moriah.skillhub.hr.entity.EmployeeProvisioningStatus;
 import com.moriah.skillhub.hr.entity.EmployeeStatus;
 import com.moriah.skillhub.hr.entity.EmploymentType;
 import com.moriah.skillhub.hr.repository.EmployeeRepository;
@@ -112,11 +114,56 @@ public class EmployeeService {
             employee.setBaseSalary(new BigDecimal("0.00"));
         }
         employee.setStatus(EmployeeStatus.ACTIVE);
+        employee.setProvisioningStatus(EmployeeProvisioningStatus.PENDING_HR);
         employeeRepository.save(employee);
 
-        log.info("[hr] auto-provisioned {} ({} / {}) for user {} on invite accept — "
-                        + "HR still needs to set real compensation and reporting manager",
+        log.info("[hr] auto-provisioned {} ({} / {}) for user {} on invite accept — PENDING_HR "
+                        + "until HR fills in real compensation / reporting manager and approves it",
                 employee.getEmployeeCode(), profile.department(), profile.designation(), userId);
+    }
+
+    /**
+     * {@code PUT /api/v1/hr/employees/{id}} — HR fills in / corrects the editable fields on an
+     * employee record. When {@code request.confirm()} is true this is also the "Approve" action:
+     * a {@code PENDING_HR} record flips to {@code CONFIRMED} in the same call. {@code employeeCode}
+     * and the linked user are identity and untouched.
+     */
+    @Transactional
+    public EmployeeResponse update(Long id, UpdateEmployeeRequest request) {
+        Employee employee = employeeRepository.findWithAssociationsById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.EMPLOYEE_NOT_FOUND, id));
+
+        employee.setDepartment(request.department());
+        employee.setDesignation(request.designation());
+        employee.setEmploymentType(request.employmentType());
+        employee.setDateOfJoining(request.dateOfJoining());
+        employee.setBaseSalary(request.baseSalary());
+        employee.setHourlyRate(request.hourlyRate());
+
+        if (request.reportingManagerId() == null) {
+            employee.setReportingManager(null);
+        } else if (request.reportingManagerId().equals(id)) {
+            throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION, "An employee cannot report to themselves.");
+        } else {
+            employee.setReportingManager(employeeRepository.findById(request.reportingManagerId())
+                    .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.EMPLOYEE_NOT_FOUND, request.reportingManagerId())));
+        }
+
+        if (request.confirm()) {
+            employee.setProvisioningStatus(EmployeeProvisioningStatus.CONFIRMED);
+        }
+
+        employeeRepository.save(employee);
+        return toResponse(employee);
+    }
+
+    /** {@code GET /api/v1/hr/employees/pending} — HR's onboarding queue: records auto-created on
+     * invite-accept that still need HR to fill in the real fields and approve them. */
+    @Transactional(readOnly = true)
+    public PageResponse<EmployeeResponse> listPending(Pageable pageable) {
+        return PageResponse.from(employeeRepository
+                .findByProvisioningStatusOrderByCreatedAtAsc(EmployeeProvisioningStatus.PENDING_HR, pageable)
+                .map(this::toResponse));
     }
 
     /** {@code EMP-<userId>}, widened to 4 digits, with a {@code -2}, {@code -3}… suffix on the
@@ -181,6 +228,7 @@ public class EmployeeService {
                 employee.getBaseSalary(),
                 employee.getHourlyRate(),
                 employee.getReportingManager() == null ? null : employee.getReportingManager().getId(),
-                employee.getStatus());
+                employee.getStatus(),
+                employee.getProvisioningStatus());
     }
 }

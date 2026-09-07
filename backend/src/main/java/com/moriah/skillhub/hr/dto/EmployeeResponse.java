@@ -1,5 +1,6 @@
 package com.moriah.skillhub.hr.dto;
 
+import com.moriah.skillhub.hr.entity.EmployeeProvisioningStatus;
 import com.moriah.skillhub.hr.entity.EmployeeStatus;
 import com.moriah.skillhub.hr.entity.EmploymentType;
 
@@ -19,6 +20,7 @@ public record EmployeeResponse(
         BigDecimal baseSalary,
         BigDecimal hourlyRate,
         Long reportingManagerId,
-        EmployeeStatus status
+        EmployeeStatus status,
+        EmployeeProvisioningStatus provisioningStatus
 ) {
 }

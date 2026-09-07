@@ -5,8 +5,10 @@ import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
 import com.moriah.skillhub.hr.dto.CreateEmployeeRequest;
 import com.moriah.skillhub.hr.dto.EmployeeResponse;
+import com.moriah.skillhub.hr.dto.UpdateEmployeeRequest;
 import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.hr.entity.Employee;
+import com.moriah.skillhub.hr.entity.EmployeeProvisioningStatus;
 import com.moriah.skillhub.hr.entity.EmployeeStatus;
 import com.moriah.skillhub.hr.entity.EmploymentType;
 import com.moriah.skillhub.hr.repository.EmployeeRepository;
@@ -76,6 +78,8 @@ class EmployeeServiceTest {
 
         assertThat(response.userUuid()).isEqualTo("user-uuid");
         assertThat(response.employeeCode()).isEqualTo("EMP-001");
+        // Created directly by HR — no PENDING_HR review step.
+        assertThat(response.provisioningStatus()).isEqualTo(EmployeeProvisioningStatus.CONFIRMED);
     }
 
     @Test
@@ -161,6 +165,7 @@ class EmployeeServiceTest {
         assertThat(saved.getBaseSalary()).isEqualByComparingTo("0.00");
         assertThat(saved.getHourlyRate()).isNull();
         assertThat(saved.getDateOfJoining()).isEqualTo(LocalDate.now());
+        assertThat(saved.getProvisioningStatus()).isEqualTo(EmployeeProvisioningStatus.PENDING_HR);
     }
 
     @Test
@@ -224,6 +229,71 @@ class EmployeeServiceTest {
         e.setStatus(EmployeeStatus.ACTIVE);
         e.setUser(user(id + 100, "u-" + id));
         return e;
+    }
+
+    private UpdateEmployeeRequest updateReq(BigDecimal baseSalary, BigDecimal hourlyRate, Long managerId, boolean confirm) {
+        return new UpdateEmployeeRequest("People", "HR Business Partner", EmploymentType.FULL_TIME,
+                LocalDate.of(2026, 2, 1), baseSalary, hourlyRate, managerId, confirm);
+    }
+
+    // --- update / approve --------------------------------------------------------------
+
+    @Test
+    void update_editsFieldsWithoutConfirm_staysPending() {
+        Employee e = employee(3L);
+        e.setProvisioningStatus(EmployeeProvisioningStatus.PENDING_HR);
+        when(employeeRepository.findWithAssociationsById(3L)).thenReturn(Optional.of(e));
+
+        EmployeeResponse res = service().update(3L, updateReq(new BigDecimal("72000.00"), null, null, false));
+
+        assertThat(res.department()).isEqualTo("People");
+        assertThat(res.designation()).isEqualTo("HR Business Partner");
+        assertThat(res.baseSalary()).isEqualByComparingTo("72000.00");
+        assertThat(res.provisioningStatus()).isEqualTo(EmployeeProvisioningStatus.PENDING_HR);
+    }
+
+    @Test
+    void update_withConfirm_flipsToConfirmed() {
+        Employee e = employee(3L);
+        e.setProvisioningStatus(EmployeeProvisioningStatus.PENDING_HR);
+        when(employeeRepository.findWithAssociationsById(3L)).thenReturn(Optional.of(e));
+
+        EmployeeResponse res = service().update(3L, updateReq(new BigDecimal("72000.00"), null, null, true));
+
+        assertThat(res.provisioningStatus()).isEqualTo(EmployeeProvisioningStatus.CONFIRMED);
+    }
+
+    @Test
+    void update_reportingManagerIsSelf_throws() {
+        Employee e = employee(3L);
+        when(employeeRepository.findWithAssociationsById(3L)).thenReturn(Optional.of(e));
+
+        assertThatThrownBy(() -> service().update(3L, updateReq(new BigDecimal("50000.00"), null, 3L, false)))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.BUSINESS_RULE_VIOLATION);
+    }
+
+    @Test
+    void update_unknownId_throwsNotFound() {
+        when(employeeRepository.findWithAssociationsById(404L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service().update(404L, updateReq(new BigDecimal("50000.00"), null, null, false)))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EMPLOYEE_NOT_FOUND);
+    }
+
+    @Test
+    void listPending_returnsPendingRecords() {
+        Employee pending = employee(9L);
+        pending.setProvisioningStatus(EmployeeProvisioningStatus.PENDING_HR);
+        when(employeeRepository.findByProvisioningStatusOrderByCreatedAtAsc(
+                eq(EmployeeProvisioningStatus.PENDING_HR), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(pending), PageRequest.of(0, 20), 1));
+
+        PageResponse<EmployeeResponse> page = service().listPending(PageRequest.of(0, 20));
+
+        assertThat(page.content()).hasSize(1);
+        assertThat(page.content().get(0).provisioningStatus()).isEqualTo(EmployeeProvisioningStatus.PENDING_HR);
     }
 
     @Test

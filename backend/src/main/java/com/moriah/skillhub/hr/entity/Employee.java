@@ -62,4 +62,11 @@ public class Employee extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private EmployeeStatus status;
+
+    /** Invite → onboarding pipeline state (separate axis from {@link #status}). Defaults to
+     * {@code CONFIRMED} so a record HR creates directly is confirmed; the invite-accept
+     * auto-provisioner sets {@code PENDING_HR} explicitly. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "provisioning_status", nullable = false, length = 20)
+    private EmployeeProvisioningStatus provisioningStatus = EmployeeProvisioningStatus.CONFIRMED;
 }

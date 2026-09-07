@@ -4,6 +4,7 @@ import com.moriah.skillhub.common.dto.ApiResponse;
 import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.hr.dto.CreateEmployeeRequest;
 import com.moriah.skillhub.hr.dto.EmployeeResponse;
+import com.moriah.skillhub.hr.dto.UpdateEmployeeRequest;
 import com.moriah.skillhub.hr.entity.EmployeeStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -18,6 +19,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -51,10 +53,30 @@ public class EmployeeController {
         return ResponseEntity.ok(ApiResponse.success(employeeService.list(status, department, search, pageable)));
     }
 
+    @GetMapping("/pending")
+    @PreAuthorize("hasAnyRole('HR_MANAGER','ADMIN')")
+    @Operation(summary = "HR onboarding queue — records auto-created on invite-accept that HR "
+            + "still has to fill in and approve (provisioning_status = PENDING_HR)")
+    public ResponseEntity<ApiResponse<PageResponse<EmployeeResponse>>> pending(
+            @PageableDefault(size = 20) Pageable pageable) {
+
+        return ResponseEntity.ok(ApiResponse.success(employeeService.listPending(pageable)));
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('HR_MANAGER','ADMIN')")
     @Operation(summary = "One employee record by id")
     public ResponseEntity<ApiResponse<EmployeeResponse>> get(@PathVariable Long id) {
         return ResponseEntity.ok(ApiResponse.success(employeeService.get(id)));
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('HR_MANAGER','ADMIN')")
+    @Operation(summary = "Fill in / correct an employee record. confirm=true also approves a "
+            + "PENDING_HR record (flips it to CONFIRMED).")
+    public ResponseEntity<ApiResponse<EmployeeResponse>> update(
+            @PathVariable Long id, @Valid @RequestBody UpdateEmployeeRequest request) {
+
+        return ResponseEntity.ok(ApiResponse.success(employeeService.update(id, request)));
     }
 }
