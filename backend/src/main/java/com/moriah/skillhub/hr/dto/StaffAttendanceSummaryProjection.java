@@ -16,4 +16,9 @@ public interface StaffAttendanceSummaryProjection {
     long getHalfDays();
 
     long getOnLeaveDays();
+
+    /** Total minutes between check-in and check-out across the range, counting only days that
+     * have both timestamps. Days with a missing check-out contribute nothing — the payroll
+     * pre-fill treats this as a starting figure HR reviews, not a final one. */
+    Long getWorkedMinutes();
 }

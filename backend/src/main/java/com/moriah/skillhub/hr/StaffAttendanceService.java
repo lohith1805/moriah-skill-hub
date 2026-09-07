@@ -27,6 +27,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -187,9 +189,13 @@ public class StaffAttendanceService {
             Integer pct = counted == 0 ? null
                     : (int) Math.round((present + late) * 100.0 / counted);
 
+            long workedMinutes = p == null || p.getWorkedMinutes() == null ? 0L : p.getWorkedMinutes();
+            BigDecimal workedHours = BigDecimal.valueOf(workedMinutes)
+                    .divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
+
             return new StaffAttendanceSummaryRow(
                     e.getUser().getUuid(), e.getUser().getFullName(), e.getDepartment(),
-                    present, late, absent, half, onLeave, pct);
+                    present, late, absent, half, onLeave, pct, workedHours);
         }).toList();
     }
 

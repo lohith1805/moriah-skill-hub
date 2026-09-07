@@ -8,7 +8,7 @@ import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
 import StatCard from "../../components/widgets/StatCard";
 import { Input } from "../../components/ui/FormField";
-import { getPayroll, generatePayroll, getEmployees } from "../../services/hrService";
+import { getPayroll, generatePayroll, getEmployees, getStaffAttendanceSummary } from "../../services/hrService";
 import { CURRENCY } from "../../utils/constants";
 import { useToast } from "../../context/ToastContext";
 
@@ -50,10 +50,27 @@ export default function HrPayroll() {
     setLines({});
     setWorkingDays("22");
     try {
-      const emps = await getEmployees({ status: "ACTIVE" });
+      // Pull the month's attendance roll-up alongside the roster so the lines can
+      // be pre-filled from real check-in data (present days, worked hours) rather
+      // than a flat default. HR still reviews and can override every value.
+      const [emps, summary] = await Promise.all([
+        getEmployees({ status: "ACTIVE" }),
+        getStaffAttendanceSummary(month).catch(() => []),
+      ]);
       setEmployees(emps);
+      const attByUuid = Object.fromEntries((summary || []).map((s) => [s.userUuid, s]));
       setLines(
-        Object.fromEntries(emps.map((e) => [e.id, { presentDays: "22", deductions: "", sessionHours: "" }]))
+        Object.fromEntries(
+          emps.map((e) => {
+            const s = attByUuid[e.userUuid];
+            // present + late + half-days paired up (presentDays is an integer server-side)
+            const presentDays = s
+              ? String(Math.round((s.presentDays || 0) + (s.lateDays || 0) + 0.5 * (s.halfDays || 0)))
+              : "";
+            const sessionHours = s && s.workedHours > 0 ? String(s.workedHours) : "";
+            return [e.id, { presentDays, deductions: "", sessionHours, fromAttendance: !!s }];
+          })
+        )
       );
     } catch (e) {
       notify(e.message || "Could not load employees.", { type: "error" });
@@ -198,7 +215,12 @@ export default function HrPayroll() {
               ))}
             </div>
           )}
-          <p className="text-[11px] text-ink-400">Re-running a period that already has payroll is rejected by the server.</p>
+          <p className="text-[11px] text-ink-400">
+            Present days and session hours are pre-filled from this month's check-in / check-out
+            data — a blank row means nothing was logged for that person. Review and adjust for
+            holidays, comp-offs, or missed check-outs before running. Re-running a period that
+            already has payroll is rejected by the server.
+          </p>
         </div>
       </Modal>
 

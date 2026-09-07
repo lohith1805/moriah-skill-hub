@@ -39,7 +39,10 @@ public interface StaffAttendanceRepository extends JpaRepository<StaffAttendance
                    SUM(CASE WHEN sa.status = com.moriah.skillhub.hr.entity.StaffAttendanceStatus.LATE     THEN 1 ELSE 0 END) AS lateDays,
                    SUM(CASE WHEN sa.status = com.moriah.skillhub.hr.entity.StaffAttendanceStatus.ABSENT   THEN 1 ELSE 0 END) AS absentDays,
                    SUM(CASE WHEN sa.status = com.moriah.skillhub.hr.entity.StaffAttendanceStatus.HALF_DAY THEN 1 ELSE 0 END) AS halfDays,
-                   SUM(CASE WHEN sa.status = com.moriah.skillhub.hr.entity.StaffAttendanceStatus.ON_LEAVE THEN 1 ELSE 0 END) AS onLeaveDays
+                   SUM(CASE WHEN sa.status = com.moriah.skillhub.hr.entity.StaffAttendanceStatus.ON_LEAVE THEN 1 ELSE 0 END) AS onLeaveDays,
+                   COALESCE(SUM(CASE WHEN sa.checkedInAt IS NOT NULL AND sa.checkedOutAt IS NOT NULL
+                                     THEN timestampdiff(minute, sa.checkedInAt, sa.checkedOutAt)
+                                     ELSE 0 END), 0) AS workedMinutes
               FROM StaffAttendance sa
              WHERE sa.workDate BETWEEN :from AND :to
              GROUP BY sa.user.id

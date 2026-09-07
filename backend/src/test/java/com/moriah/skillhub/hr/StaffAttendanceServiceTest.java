@@ -7,7 +7,11 @@ import com.moriah.skillhub.common.exception.ResourceNotFoundException;
 import com.moriah.skillhub.common.security.AuthenticatedPrincipal;
 import com.moriah.skillhub.hr.dto.MarkStaffAttendanceRequest;
 import com.moriah.skillhub.hr.dto.StaffAttendanceResponse;
+import com.moriah.skillhub.hr.dto.StaffAttendanceSummaryProjection;
+import com.moriah.skillhub.hr.dto.StaffAttendanceSummaryRow;
 import com.moriah.skillhub.hr.dto.StaffCheckinRequest;
+import com.moriah.skillhub.hr.entity.Employee;
+import com.moriah.skillhub.hr.entity.EmployeeStatus;
 import com.moriah.skillhub.hr.entity.StaffAttendance;
 import com.moriah.skillhub.hr.entity.StaffAttendanceStatus;
 import com.moriah.skillhub.hr.repository.EmployeeRepository;
@@ -19,11 +23,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Optional;
 
@@ -31,6 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -138,6 +147,57 @@ class StaffAttendanceServiceTest {
 
         assertThat(res.userUuid()).isEqualTo("uuid-2");
         assertThat(res.markedByUuid()).isEqualTo("uuid-1");
+    }
+
+    // --- monthly summary: worked-hours roll-up for payroll pre-fill ---
+
+    private Employee activeEmployee(long userId) {
+        Employee e = new Employee();
+        e.setUser(user(userId));
+        e.setDepartment("Engineering");
+        e.setStatus(EmployeeStatus.ACTIVE);
+        return e;
+    }
+
+    private StaffAttendanceSummaryProjection projection(long userId, long present, long late,
+                                                        long half, Long workedMinutes) {
+        StaffAttendanceSummaryProjection p = mock(StaffAttendanceSummaryProjection.class);
+        when(p.getUserId()).thenReturn(userId);
+        when(p.getPresentDays()).thenReturn(present);
+        when(p.getLateDays()).thenReturn(late);
+        when(p.getAbsentDays()).thenReturn(0L);
+        when(p.getHalfDays()).thenReturn(half);
+        when(p.getOnLeaveDays()).thenReturn(0L);
+        when(p.getWorkedMinutes()).thenReturn(workedMinutes);
+        return p;
+    }
+
+    @Test
+    void summary_convertsWorkedMinutesToHours() {
+        // Build the projection stub outside the outer when(...) — nesting Mockito
+        // stubbing inside a thenReturn() argument trips "unfinished stubbing".
+        StaffAttendanceSummaryProjection p = projection(1L, 18, 2, 0, 465L); // 7h 45m
+        when(staffAttendanceRepository.summarise(any(), any())).thenReturn(List.of(p));
+        when(employeeRepository.search(eq(EmployeeStatus.ACTIVE), any(), any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(activeEmployee(1L))));
+
+        StaffAttendanceSummaryRow row = service().summary(YearMonth.of(2026, 3)).get(0);
+
+        assertThat(row.presentDays()).isEqualTo(18);
+        assertThat(row.workedHours()).isEqualByComparingTo(new BigDecimal("7.75"));
+    }
+
+    @Test
+    void summary_nullOrMissingWorkedMinutes_isZeroHours() {
+        StaffAttendanceSummaryProjection p = projection(1L, 5, 0, 0, null);
+        when(staffAttendanceRepository.summarise(any(), any())).thenReturn(List.of(p));
+        when(employeeRepository.search(eq(EmployeeStatus.ACTIVE), any(), any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(activeEmployee(1L), activeEmployee(2L))));
+
+        List<StaffAttendanceSummaryRow> rows = service().summary(YearMonth.of(2026, 3));
+
+        assertThat(rows.get(0).workedHours()).isEqualByComparingTo("0.00"); // null worked minutes
+        assertThat(rows.get(1).workedHours()).isEqualByComparingTo("0.00"); // no attendance row at all
     }
 
     // --- HR override ---

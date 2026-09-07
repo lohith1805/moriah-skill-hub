@@ -631,6 +631,9 @@ export async function getStaffAttendanceSummary(month) {
     halfDays: r.halfDays ?? 0,
     onLeaveDays: r.onLeaveDays ?? 0,
     attendancePct: r.attendancePct ?? null,
+    // Sum of check-in -> check-out across days that have both stamps. The Payroll
+    // "Generate" modal pre-fills an hourly employee's session hours from this.
+    workedHours: r.workedHours != null ? Number(r.workedHours) : 0,
   }));
 }
 
