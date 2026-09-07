@@ -10,10 +10,13 @@ import com.moriah.skillhub.hr.entity.Employee;
 import com.moriah.skillhub.hr.entity.EmployeeStatus;
 import com.moriah.skillhub.hr.entity.EmploymentType;
 import com.moriah.skillhub.hr.repository.EmployeeRepository;
+import com.moriah.skillhub.user.entity.RoleCode;
 import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.repository.UserRepository;
+import com.moriah.skillhub.user.repository.UserRoleRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
@@ -29,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -39,11 +43,13 @@ class EmployeeServiceTest {
     private EmployeeRepository employeeRepository;
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private UserRoleRepository userRoleRepository;
 
     // Built per-test, not as a field initializer — a field initializer runs during construction,
     // before MockitoExtension's beforeEach injects @Mock fields, leaving them null.
     private EmployeeService service() {
-        return new EmployeeService(employeeRepository, userRepository);
+        return new EmployeeService(employeeRepository, userRepository, userRoleRepository);
     }
 
     private User user(long id, String uuid) {
@@ -131,6 +137,80 @@ class EmployeeServiceTest {
         EmployeeResponse response = service().create(request(null, new BigDecimal("500.00"), 5L));
 
         assertThat(response.reportingManagerId()).isEqualTo(5L);
+    }
+
+    // --- autoProvisionForStaff (invite-accept hook) ------------------------------------
+
+    @Test
+    void autoProvision_newBaUser_savesBareRowFromRoleDefaults() {
+        when(employeeRepository.existsByUserId(1L)).thenReturn(false);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user(1L, "u-1")));
+        when(userRoleRepository.findRoleCodesByUserId(1L)).thenReturn(List.of(RoleCode.BUSINESS_ANALYST));
+        when(employeeRepository.existsByEmployeeCode("EMP-0001")).thenReturn(false);
+
+        service().autoProvisionForStaff(1L);
+
+        ArgumentCaptor<Employee> captor = ArgumentCaptor.forClass(Employee.class);
+        verify(employeeRepository).save(captor.capture());
+        Employee saved = captor.getValue();
+        assertThat(saved.getEmployeeCode()).isEqualTo("EMP-0001");
+        assertThat(saved.getDepartment()).isEqualTo("Product");
+        assertThat(saved.getDesignation()).isEqualTo("Business Analyst");
+        assertThat(saved.getEmploymentType()).isEqualTo(EmploymentType.FULL_TIME);
+        assertThat(saved.getStatus()).isEqualTo(EmployeeStatus.ACTIVE);
+        assertThat(saved.getBaseSalary()).isEqualByComparingTo("0.00");
+        assertThat(saved.getHourlyRate()).isNull();
+        assertThat(saved.getDateOfJoining()).isEqualTo(LocalDate.now());
+    }
+
+    @Test
+    void autoProvision_trainer_isHourlyNotSalaried() {
+        when(employeeRepository.existsByUserId(7L)).thenReturn(false);
+        when(userRepository.findById(7L)).thenReturn(Optional.of(user(7L, "u-7")));
+        when(userRoleRepository.findRoleCodesByUserId(7L)).thenReturn(List.of(RoleCode.TRAINER_PM));
+        when(employeeRepository.existsByEmployeeCode("EMP-0007")).thenReturn(false);
+
+        service().autoProvisionForStaff(7L);
+
+        ArgumentCaptor<Employee> captor = ArgumentCaptor.forClass(Employee.class);
+        verify(employeeRepository).save(captor.capture());
+        assertThat(captor.getValue().getHourlyRate()).isEqualByComparingTo("0.00");
+        assertThat(captor.getValue().getBaseSalary()).isNull();
+    }
+
+    @Test
+    void autoProvision_userAlreadyHasRecord_isNoOp() {
+        when(employeeRepository.existsByUserId(1L)).thenReturn(true);
+
+        service().autoProvisionForStaff(1L);
+
+        verify(employeeRepository, never()).save(any());
+    }
+
+    @Test
+    void autoProvision_noStaffRole_isNoOp() {
+        when(employeeRepository.existsByUserId(1L)).thenReturn(false);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user(1L, "u-1")));
+        when(userRoleRepository.findRoleCodesByUserId(1L)).thenReturn(List.of(RoleCode.STUDENT));
+
+        service().autoProvisionForStaff(1L);
+
+        verify(employeeRepository, never()).save(any());
+    }
+
+    @Test
+    void autoProvision_employeeCodeCollision_fallsBackToSuffixedCode() {
+        when(employeeRepository.existsByUserId(1L)).thenReturn(false);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user(1L, "u-1")));
+        when(userRoleRepository.findRoleCodesByUserId(1L)).thenReturn(List.of(RoleCode.DEVELOPER));
+        when(employeeRepository.existsByEmployeeCode("EMP-0001")).thenReturn(true);
+        when(employeeRepository.existsByEmployeeCode("EMP-0001-2")).thenReturn(false);
+
+        service().autoProvisionForStaff(1L);
+
+        ArgumentCaptor<Employee> captor = ArgumentCaptor.forClass(Employee.class);
+        verify(employeeRepository).save(captor.capture());
+        assertThat(captor.getValue().getEmployeeCode()).isEqualTo("EMP-0001-2");
     }
 
     private Employee employee(long id) {

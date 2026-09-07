@@ -37,6 +37,7 @@ import com.moriah.skillhub.user.entity.RoleCode;
 import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.entity.UserRole;
 import com.moriah.skillhub.user.entity.UserStatus;
+import com.moriah.skillhub.auth.event.StaffInviteAcceptedEvent;
 import com.moriah.skillhub.user.repository.RoleRepository;
 import com.moriah.skillhub.user.repository.UserRepository;
 import com.moriah.skillhub.user.repository.UserRoleRepository;
@@ -45,6 +46,7 @@ import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jws;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -82,6 +84,7 @@ public class AuthService {
     private final RefreshTokenRevocationService refreshTokenRevocationService;
     private final TwoFactorService twoFactorService;
     private final NotificationService notificationService;
+    private final ApplicationEventPublisher eventPublisher;
     private final AuthLinkProperties authLinkProperties;
 
     @Transactional
@@ -372,6 +375,10 @@ public class AuthService {
 
         // recordAfterCommit — see AuditLogService#recordAfterCommit's Javadoc.
         auditLogService.recordAfterCommit(user.getId(), "STAFF_INVITE_ACCEPTED", "User", user.getId(), null, null);
+
+        // HR listens AFTER_COMMIT to auto-provision a bare employees row for the new hire so
+        // self-service attendance / leave work immediately (StaffEmployeeProvisioningListener).
+        eventPublisher.publishEvent(new StaffInviteAcceptedEvent(user.getId()));
 
         return completeOrChallengeLogin(user, userAgent, ipAddress);
     }
