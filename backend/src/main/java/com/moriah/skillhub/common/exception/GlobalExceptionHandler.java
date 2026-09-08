@@ -128,9 +128,21 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiResponse<Void>> handleUnreadable(HttpMessageNotReadableException ex) {
         log.warn("[error/VALIDATION_FAILED] malformed request body: {}", ex.getMessage());
+        // A DTO record's compact constructor that throws IllegalArgumentException for a
+        // cross-field rule (e.g. CreateSprintRequest's "a sprint must run 1-2 weeks") reaches
+        // here wrapped by Jackson, not as a bean-validation error — so its message would
+        // otherwise be lost behind the generic text. Surface that deliberate message; keep the
+        // generic answer for genuine parse failures (bad JSON, wrong types), whose Jackson
+        // messages leak field internals.
+        String message = "The request body is malformed or unreadable.";
+        for (Throwable cause = ex.getCause(); cause != null; cause = cause.getCause()) {
+            if (cause instanceof IllegalArgumentException && cause.getMessage() != null) {
+                message = cause.getMessage();
+                break;
+            }
+        }
         return ResponseEntity.status(ErrorCode.VALIDATION_FAILED.status())
-                .body(ApiResponse.failure(ErrorDetail.of(
-                        ErrorCode.VALIDATION_FAILED, "The request body is malformed or unreadable.")));
+                .body(ApiResponse.failure(ErrorDetail.of(ErrorCode.VALIDATION_FAILED, message)));
     }
 
     /**
