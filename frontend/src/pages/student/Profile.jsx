@@ -3,7 +3,7 @@ import { Download, GitFork, Link2, ExternalLink, Save, Camera, FileText, Layers,
 import PageHeader from "../../components/layout/PageHeader";
 import Card, { CardHeader } from "../../components/ui/Card";
 import Tabs from "../../components/ui/Tabs";
-import { Input, Textarea } from "../../components/ui/FormField";
+import { Input, Textarea, Select } from "../../components/ui/FormField";
 import Button from "../../components/ui/Button";
 import Badge from "../../components/ui/Badge";
 import Avatar from "../../components/ui/Avatar";
@@ -38,8 +38,17 @@ const formatExternalUrl = (url, type) => {
   return `https://${trimmed}`;
 };
 
+// user_profiles.education is a structured array; the form edits its first entry.
+const eduToText = (edu) => {
+  const e = Array.isArray(edu) ? edu[0] : null;
+  if (!e) return "";
+  return [e.institution, e.degree].filter(Boolean).join(" — ") + (e.endYear ? ` (${e.endYear})` : "");
+};
+
+const EXPERIENCE_LEVELS = ["", "JUNIOR", "MID", "SENIOR", "LEAD"];
+
 export default function StudentProfile() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { notify } = useToast();
   const [saving, setSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -47,23 +56,35 @@ export default function StudentProfile() {
   const [certs, setCerts] = useState([]);
   const [stats, setStats] = useState({ attendance: 0, taskCompletion: 0, quizAverage: 0 });
 
-  const [values, setValues] = useState(() => {
-    const baseObj = user?.profileDetails || {};
-
-    const resumeFile = baseObj.resume ? new File([], baseObj.resume.name, { type: "application/pdf" }) : null;
-    const certFiles = (baseObj.certs || []).map(c => new File([], c.name, { type: "application/pdf" }));
-
-    return {
-      bio: "",
-      education: "",
-      skills: "",
-      github: "",
-      linkedin: "",
-      resumeFile,
-      certFiles,
-      ...baseObj
-    };
+  const [values, setValues] = useState({
+    bio: "", currentTitle: "", location: "", experienceLevel: "", yearsExperience: "",
+    skills: "", github: "", linkedin: "",
+    eduInstitution: "", eduDegree: "", eduYear: "",
+    education: "", resume: null, resumeFile: null, certFiles: [],
   });
+
+  // Hydrate the form from the REAL profile (GET /users/me fields, top-level on
+  // `user`) — not `user.profileDetails`, which the API never populates. Re-runs
+  // whenever `user` changes (initial null -> loaded, and after refreshUser()).
+  useEffect(() => {
+    if (!user) return;
+    const e0 = Array.isArray(user.education) ? user.education[0] || {} : {};
+    setValues((v) => ({
+      ...v,
+      bio: user.bio || "",
+      currentTitle: user.currentTitle || "",
+      location: user.location || "",
+      experienceLevel: user.experienceLevel || "",
+      yearsExperience: user.yearsExperience ?? "",
+      skills: Array.isArray(user.skills) ? user.skills.join(", ") : (user.skills || ""),
+      github: user.githubUsername || "",
+      linkedin: user.linkedinUrl || "",
+      eduInstitution: e0.institution || "",
+      eduDegree: e0.degree || "",
+      eduYear: e0.endYear ?? "",
+      education: eduToText(user.education),
+    }));
+  }, [user]);
 
   useEffect(() => {
     if (user) {
@@ -244,23 +265,35 @@ export default function StudentProfile() {
     e.preventDefault();
     setSaving(true);
     try {
-      // Map the flat edit form onto the backend profile DTO. `education` is a
-      // free-text string here vs. the API's structured array, and `linkedin`
-      // has no profile field, so those two stay browser-local for now.
-      await updateProfile({
+      // education is a structured array server-side — send the one entry the
+      // form edits (only if both required parts are filled). `linkedin` has no
+      // write path on UpdateProfileRequest, so it's display-only for now.
+      const eduInst = (values.eduInstitution || "").trim();
+      const eduDeg = (values.eduDegree || "").trim();
+      const patch = {
         bio: values.bio,
+        currentTitle: values.currentTitle,
+        location: values.location,
+        experienceLevel: values.experienceLevel || undefined,
+        yearsExperience: values.yearsExperience,
         githubUsername: ghUsername(values.github),
-        skills: (values.skills || "")
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
-      });
-      try {
-        const { resumeFile, certFiles, ...rest } = values;
-        localStorage.setItem("msh_student_profile_extra", JSON.stringify({ education: rest.education, linkedin: rest.linkedin }));
-      } catch {
-        /* non-fatal */
+        skills: (values.skills || "").split(",").map((s) => s.trim()).filter(Boolean),
+      };
+      // Only touch education when the entry is filled — otherwise leave whatever
+      // is on file (this form only edits the first entry).
+      if (eduInst && eduDeg) {
+        patch.education = [{
+          institution: eduInst,
+          degree: eduDeg,
+          fieldOfStudy: null,
+          startYear: null,
+          endYear: values.eduYear ? Number(values.eduYear) : null,
+        }];
       }
+      await updateProfile(patch);
+      // Pull the refreshed profile into AuthContext so the page reflects the
+      // save immediately (the read view and the form both derive from `user`).
+      await refreshUser();
       notify("Your profile has been updated.", { type: "success", title: "Saved" });
       setIsEditing(false);
     } catch (err) {
@@ -374,6 +407,23 @@ export default function StudentProfile() {
                         </p>
                       </div>
 
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="bg-cream-50/50 p-4 rounded-xl border border-border/60">
+                          <span className="text-xs font-semibold text-ink-400 uppercase tracking-wider block mb-1">Current Title</span>
+                          <span className="text-sm font-medium text-ink-800">{values.currentTitle || "Not specified"}</span>
+                        </div>
+                        <div className="bg-cream-50/50 p-4 rounded-xl border border-border/60">
+                          <span className="text-xs font-semibold text-ink-400 uppercase tracking-wider block mb-1">Location</span>
+                          <span className="text-sm font-medium text-ink-800">{values.location || "Not specified"}</span>
+                        </div>
+                        <div className="bg-cream-50/50 p-4 rounded-xl border border-border/60">
+                          <span className="text-xs font-semibold text-ink-400 uppercase tracking-wider block mb-1">Experience</span>
+                          <span className="text-sm font-medium text-ink-800">
+                            {values.experienceLevel || "—"}{values.yearsExperience !== "" && values.yearsExperience != null ? ` · ${values.yearsExperience} yr` : ""}
+                          </span>
+                        </div>
+                      </div>
+
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="bg-cream-50/50 p-4 rounded-xl border border-border/60 flex flex-col justify-center min-h-[76px]">
                           <span className="text-xs font-semibold text-ink-400 uppercase tracking-wider block mb-1">Education</span>
@@ -443,12 +493,26 @@ export default function StudentProfile() {
                     >
                       <form id="profile-edit-form" onSubmit={save} className="flex flex-col gap-4 text-left">
                         <Textarea name="bio" label="Bio" value={values.bio} onChange={set("bio")} rows={3} hint="Shown on your public portfolio page." />
-                        <Input name="education" label="Education" value={values.education} onChange={set("education")} />
-                        <Input name="skills" label="Technical Skills" value={values.skills} onChange={set("skills")} hint="Comma-separated." />
                         <div className="grid sm:grid-cols-2 gap-4">
-                          <Input name="github" label="GitHub URL" value={values.github} onChange={set("github")} />
-                          <Input name="linkedin" label="LinkedIn URL" value={values.linkedin} onChange={set("linkedin")} />
+                          <Input name="currentTitle" label="Current Title" value={values.currentTitle} onChange={set("currentTitle")} placeholder="e.g. Trainee Software Engineer" />
+                          <Input name="location" label="Location" value={values.location} onChange={set("location")} placeholder="e.g. Hyderabad, India" />
                         </div>
+                        <div className="grid sm:grid-cols-2 gap-4">
+                          <Select name="experienceLevel" label="Experience Level" value={values.experienceLevel} onChange={set("experienceLevel")}
+                            options={EXPERIENCE_LEVELS.map((l) => ({ value: l, label: l || "—" }))} />
+                          <Input name="yearsExperience" type="number" min="0" max="60" label="Years of Experience" value={values.yearsExperience} onChange={set("yearsExperience")} />
+                        </div>
+                        <Input name="skills" label="Technical Skills" value={values.skills} onChange={set("skills")} hint="Comma-separated." />
+                        <div className="rounded-lg border border-border/70 p-3 flex flex-col gap-3">
+                          <span className="text-xs font-semibold text-ink-500 uppercase tracking-wide">Education</span>
+                          <div className="grid sm:grid-cols-3 gap-3">
+                            <Input name="eduInstitution" label="Institution" value={values.eduInstitution} onChange={set("eduInstitution")} />
+                            <Input name="eduDegree" label="Degree" value={values.eduDegree} onChange={set("eduDegree")} />
+                            <Input name="eduYear" type="number" min="1900" max="2100" label="Year" value={values.eduYear} onChange={set("eduYear")} />
+                          </div>
+                          <p className="text-[11px] text-ink-400">Institution and Degree are both required to save an education entry.</p>
+                        </div>
+                        <Input name="github" label="GitHub URL" value={values.github} onChange={set("github")} hint="Used to verify your pull request submissions." />
                       </form>
                     </Modal>
                   </div>

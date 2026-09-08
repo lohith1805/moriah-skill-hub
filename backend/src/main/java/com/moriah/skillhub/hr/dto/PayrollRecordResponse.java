@@ -13,7 +13,7 @@ public record PayrollRecordResponse(
         LocalDate periodMonth,
         Integer workingDays,
         Integer presentDays,
-        BigDecimal unpaidLeaveDays,
+        BigDecimal lopDays,
         BigDecimal sessionHours,
         BigDecimal grossAmount,
         BigDecimal deductions,

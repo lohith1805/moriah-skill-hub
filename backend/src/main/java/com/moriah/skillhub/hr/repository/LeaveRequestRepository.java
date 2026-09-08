@@ -44,18 +44,19 @@ public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long
     boolean existsOverlappingApproved(@Param("userId") Long userId, @Param("fromDate") LocalDate fromDate,
                                        @Param("toDate") LocalDate toDate, @Param("excludeId") Long excludeId);
 
-    /** {@code PayrollService}'s loss-of-pay proration — every APPROVED {@code UNPAID} leave for
-     * these users that touches {@code [monthStart, monthEnd]}. One flat query for the whole batch;
-     * the per-month day count (a leave can straddle a month boundary) is computed in the service,
-     * not here. {@code user} is fetched so the service can key the result by {@code user.id}
-     * without an N+1. */
+    /** {@code PayrollService}'s proration input — every APPROVED <b>paid</b> leave
+     * ({@code SICK}/{@code CASUAL}/{@code EARNED}, i.e. not {@code UNPAID}) for these users that
+     * touches {@code [monthStart, monthEnd]}. Those days are paid in full alongside present days;
+     * every other working day is loss of pay. One flat query for the whole batch; the per-month
+     * day count (a leave can straddle a month boundary) is computed in the service. {@code user}
+     * fetched so the service can key the result by {@code user.id} without an N+1. */
     @EntityGraph(attributePaths = "user")
     @Query("""
             SELECT l FROM LeaveRequest l
             WHERE l.user.id IN :userIds
-              AND l.status = 'APPROVED' AND l.leaveType = 'UNPAID'
+              AND l.status = 'APPROVED' AND l.leaveType IN ('SICK', 'CASUAL', 'EARNED')
               AND l.fromDate <= :monthEnd AND l.toDate >= :monthStart
             """)
-    List<LeaveRequest> findApprovedUnpaidOverlappingMonth(@Param("userIds") Collection<Long> userIds,
+    List<LeaveRequest> findApprovedPaidLeaveOverlappingMonth(@Param("userIds") Collection<Long> userIds,
             @Param("monthStart") LocalDate monthStart, @Param("monthEnd") LocalDate monthEnd);
 }

@@ -53,12 +53,14 @@ import java.util.stream.Collectors;
  * PayrollStatus}'s own Javadoc for why {@code DRAFT}/{@code PAID} exist in schema without a route
  * to reach them from this feature).
  * <p>
- * A salaried employee's gross is the base salary <b>less loss-of-pay for approved {@code UNPAID}
- * leave days</b> that fall inside the period ({@code base / workingDays} per day) — approved
- * paid leave (SICK/CASUAL/EARNED) still pays in full. {@code presentDays} stays informational
- * (shown on the payslip, never a multiplier). Hourly employees are unaffected — their {@code
- * sessionHours} already reflect actual worked time. {@code deductions} remains a separate,
- * HR-entered amount applied after gross.
+ * A salaried employee is paid per working day for the days they were <b>present or on approved
+ * paid leave</b> ({@code SICK}/{@code CASUAL}/{@code EARNED}); every other working day is loss
+ * of pay (unpaid leave and plain absence alike):
+ * <pre>gross = baseSalary * (presentDays + paidLeaveDays) / workingDays</pre>
+ * {@code lopDays = workingDays - presentDays - paidLeaveDays} (floored at 0) is recorded for the
+ * payslip. Holidays are assumed already excluded from the HR-entered {@code workingDays}. Hourly
+ * employees are unaffected — their {@code sessionHours} already reflect worked time. {@code
+ * deductions} remains a separate, HR-entered amount applied after gross.
  */
 @Service
 @RequiredArgsConstructor
@@ -95,18 +97,18 @@ public class PayrollService {
                 .collect(Collectors.toMap(Employee::getId, Function.identity()));
         Set<Long> alreadyGenerated = new HashSet<>(
                 payrollRecordRepository.findEmployeeIdsAlreadyGenerated(request.periodMonth(), employeeIds));
-        Map<Long, BigDecimal> unpaidLeaveDaysByEmployeeId =
-                unpaidLeaveDaysByEmployeeId(employeesById.values(), request.periodMonth());
+        Map<Long, BigDecimal> paidLeaveDaysByEmployeeId =
+                paidLeaveDaysByEmployeeId(employeesById.values(), request.periodMonth());
 
         return request.lines().stream()
                 .map(line -> generateOne(request, line, employeesById, alreadyGenerated,
-                        unpaidLeaveDaysByEmployeeId, callerUuid, callerUserId))
+                        paidLeaveDaysByEmployeeId, callerUuid, callerUserId))
                 .toList();
     }
 
     private PayrollRecordResponse generateOne(GeneratePayrollRequest request, PayrollLineRequest line,
             Map<Long, Employee> employeesById, Set<Long> alreadyGenerated,
-            Map<Long, BigDecimal> unpaidLeaveDaysByEmployeeId, String callerUuid, Long callerUserId) {
+            Map<Long, BigDecimal> paidLeaveDaysByEmployeeId, String callerUuid, Long callerUserId) {
         Employee employee = employeesById.get(line.employeeId());
         if (employee == null) {
             throw new ResourceNotFoundException(ErrorCode.EMPLOYEE_NOT_FOUND, line.employeeId());
@@ -125,11 +127,17 @@ public class PayrollService {
 
         BigDecimal deductions = (line.deductions() == null ? BigDecimal.ZERO : line.deductions())
                 .setScale(2, RoundingMode.HALF_UP);
-        // Salaried: base salary less loss-of-pay for approved UNPAID leave days in this period.
-        // Hourly: 0 — session hours already reflect actual worked time.
-        BigDecimal unpaidLeaveDays = employee.getHourlyRate() != null ? BigDecimal.ZERO
-                : unpaidLeaveDaysByEmployeeId.getOrDefault(employee.getId(), BigDecimal.ZERO);
-        BigDecimal grossAmount = computeGrossAmount(employee, line, request.workingDays(), unpaidLeaveDays)
+        boolean hourly = employee.getHourlyRate() != null;
+        // Approved paid leave (SICK/CASUAL/EARNED) is paid alongside present days; everything else
+        // in the month is loss of pay. Hourly: 0 — session hours already reflect worked time.
+        BigDecimal paidLeaveDays = hourly ? BigDecimal.ZERO
+                : paidLeaveDaysByEmployeeId.getOrDefault(employee.getId(), BigDecimal.ZERO);
+        BigDecimal lopDays = hourly ? BigDecimal.ZERO
+                : BigDecimal.valueOf(request.workingDays())
+                        .subtract(BigDecimal.valueOf(line.presentDays()))
+                        .subtract(paidLeaveDays)
+                        .max(BigDecimal.ZERO);
+        BigDecimal grossAmount = computeGrossAmount(employee, line, request.workingDays(), paidLeaveDays)
                 .setScale(2, RoundingMode.HALF_UP);
         BigDecimal netAmount = grossAmount.subtract(deductions);
         if (netAmount.signum() < 0) {
@@ -142,8 +150,8 @@ public class PayrollService {
         record.setPeriodMonth(request.periodMonth());
         record.setWorkingDays(request.workingDays());
         record.setPresentDays(line.presentDays());
-        record.setUnpaidLeaveDays(unpaidLeaveDays);
-        record.setSessionHours(employee.getHourlyRate() != null ? line.sessionHours() : null);
+        record.setLopDays(lopDays);
+        record.setSessionHours(hourly ? line.sessionHours() : null);
         record.setGrossAmount(grossAmount);
         record.setDeductions(deductions);
         record.setNetAmount(netAmount);
@@ -161,7 +169,7 @@ public class PayrollService {
     }
 
     private BigDecimal computeGrossAmount(Employee employee, PayrollLineRequest line, int workingDays,
-            BigDecimal unpaidLeaveDays) {
+            BigDecimal paidLeaveDays) {
         if (employee.getHourlyRate() != null) {
             if (line.sessionHours() == null) {
                 throw new BusinessException(ErrorCode.VALIDATION_FAILED,
@@ -169,29 +177,30 @@ public class PayrollService {
             }
             return employee.getHourlyRate().multiply(line.sessionHours());
         }
-        BigDecimal base = employee.getBaseSalary();
-        if (unpaidLeaveDays == null || unpaidLeaveDays.signum() <= 0) {
-            return base;
-        }
-        // Loss of pay: (base / workingDays) per unpaid day, the whole month's base at most.
-        // workingDays is @Min(1) on the request, so the division is always safe.
-        BigDecimal cappedDays = unpaidLeaveDays.min(BigDecimal.valueOf(workingDays));
-        BigDecimal lossOfPay = base.multiply(cappedDays)
+        // gross = base * (present + paid leave) / workingDays. workingDays is @Min(1) on the
+        // request so the division is always safe; payable is capped so a mis-entered
+        // present + leave total can never pay more than the whole month.
+        BigDecimal payableDays = BigDecimal.valueOf(line.presentDays())
+                .add(paidLeaveDays == null ? BigDecimal.ZERO : paidLeaveDays)
+                .min(BigDecimal.valueOf(workingDays))
+                .max(BigDecimal.ZERO);
+        return employee.getBaseSalary()
+                .multiply(payableDays)
                 .divide(BigDecimal.valueOf(workingDays), 2, RoundingMode.HALF_UP);
-        return base.subtract(lossOfPay).max(BigDecimal.ZERO);
     }
 
-    /** Approved {@code UNPAID} leave days per employee that fall inside {@code periodMonth}. One
-     * flat query for the whole batch; the result is keyed by employee id (the {@code
-     * leave_requests} table is keyed by {@code user_id}, so the mapping is resolved here). */
-    private Map<Long, BigDecimal> unpaidLeaveDaysByEmployeeId(Collection<Employee> employees, LocalDate periodMonth) {
+    /** Approved <b>paid</b> leave days ({@code SICK}/{@code CASUAL}/{@code EARNED}) per employee
+     * that fall inside {@code periodMonth} — these are paid alongside present days. One flat query
+     * for the whole batch; keyed by employee id (the {@code leave_requests} table is keyed by
+     * {@code user_id}, so the mapping is resolved here). */
+    private Map<Long, BigDecimal> paidLeaveDaysByEmployeeId(Collection<Employee> employees, LocalDate periodMonth) {
         LocalDate monthStart = periodMonth.withDayOfMonth(1);
         LocalDate monthEnd = monthStart.plusMonths(1).minusDays(1);
         Map<Long, Long> employeeIdByUserId = employees.stream()
                 .collect(Collectors.toMap(e -> e.getUser().getId(), Employee::getId, (a, b) -> a));
 
         Map<Long, BigDecimal> byEmployeeId = new HashMap<>();
-        for (LeaveRequest leave : leaveRequestRepository.findApprovedUnpaidOverlappingMonth(
+        for (LeaveRequest leave : leaveRequestRepository.findApprovedPaidLeaveOverlappingMonth(
                 employeeIdByUserId.keySet(), monthStart, monthEnd)) {
             Long employeeId = employeeIdByUserId.get(leave.getUser().getId());
             if (employeeId != null) {
@@ -229,9 +238,9 @@ public class PayrollService {
             doc.add(new Paragraph("Employee: " + employee.getUser().getFullName() + " (" + employee.getEmployeeCode() + ")"));
             doc.add(new Paragraph("Period: " + record.getPeriodMonth()));
             doc.add(new Paragraph("Working days: " + record.getWorkingDays() + ", Present days: " + record.getPresentDays()));
-            if (record.getUnpaidLeaveDays() != null && record.getUnpaidLeaveDays().signum() > 0) {
-                doc.add(new Paragraph("Unpaid leave: " + record.getUnpaidLeaveDays()
-                        + " day(s) — base salary prorated (loss of pay)"));
+            if (record.getLopDays() != null && record.getLopDays().signum() > 0) {
+                doc.add(new Paragraph("Loss of pay: " + record.getLopDays()
+                        + " working day(s) not present / not on paid leave — base salary prorated"));
             }
             if (record.getSessionHours() != null) {
                 doc.add(new Paragraph("Session hours: " + record.getSessionHours()));
@@ -264,7 +273,7 @@ public class PayrollService {
                 record.getPeriodMonth(),
                 record.getWorkingDays(),
                 record.getPresentDays(),
-                record.getUnpaidLeaveDays(),
+                record.getLopDays(),
                 record.getSessionHours(),
                 record.getGrossAmount(),
                 record.getDeductions(),

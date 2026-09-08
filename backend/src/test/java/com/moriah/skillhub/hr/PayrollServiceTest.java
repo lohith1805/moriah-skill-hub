@@ -67,12 +67,12 @@ class PayrollServiceTest {
         return employee;
     }
 
-    private LeaveRequest unpaidLeave(long userId, LocalDate from, LocalDate to, String days) {
+    private LeaveRequest paidLeave(long userId, LocalDate from, LocalDate to, String days) {
         LeaveRequest leave = new LeaveRequest();
         User user = new User();
         user.setId(userId);
         leave.setUser(user);
-        leave.setLeaveType(LeaveType.UNPAID);
+        leave.setLeaveType(LeaveType.EARNED); // any of SICK/CASUAL/EARNED — a paid type
         leave.setStatus(LeaveStatus.APPROVED);
         leave.setFromDate(from);
         leave.setToDate(to);
@@ -81,7 +81,7 @@ class PayrollServiceTest {
     }
 
     @Test
-    void generate_salariedEmployee_grossEqualsBaseSalary() throws Exception {
+    void generate_salariedFullMonthPresent_grossEqualsBaseSalary() throws Exception {
         Employee employee = employee(1L, new BigDecimal("50000.00"), null);
         when(employeeRepository.findAllWithUserByIdIn(List.of(1L))).thenReturn(List.of(employee));
         when(payrollRecordRepository.findEmployeeIdsAlreadyGenerated(LocalDate.of(2026, 3, 1), List.of(1L)))
@@ -97,60 +97,81 @@ class PayrollServiceTest {
         assertThat(responses).hasSize(1);
         assertThat(responses.get(0).grossAmount()).isEqualByComparingTo("50000.00");
         assertThat(responses.get(0).netAmount()).isEqualByComparingTo("49000.00");
-        assertThat(responses.get(0).unpaidLeaveDays()).isEqualByComparingTo("0.0");
+        assertThat(responses.get(0).lopDays()).isEqualByComparingTo("0.0");
         assertThat(responses.get(0).status()).isEqualTo(PayrollStatus.FINALISED);
     }
 
+    /** The key rule: a day not present and not on paid leave is loss of pay, even with no leave
+     * record at all. */
     @Test
-    void generate_salariedWithApprovedUnpaidLeave_proratesGrossByLossOfPay() throws Exception {
+    void generate_salariedWithAbsentDays_proratesGrossPerWorkingDay() throws Exception {
         Employee employee = employee(1L, new BigDecimal("44000.00"), null); // 2000 / day over 22
         when(employeeRepository.findAllWithUserByIdIn(List.of(1L))).thenReturn(List.of(employee));
         when(payrollRecordRepository.findEmployeeIdsAlreadyGenerated(LocalDate.of(2026, 3, 1), List.of(1L)))
                 .thenReturn(List.of());
-        when(leaveRequestRepository.findApprovedUnpaidOverlappingMonth(any(), any(), any()))
-                .thenReturn(List.of(unpaidLeave(1L, LocalDate.of(2026, 3, 10), LocalDate.of(2026, 3, 12), "3.0")));
         when(storageService.uploadTrusted(anyString(), any(), anyString())).thenReturn("payslips/EMP-001/2026-03.pdf");
         when(storageService.presignedGetUrl(anyString(), anyString(), any())).thenReturn(new URL("https://s3.example.com/x"));
 
+        // present 19/22, no leave of any kind -> 3 absent days docked.
         GeneratePayrollRequest request = new GeneratePayrollRequest(LocalDate.of(2026, 3, 1), 22,
                 List.of(new PayrollLineRequest(1L, 19, null, null)));
 
         List<PayrollRecordResponse> responses = service().generate(request, "hr-uuid", 9L);
 
-        assertThat(responses.get(0).unpaidLeaveDays()).isEqualByComparingTo("3.0");
-        assertThat(responses.get(0).grossAmount()).isEqualByComparingTo("38000.00"); // 44000 - 3*2000
+        assertThat(responses.get(0).lopDays()).isEqualByComparingTo("3.0");
+        assertThat(responses.get(0).grossAmount()).isEqualByComparingTo("38000.00"); // 44000 * 19/22
         assertThat(responses.get(0).netAmount()).isEqualByComparingTo("38000.00");
     }
 
     @Test
-    void generate_unpaidLeaveStraddlingMonthBoundary_countsOnlyThisMonthsPortion() throws Exception {
+    void generate_salariedWithApprovedPaidLeave_paysThoseDaysInFull() throws Exception {
         Employee employee = employee(1L, new BigDecimal("44000.00"), null);
         when(employeeRepository.findAllWithUserByIdIn(List.of(1L))).thenReturn(List.of(employee));
         when(payrollRecordRepository.findEmployeeIdsAlreadyGenerated(LocalDate.of(2026, 3, 1), List.of(1L)))
                 .thenReturn(List.of());
-        // 10-day leave Feb 25 -> Mar 6; only Mar 1..6 (6 of 10 calendar days) fall in the pay month.
-        when(leaveRequestRepository.findApprovedUnpaidOverlappingMonth(any(), any(), any()))
-                .thenReturn(List.of(unpaidLeave(1L, LocalDate.of(2026, 2, 25), LocalDate.of(2026, 3, 6), "10.0")));
+        when(leaveRequestRepository.findApprovedPaidLeaveOverlappingMonth(any(), any(), any()))
+                .thenReturn(List.of(paidLeave(1L, LocalDate.of(2026, 3, 10), LocalDate.of(2026, 3, 12), "3.0")));
         when(storageService.uploadTrusted(anyString(), any(), anyString())).thenReturn("payslips/EMP-001/2026-03.pdf");
         when(storageService.presignedGetUrl(anyString(), anyString(), any())).thenReturn(new URL("https://s3.example.com/x"));
 
+        // present 19 + 3 paid leave = 22 payable -> full base, nothing docked.
+        GeneratePayrollRequest request = new GeneratePayrollRequest(LocalDate.of(2026, 3, 1), 22,
+                List.of(new PayrollLineRequest(1L, 19, null, null)));
+
+        List<PayrollRecordResponse> responses = service().generate(request, "hr-uuid", 9L);
+
+        assertThat(responses.get(0).lopDays()).isEqualByComparingTo("0.0");
+        assertThat(responses.get(0).grossAmount()).isEqualByComparingTo("44000.00");
+    }
+
+    @Test
+    void generate_paidLeaveStraddlingMonthBoundary_countsOnlyThisMonthsPortion() throws Exception {
+        Employee employee = employee(1L, new BigDecimal("44000.00"), null);
+        when(employeeRepository.findAllWithUserByIdIn(List.of(1L))).thenReturn(List.of(employee));
+        when(payrollRecordRepository.findEmployeeIdsAlreadyGenerated(LocalDate.of(2026, 3, 1), List.of(1L)))
+                .thenReturn(List.of());
+        // 10-day paid leave Feb 25 -> Mar 6; only Mar 1..6 (6 of 10 calendar days) count for March.
+        when(leaveRequestRepository.findApprovedPaidLeaveOverlappingMonth(any(), any(), any()))
+                .thenReturn(List.of(paidLeave(1L, LocalDate.of(2026, 2, 25), LocalDate.of(2026, 3, 6), "10.0")));
+        when(storageService.uploadTrusted(anyString(), any(), anyString())).thenReturn("payslips/EMP-001/2026-03.pdf");
+        when(storageService.presignedGetUrl(anyString(), anyString(), any())).thenReturn(new URL("https://s3.example.com/x"));
+
+        // present 16 + 6 paid = 22 payable -> full base.
         GeneratePayrollRequest request = new GeneratePayrollRequest(LocalDate.of(2026, 3, 1), 22,
                 List.of(new PayrollLineRequest(1L, 16, null, null)));
 
         List<PayrollRecordResponse> responses = service().generate(request, "hr-uuid", 9L);
 
-        assertThat(responses.get(0).unpaidLeaveDays()).isEqualByComparingTo("6.0");
-        assertThat(responses.get(0).grossAmount()).isEqualByComparingTo("32000.00"); // 44000 - 6*2000
+        assertThat(responses.get(0).lopDays()).isEqualByComparingTo("0.0");
+        assertThat(responses.get(0).grossAmount()).isEqualByComparingTo("44000.00");
     }
 
     @Test
-    void generate_hourlyEmployeeWithUnpaidLeave_grossUnaffectedAndDaysRecordedZero() throws Exception {
+    void generate_hourlyEmployee_unaffectedByLeaveAndAbsence() throws Exception {
         Employee employee = employee(2L, null, new BigDecimal("500.00"));
         when(employeeRepository.findAllWithUserByIdIn(List.of(2L))).thenReturn(List.of(employee));
         when(payrollRecordRepository.findEmployeeIdsAlreadyGenerated(LocalDate.of(2026, 3, 1), List.of(2L)))
                 .thenReturn(List.of());
-        when(leaveRequestRepository.findApprovedUnpaidOverlappingMonth(any(), any(), any()))
-                .thenReturn(List.of(unpaidLeave(2L, LocalDate.of(2026, 3, 3), LocalDate.of(2026, 3, 4), "2.0")));
         when(storageService.uploadTrusted(anyString(), any(), anyString())).thenReturn("payslips/EMP-002/2026-03.pdf");
         when(storageService.presignedGetUrl(anyString(), anyString(), any())).thenReturn(new URL("https://s3.example.com/x"));
 
@@ -159,8 +180,8 @@ class PayrollServiceTest {
 
         List<PayrollRecordResponse> responses = service().generate(request, "hr-uuid", 9L);
 
-        assertThat(responses.get(0).grossAmount()).isEqualByComparingTo("20000.00");
-        assertThat(responses.get(0).unpaidLeaveDays()).isEqualByComparingTo("0.0");
+        assertThat(responses.get(0).grossAmount()).isEqualByComparingTo("20000.00"); // 500 * 40
+        assertThat(responses.get(0).lopDays()).isEqualByComparingTo("0.0");
     }
 
     @Test

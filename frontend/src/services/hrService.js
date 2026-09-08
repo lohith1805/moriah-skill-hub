@@ -605,7 +605,7 @@ function toFePayroll(p) {
     periodMonth: p.periodMonth || null,
     workingDays: p.workingDays ?? null,
     presentDays: p.presentDays ?? null,
-    unpaidLeaveDays: p.unpaidLeaveDays != null ? Number(p.unpaidLeaveDays) : 0,
+    lopDays: p.lopDays != null ? Number(p.lopDays) : 0,
     sessionHours: p.sessionHours != null ? Number(p.sessionHours) : null,
     gross: p.grossAmount != null ? Number(p.grossAmount) : 0,
     deductions: p.deductions != null ? Number(p.deductions) : 0,
