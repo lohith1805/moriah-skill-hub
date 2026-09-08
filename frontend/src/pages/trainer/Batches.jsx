@@ -53,6 +53,7 @@ export default function TrainerBatches() {
   const [assignBatch, setAssignBatch] = useState(null);
   const [assignableProjects, setAssignableProjects] = useState([]);
   const [checkedProjectIds, setCheckedProjectIds] = useState([]);
+  const [assignedProjectIds, setAssignedProjectIds] = useState([]); // persisted set when the modal opened
   const [assignSaving, setAssignSaving] = useState(false);
 
   // Students state
@@ -159,13 +160,20 @@ export default function TrainerBatches() {
     setAssignBatch(batch);
     setAssignableProjects([]);
     setCheckedProjectIds([]);
+    setAssignedProjectIds([]);
     try {
       const [candidates, assigned] = await Promise.all([
         getAssignableProjects(batch.track),
         getBatchProjects(batch.id),
       ]);
-      setAssignableProjects(candidates);
-      setCheckedProjectIds(assigned.map((p) => p.id));
+      const assignedIds = assigned.map((p) => p.id);
+      // A project already on this batch might not be in the candidate list (e.g. it was
+      // published then archived) — merge it in so it stays visible and pre-checked.
+      const known = new Set(candidates.map((p) => p.id));
+      const merged = [...candidates, ...assigned.filter((p) => !known.has(p.id))];
+      setAssignableProjects(merged);
+      setCheckedProjectIds(assignedIds);
+      setAssignedProjectIds(assignedIds);
     } catch (err) {
       notify(err.message || "Couldn't load projects for this batch.", { type: "error" });
     }
@@ -453,11 +461,17 @@ export default function TrainerBatches() {
                   onChange={() => toggleProject(p.id)}
                 />
                 <div>
-                  <p className="text-sm font-medium text-ink-900">{p.title}</p>
+                  <p className="text-sm font-medium text-ink-900 flex items-center gap-2">
+                    {p.title}
+                    {assignedProjectIds.includes(p.id) && <Badge tone="success">Assigned</Badge>}
+                  </p>
                   <p className="text-xs text-ink-500">{p.difficulty}{p.domain ? ` · ${p.domain}` : ""}</p>
                 </div>
               </label>
             ))}
+            <p className="text-[11px] text-ink-400 mt-1">
+              A project can be on more than one batch — assigning it here doesn't remove it from another batch.
+            </p>
           </div>
         )}
       </Modal>

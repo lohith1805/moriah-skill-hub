@@ -140,9 +140,12 @@ WHERE b.name = 'FS-2026-01'
                   AND st.scheduled_at = TIMESTAMP(CURDATE(), '10:00:00'));
 
 -- ---- One PUBLISHED project authored by the developer ---------------------------------
-INSERT INTO projects (title, slug, description, tech_stack, difficulty, domain, version, status, created_by)
+--   `track` must match a batch's track_code (batches use FULL_STACK / DATA_ANALYTICS /
+--   BACKEND / PRODUCT_DESIGN) or a Trainer/PM cannot assign it to any batch — the
+--   "Assign Projects" screen filters candidates to the batch's own track.
+INSERT INTO projects (title, slug, description, tech_stack, difficulty, domain, version, track, status, created_by)
 SELECT 'Todo API', 'todo-api', 'A REST API for a todo list - the sprint-1 reference project.',
-       JSON_ARRAY('Java', 'Spring Boot', 'MySQL'), 'BEGINNER', 'Web', 'v1', 'PUBLISHED',
+       JSON_ARRAY('Java', 'Spring Boot', 'MySQL'), 'BEGINNER', 'Web', 'v1', 'FULL_STACK', 'PUBLISHED',
        (SELECT id FROM users WHERE email = 'dev@moriah.test')
 WHERE NOT EXISTS (SELECT 1 FROM projects WHERE slug = 'todo-api');
 
@@ -150,7 +153,7 @@ WHERE NOT EXISTS (SELECT 1 FROM projects WHERE slug = 'todo-api');
 --   Gives every "Projects & Bug Challenges" screen (student / developer / trainer) a
 --   substantial project to exercise: multi-line brief, a full stack, a starter repo, and
 --   two attached bug-fix challenges the new challenge_submissions flow can be tested on.
-INSERT INTO projects (title, slug, description, tech_stack, difficulty, domain, version, starter_repo_url, status, created_by)
+INSERT INTO projects (title, slug, description, tech_stack, difficulty, domain, version, starter_repo_url, track, status, created_by)
 SELECT 'ShopSprint — E-Commerce Storefront API', 'shopsprint-storefront-api',
        CONCAT(
          'A production-shaped storefront backend built over one agile sprint. You will implement ',
@@ -166,9 +169,61 @@ SELECT 'ShopSprint — E-Commerce Storefront API', 'shopsprint-storefront-api',
        ),
        JSON_ARRAY('Java 21', 'Spring Boot 3', 'Spring Data JPA', 'MySQL 8', 'Redis', 'Testcontainers'),
        'INTERMEDIATE', 'E-Commerce', 'v1',
-       'https://github.com/moriah/shopsprint-storefront-api', 'PUBLISHED',
+       'https://github.com/moriah/shopsprint-storefront-api', 'FULL_STACK', 'PUBLISHED',
        (SELECT id FROM users WHERE email = 'dev@moriah.test')
 WHERE NOT EXISTS (SELECT 1 FROM projects WHERE slug = 'shopsprint-storefront-api');
+
+-- Live-DB backfill: rows inserted by an earlier run of this repeatable migration had track = NULL
+-- (the column wasn't in the INSERT then), so no project could be assigned to a batch. The
+-- NOT EXISTS guards above never retouch an existing row, so set it explicitly, once.
+UPDATE projects SET track = 'FULL_STACK'
+ WHERE slug IN ('todo-api', 'shopsprint-storefront-api') AND (track IS NULL OR track = '');
+
+-- ---- A fully-specified PUBLISHED project left UNASSIGNED to any batch -----------------
+--   For exercising the Trainer/PM "Assign Projects" flow on a clean project: it is
+--   FULL_STACK + PUBLISHED so it shows up as an assignable candidate, but no
+--   batch_projects row references it, so it starts life assigned to nobody.
+INSERT INTO projects (title, slug, description, tech_stack, difficulty, domain, version, starter_repo_url,
+                      architecture_diagram_url, api_spec_url, er_diagram_url, readme_content,
+                      reference_solution_url, video_tutorial_url, track, status, created_by)
+SELECT 'BookNest — Library Lending Service', 'booknest-library-lending',
+       CONCAT(
+         'A full-stack library lending service built over two sprints. Members search the catalogue, ',
+         'borrow and return copies, and are charged a fine for overdue returns; librarians manage ',
+         'titles, copies and member accounts.\n\n',
+         'Scope:\n',
+         '  - GET /api/catalogue with title/author search, availability filter and pagination\n',
+         '  - POST /api/loans: borrow a copy (reject when none available or the member is over their limit)\n',
+         '  - POST /api/loans/{id}/return: close the loan, compute any overdue fine (paise, integer)\n',
+         '  - Librarian CRUD for titles + copies; a member cannot borrow while a fine is outstanding\n',
+         '  - A nightly job that flips ON_LOAN copies to OVERDUE and emails the member\n\n',
+         'Non-functional: every borrow/return is one transaction; the borrow path must be safe under ',
+         'two members racing for the last copy; all money in integer paise. Ship a Postman collection ',
+         'and a short walkthrough video with your PR.'
+       ),
+       JSON_ARRAY('React 19', 'Vite', 'Java 21', 'Spring Boot 3', 'Spring Data JPA', 'MySQL 8'),
+       'INTERMEDIATE', 'Library Systems', 'v1',
+       'https://github.com/moriah/booknest-library-lending',
+       'https://github.com/moriah/booknest-library-lending/blob/main/docs/architecture.md',
+       'https://github.com/moriah/booknest-library-lending/blob/main/docs/openapi.yaml',
+       'https://github.com/moriah/booknest-library-lending/blob/main/docs/er-diagram.png',
+       CONCAT(
+         '# BookNest — Library Lending Service\n\n',
+         'Build a lending service where members borrow and return books and librarians run the catalogue.\n\n',
+         '## Getting started\n',
+         '1. Fork this repo into your own GitHub account (keep the fork public).\n',
+         '2. `docker compose up` brings up MySQL. `./mvnw spring-boot:run` for the API, `npm run dev` for the web app.\n',
+         '3. Work through the scope in the project brief, one slice per branch, one PR per slice.\n\n',
+         '## Acceptance\n',
+         '- Borrowing the last copy from two sessions at once must never over-lend.\n',
+         '- Overdue fines are computed on return, stored in integer paise, and block further borrowing until paid.\n',
+         '- Every endpoint has an integration test; the nightly OVERDUE job has one too.\n'
+       ),
+       'https://github.com/moriah/booknest-library-lending/tree/reference-solution',
+       'https://www.youtube.com/watch?v=booknest-walkthrough',
+       'FULL_STACK', 'PUBLISHED',
+       (SELECT id FROM users WHERE email = 'dev@moriah.test')
+WHERE NOT EXISTS (SELECT 1 FROM projects WHERE slug = 'booknest-library-lending');
 
 -- broken_key/test_key are built from p.id (the real numeric project id), not the slug —
 -- OwnershipGuard#canAccessProject parses the "projects/{id}/..." segment with Long.parseLong,
