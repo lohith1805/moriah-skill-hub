@@ -24,7 +24,7 @@ import {
   loadRecruitments, saveRecruitments, saveDocs,
   freshDocumentChecklist, freshOtherDocumentChecklist, dataURLToBlob,
 } from "../../utils/placementPipeline";
-import { getHrDocuments, verifyHrDocument, getEmployees } from "../../services/hrService";
+import { getEmployees } from "../../services/hrService";
 import { getClients } from "../../services/clientService";
 import { getPlacementCandidates } from "../../services/placementService";
 
@@ -82,39 +82,9 @@ export default function HrDocuments() {
   const [hrRoundValues, setHrRoundValues] = useState({ date: "", time: "", notes: "", meetingLink: "" });
   const [hrRoundErrors, setHrRoundErrors] = useState({});
 
-  // ---- Employee KYC documents (WIRED — GET/PUT /api/v1/hr/documents) ----
-  const [kycDocs, setKycDocs] = useState([]);
-  const [kycLoading, setKycLoading] = useState(true);
-  const [rejectTarget, setRejectTarget] = useState(null);
-  const [rejectReason, setRejectReason] = useState("");
-
-  const loadKyc = () => {
-    setKycLoading(true);
-    getHrDocuments()
-      .then(setKycDocs)
-      .catch((e) => notify(e.message || "Could not load HR documents.", { type: "error" }))
-      .finally(() => setKycLoading(false));
-  };
-
-  useEffect(() => {
-    loadKyc();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const kycVerify = async (doc, decision) => {
-    try {
-      const updated =
-        decision === "Rejected"
-          ? await verifyHrDocument(doc.id, "Rejected", rejectReason)
-          : await verifyHrDocument(doc.id, "Verified");
-      setKycDocs((prev) => prev.map((d) => (d.id === doc.id ? updated : d)));
-      notify(`Document ${decision.toLowerCase()}.`, { type: decision === "Verified" ? "success" : "warning" });
-      setRejectTarget(null);
-      setRejectReason("");
-    } catch (err) {
-      notify(err.message || "Could not record the decision.", { type: "error" });
-    }
-  };
+  // Employee onboarding/KYC document review lives on its own per-employee page
+  // (/hr/employee-documents/:userUuid, reached from Pending Employee Records /
+  // Onboarding), not as a tab here.
 
   const loadPipeline = () => {
     loadRecruitments().then(setRecruitments).catch(() => setRecruitments([]));
@@ -519,7 +489,6 @@ export default function HrDocuments() {
 
       <Tabs
         tabs={[
-          { key: "kyc", label: `Employee KYC Docs${kycDocs.filter((d) => d.status === "Pending").length ? ` (${kycDocs.filter((d) => d.status === "Pending").length})` : ""}`, icon: ShieldCheck },
           { key: "interview", label: "Interview Documents", icon: FileCheck2 },
           { key: "hrround", label: "HR Round", icon: Users },
           { key: "verification", label: "Document Verification", icon: ClipboardCheck },
@@ -529,60 +498,6 @@ export default function HrDocuments() {
       >
         {(active) => (
           <>
-            {/* ---------------- Employee KYC Docs (backend) ---------------- */}
-            {active === "kyc" && (
-              <Card>
-                <div className="px-1 pb-4 text-left">
-                  <h3 className="font-display font-semibold text-ink-900">Employee KYC / ID Documents</h3>
-                  <p className="text-xs text-ink-500">
-                    Uploaded by employees via <code>POST /api/v1/hr/documents</code>. Verify or reject each one.
-                  </p>
-                </div>
-                <Table
-                  loading={kycLoading}
-                  data={kycDocs}
-                  emptyTitle="No documents uploaded"
-                  emptyHint="Employees upload KYC / ID PDFs from their own profile."
-                  columns={[
-                    { key: "employee", header: "Employee", className: "text-left font-medium text-ink-900" },
-                    { key: "documentType", header: "Type", className: "text-left", render: (r) => <Badge tone="primary">{r.documentType}</Badge> },
-                    { key: "createdAt", header: "Uploaded", className: "text-left", render: (r) => (r.createdAt ? r.createdAt.slice(0, 10) : "—") },
-                    {
-                      key: "status",
-                      header: "Status",
-                      className: "text-left",
-                      render: (r) => (
-                        <Badge tone={r.status === "Verified" ? "success" : r.status === "Pending" ? "warning" : "error"}>
-                          {r.status}
-                          {r.status === "Rejected" && r.rejectionReason ? ` · ${r.rejectionReason}` : ""}
-                        </Badge>
-                      ),
-                    },
-                    {
-                      key: "action",
-                      header: "",
-                      className: "text-right",
-                      render: (r) => (
-                        <div className="flex items-center gap-1.5 justify-end">
-                          {r.downloadUrl && (
-                            <Button size="sm" variant="secondary" icon={Download} onClick={() => window.open(r.downloadUrl, "_blank")}>
-                              View
-                            </Button>
-                          )}
-                          {r.status === "Pending" && (
-                            <>
-                              <Button size="sm" icon={ThumbsUp} onClick={() => kycVerify(r, "Verified")}>Verify</Button>
-                              <Button size="sm" variant="secondary" icon={ThumbsDown} onClick={() => { setRejectTarget(r); setRejectReason(""); }}>Reject</Button>
-                            </>
-                          )}
-                        </div>
-                      ),
-                    },
-                  ]}
-                />
-              </Card>
-            )}
-
             {/* ---------------- Interview Documents ---------------- */}
             {active === "interview" && (
               <Card>
@@ -1328,32 +1243,6 @@ export default function HrDocuments() {
             </p>
           </div>
         )}
-      </Modal>
-
-      {/* Reject KYC document — reason required by the API */}
-      <Modal
-        open={!!rejectTarget}
-        onClose={() => setRejectTarget(null)}
-        title={rejectTarget ? `Reject ${rejectTarget.documentType} — ${rejectTarget.employee}` : "Reject document"}
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setRejectTarget(null)}>Cancel</Button>
-            <Button variant="danger" disabled={!rejectReason.trim()} onClick={() => kycVerify(rejectTarget, "Rejected")}>
-              Reject document
-            </Button>
-          </>
-        }
-      >
-        <div className="flex flex-col gap-3 text-left font-sans">
-          <p className="text-sm text-ink-600">Tell the employee what's wrong so they can re-upload.</p>
-          <Input
-            label="Rejection reason"
-            required
-            value={rejectReason}
-            onChange={(e) => setRejectReason(e.target.value)}
-            placeholder="e.g. Document is blurred / expired / wrong type"
-          />
-        </div>
       </Modal>
     </div>
   );
