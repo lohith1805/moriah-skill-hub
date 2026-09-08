@@ -37,6 +37,20 @@ function toFeClientProject(p) {
 
 const asRows = (res) => (Array.isArray(res) ? res : res?.content ?? []);
 
+// GET /api/v1/clients — every ACTIVE client company (ADMIN/HR/BA). Used as the
+// "Recruiting Company" picker in HR letter generation so the name is chosen,
+// never free-typed.
+export async function getClients() {
+  const res = await apiClient.get("/clients");
+  return asRows(res).map((c) => ({
+    id: c.id,
+    companyName: c.companyName,
+    contactPerson: c.contactPerson || "",
+    industry: c.industry || "",
+    userUuid: c.userUuid || null,
+  }));
+}
+
 export async function getClientProjects({ status, allProjects } = {}) {
   const res = await apiClient.get("/clients/projects", {
     status: status || undefined,

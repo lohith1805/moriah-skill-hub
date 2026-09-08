@@ -20,6 +20,7 @@ Congratulations! We are pleased to formally offer you admission into the {{track
 Program Details:
 • Cohort Track: {{track}}
 • Joining Date: {{date}}
+• Sponsoring / Recruiting Partner: {{clientName}}
 • Pedagogy: Agile Sprint Simulation & Live Industry Projects
 • Mentorship: 1-on-1 Code Reviews & Daily Standups
 

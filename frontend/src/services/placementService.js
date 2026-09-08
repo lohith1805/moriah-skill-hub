@@ -42,6 +42,31 @@ export async function getRecruitment(id) {
   return toFeRecruitment(await apiClient.get(`/placements/${id}`));
 }
 
+// GET /api/v1/placements/candidates (HR/ADMIN) — every client-shortlisted
+// candidate as a picker option for HR letter generation. `details` carries the
+// placement's track / designation / ctc / offer* keys for prefilling the form.
+export async function getPlacementCandidates() {
+  const res = await apiClient.get("/placements/candidates");
+  return asRows(res).map((c) => {
+    const d = c.details && typeof c.details === "object" ? c.details : {};
+    return {
+      placementId: c.placementId,
+      candidateUuid: c.candidateUuid,
+      candidateName: c.candidateName || "",
+      clientUuid: c.clientUuid || null,
+      clientContactName: c.clientContactName || "",
+      stage: BACKEND_TO_FE_STAGE[c.stage] || c.stage,
+      backendStage: c.stage,
+      graduated: !!c.graduated,
+      track: d.offerTrack || d.track || "",
+      designation: d.offerDesignation || d.designation || "",
+      department: d.offerDepartment || d.department || "",
+      ctc: d.offerCtc || d.ctc || "",
+      clientName: d.offerClientName || "",
+    };
+  });
+}
+
 // Advance (or update details on) one placement. `feStage` is an FE label or a
 // backend enum; `detailsPatch` is merged server-side (a null value drops a key).
 export async function advancePlacement(id, feStage, detailsPatch = {}) {

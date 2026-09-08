@@ -24,7 +24,9 @@ import {
   loadRecruitments, saveRecruitments, saveDocs,
   freshDocumentChecklist, freshOtherDocumentChecklist, dataURLToBlob,
 } from "../../utils/placementPipeline";
-import { getHrDocuments, verifyHrDocument } from "../../services/hrService";
+import { getHrDocuments, verifyHrDocument, getEmployees } from "../../services/hrService";
+import { getClients } from "../../services/clientService";
+import { getPlacementCandidates } from "../../services/placementService";
 
 // Mirrors the generator in client/TalentPool.jsx / student/Interviews.jsx —
 // used here so HR can mint a room link when scheduling the HR Round.
@@ -58,10 +60,17 @@ export default function HrDocuments() {
     department: "Engineering",
     ctc: "₹7,50,000 / annum",
     clientName: "",
-    recruitmentId: ""
+    recruitmentId: "",
+    candidateUuid: "",
+    employeeId: "",
   });
 
   const [errors, setErrors] = useState({});
+  // Picker sources for the Generate Letter modal — the recipient and the
+  // recruiting company are chosen from real records, never free-typed.
+  const [clientOptions, setClientOptions] = useState([]);        // [{id, companyName, ...}]
+  const [candidateOptions, setCandidateOptions] = useState([]);  // client-shortlisted students
+  const [employeeOptions, setEmployeeOptions] = useState([]);    // for employment_contract
   // File the HR user attaches to the offer letter itself when generating it
   // from the "Create Offer Letter" pipeline action.
   const [offerLetterFile, setOfferLetterFile] = useState([]);
@@ -149,6 +158,9 @@ export default function HrDocuments() {
     }
 
     loadPipeline();
+    getClients().then(setClientOptions).catch(() => setClientOptions([]));
+    getPlacementCandidates().then(setCandidateOptions).catch(() => setCandidateOptions([]));
+    getEmployees({ status: "ACTIVE" }).then(setEmployeeOptions).catch(() => setEmployeeOptions([]));
   }, []);
 
   const persistDocs = (data) => {
@@ -163,7 +175,11 @@ export default function HrDocuments() {
 
   const handleGenerate = (e) => {
     e.preventDefault();
-    const validation = validateForm(values, { name: [required], type: [required] });
+    const rules = { name: [required], type: [required] };
+    if (values.type === "student_offer" || values.type === "placement_confirmation") {
+      rules.clientName = [required];
+    }
+    const validation = validateForm(values, rules);
     setErrors(validation);
     if (Object.keys(validation).length) return;
 
@@ -217,7 +233,7 @@ export default function HrDocuments() {
 
     notify(`Digital ${templates.find(t => t.value === values.type)?.label} generated and dispatched for e-signature.`, { type: "success", title: "Document Generated" });
     setModalOpen(false);
-    setValues({ name: "", type: "student_offer", track: "Full Stack MERN Track", designation: "Full Stack Developer", department: "Engineering", ctc: "₹7,50,000 / annum", clientName: "", recruitmentId: "" });
+    setValues({ name: "", type: "student_offer", track: "Full Stack MERN Track", designation: "Full Stack Developer", department: "Engineering", ctc: "₹7,50,000 / annum", clientName: "", recruitmentId: "", candidateUuid: "", employeeId: "" });
     setOfferLetterFile([]);
   };
 
@@ -237,6 +253,8 @@ export default function HrDocuments() {
       ctc: record.ctc || "₹7,50,000 / annum",
       clientName: record.clientName || "",
       recruitmentId: record.id,
+      candidateUuid: record.candidateUuid || "",
+      employeeId: "",
     });
     setModalOpen(true);
   };
@@ -493,7 +511,7 @@ export default function HrDocuments() {
         subtitle="Interview documents, HR document verification, offer letters and placement paperwork — all in one place"
         breadcrumbs={[{ label: "Dashboard", to: "/hr/dashboard" }, { label: "Letters & Certifications" }]}
         action={
-          <Button icon={Plus} onClick={() => { setErrors({}); setOfferLetterFile([]); setValues((v) => ({ ...v, recruitmentId: "" })); setModalOpen(true); }}>
+          <Button icon={Plus} onClick={() => { setErrors({}); setOfferLetterFile([]); setValues((v) => ({ ...v, name: "", clientName: "", recruitmentId: "", candidateUuid: "", employeeId: "" })); setModalOpen(true); }}>
             Generate Agreement / Letter
           </Button>
         }
@@ -891,8 +909,9 @@ export default function HrDocuments() {
                         className="mt-4"
                         fullWidth
                         onClick={() => {
+                          setErrors({});
                           setOfferLetterFile([]);
-                          setValues((v) => ({ ...v, type: tpl.value, recruitmentId: "" }));
+                          setValues((v) => ({ ...v, type: tpl.value, name: "", clientName: "", recruitmentId: "", candidateUuid: "", employeeId: "" }));
                           setModalOpen(true);
                         }}
                       >
@@ -1077,14 +1096,70 @@ export default function HrDocuments() {
             value={values.type}
             onChange={(e) => setValues((v) => ({ ...v, type: e.target.value }))}
           />
-          <Input
-            label="Recipient Full Name"
-            required
-            placeholder="Full name"
-            value={values.name}
-            onChange={(e) => setValues((v) => ({ ...v, name: e.target.value }))}
-            error={errors.name}
-          />
+          {values.type === "employment_contract" ? (
+            <Select
+              label="Employee"
+              required
+              placeholder={employeeOptions.length ? "Select an employee" : "No employee records yet"}
+              options={employeeOptions.map((emp) => ({
+                value: String(emp.id),
+                label: `${emp.name}${emp.designation ? ` — ${emp.designation}` : ""}`,
+              }))}
+              value={values.employeeId || ""}
+              onChange={(e) => {
+                const emp = employeeOptions.find((x) => String(x.id) === e.target.value);
+                setValues((v) => ({
+                  ...v,
+                  employeeId: e.target.value,
+                  name: emp?.name || "",
+                  designation: emp?.designation || v.designation,
+                  department: emp?.department || v.department,
+                  recruitmentId: "",
+                }));
+              }}
+              error={errors.name}
+            />
+          ) : (
+            <Select
+              label="Recipient — client-shortlisted candidate"
+              required
+              placeholder={candidateOptions.length ? "Select a candidate" : "No client-shortlisted candidates yet"}
+              options={candidateOptions.map((c) => ({
+                value: c.candidateUuid,
+                label:
+                  `${c.candidateName} — ${c.clientContactName || "client"}` +
+                  `${c.graduated ? " · graduated" : ""} (${c.stage})`,
+              }))}
+              value={values.candidateUuid || ""}
+              onChange={(e) => {
+                const c = candidateOptions.find((x) => x.candidateUuid === e.target.value);
+                setValues((v) => ({
+                  ...v,
+                  candidateUuid: e.target.value,
+                  name: c?.candidateName || "",
+                  clientName: c?.clientName || c?.clientContactName || v.clientName,
+                  track: c?.track || v.track,
+                  designation: c?.designation || v.designation,
+                  department: c?.department || v.department,
+                  ctc: c?.ctc || v.ctc,
+                  recruitmentId: c?.placementId ? String(c.placementId) : "",
+                }));
+              }}
+              error={errors.name}
+            />
+          )}
+
+          {(values.type === "student_offer" || values.type === "placement_confirmation") && (
+            <Select
+              label="Recruiting Company"
+              required
+              placeholder={clientOptions.length ? "Select a client company" : "No client companies yet"}
+              options={clientOptions.map((c) => ({ value: c.companyName, label: c.companyName }))}
+              value={values.clientName || ""}
+              onChange={(e) => setValues((v) => ({ ...v, clientName: e.target.value }))}
+              error={errors.clientName}
+            />
+          )}
 
           {values.type === "student_offer" && (
             <Input
@@ -1095,30 +1170,13 @@ export default function HrDocuments() {
             />
           )}
 
-          {values.type === "employment_contract" && (
+          {(values.type === "employment_contract" || values.type === "placement_confirmation") && (
             <div className="grid sm:grid-cols-2 gap-4">
               <Input
                 label="Designation / Role"
                 placeholder="e.g. Full Stack Developer"
                 value={values.designation}
                 onChange={(e) => setValues((v) => ({ ...v, designation: e.target.value }))}
-              />
-              <Input
-                label="Annual CTC (₹)"
-                placeholder="e.g. ₹8,00,000 / annum"
-                value={values.ctc}
-                onChange={(e) => setValues((v) => ({ ...v, ctc: e.target.value }))}
-              />
-            </div>
-          )}
-
-          {values.type === "placement_confirmation" && (
-            <div className="grid sm:grid-cols-2 gap-4">
-              <Input
-                label="Recruiting Company"
-                placeholder="e.g. Acme Corp"
-                value={values.clientName}
-                onChange={(e) => setValues((v) => ({ ...v, clientName: e.target.value }))}
               />
               <Input
                 label="Annual CTC (₹)"
