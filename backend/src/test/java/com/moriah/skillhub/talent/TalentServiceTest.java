@@ -111,7 +111,7 @@ class TalentServiceTest {
     }
 
     @Test
-    void createRequest_resolvesCandidateAndLandsPending() {
+    void createRequest_autoApprovesAndOpensPlacementPipeline() {
         when(userRepository.findByUuid("cand-uuid")).thenReturn(Optional.of(user(20L, "cand-uuid", "Cand One")));
         when(requestRepository.save(any(RecruitmentRequest.class))).thenAnswer(inv -> {
             RecruitmentRequest r = inv.getArgument(0);
@@ -128,7 +128,11 @@ class TalentServiceTest {
         verify(requestRepository).save(captor.capture());
         assertThat(captor.getValue().getCandidateId()).isEqualTo(20L);
         assertThat(captor.getValue().getRequestedBy()).isEqualTo(30L);
-        assertThat(captor.getValue().getStatus()).isEqualTo(RecruitmentRequestStatus.PENDING);
+        // No HR "approve request" gate — a shortlist auto-approves and opens the pipeline.
+        assertThat(captor.getValue().getStatus()).isEqualTo(RecruitmentRequestStatus.APPROVED);
+        assertThat(captor.getValue().getDecidedBy()).isEqualTo(30L);
+        assertThat(captor.getValue().getDecidedAt()).isNotNull();
+        verify(placementService).createForApprovedRequest(1L, 20L, 30L);
         assertThat(response.candidateUuid()).isEqualTo("cand-uuid");
         assertThat(response.requestedByUuid()).isEqualTo("client-uuid");
     }

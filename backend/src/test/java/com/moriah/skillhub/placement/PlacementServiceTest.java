@@ -5,11 +5,13 @@ import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ForbiddenOperationException;
 import com.moriah.skillhub.batch.repository.BatchStudentRepository;
+import com.moriah.skillhub.common.notification.NotificationService;
 import com.moriah.skillhub.common.security.AuthenticatedPrincipal;
 import com.moriah.skillhub.placement.dto.UpdatePlacementRequest;
 import com.moriah.skillhub.placement.entity.Placement;
 import com.moriah.skillhub.placement.entity.PlacementStage;
 import com.moriah.skillhub.placement.repository.PlacementRepository;
+import com.moriah.skillhub.user.UserService;
 import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.repository.UserRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -37,9 +39,14 @@ class PlacementServiceTest {
     private UserRepository userRepository;
     @Mock
     private BatchStudentRepository batchStudentRepository;
+    @Mock
+    private NotificationService notificationService;
+    @Mock
+    private UserService userService;
 
     private PlacementService service() {
-        return new PlacementService(placementRepository, userRepository, batchStudentRepository, new ObjectMapper());
+        return new PlacementService(placementRepository, userRepository, batchStudentRepository, new ObjectMapper(),
+                notificationService, userService);
     }
 
     @AfterEach
@@ -116,6 +123,29 @@ class PlacementServiceTest {
         var res = service().update(1L, new UpdatePlacementRequest(PlacementStage.STUDENT_SIGNED, null), 200L);
 
         assertThat(res.stage()).isEqualTo(PlacementStage.STUDENT_SIGNED);
+    }
+
+    @Test
+    void update_studentDeclinesOfferFromClientSigned_allowed() {
+        authenticateAs(200L, List.of("STUDENT"));
+        when(placementRepository.findById(1L)).thenReturn(Optional.of(placement(PlacementStage.CLIENT_SIGNED)));
+        when(userRepository.findAllById(org.mockito.ArgumentMatchers.anyIterable()))
+                .thenReturn(List.of(u(100L), u(200L)));
+
+        var res = service().update(1L, new UpdatePlacementRequest(PlacementStage.REJECTED, null), 200L);
+
+        assertThat(res.stage()).isEqualTo(PlacementStage.REJECTED);
+    }
+
+    @Test
+    void update_studentTriesToRejectBeforeOffer_forbidden() {
+        authenticateAs(200L, List.of("STUDENT"));
+        when(placementRepository.findById(1L)).thenReturn(Optional.of(placement(PlacementStage.TECHNICAL_SCHEDULED)));
+
+        assertThatThrownBy(() -> service().update(1L,
+                new UpdatePlacementRequest(PlacementStage.REJECTED, null), 200L))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INSUFFICIENT_ROLE);
     }
 
     @Test

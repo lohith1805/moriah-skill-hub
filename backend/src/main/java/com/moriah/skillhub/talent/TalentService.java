@@ -70,12 +70,21 @@ public class TalentService {
         entity.setRoleTitle(request.roleTitle());
         entity.setEngagementType(request.engagementType());
         entity.setMessage(blankToNull(request.message()));
-        entity.setStatus(RecruitmentRequestStatus.PENDING);
+        // Auto-open: a client shortlisting a candidate immediately opens the placement pipeline
+        // (SHORTLISTED). There is no separate HR "approve this request" gate — HR's control is
+        // downstream (the HR interview round, document verification, the offer). {@link #decide}
+        // stays wired in case a manual gate is ever reintroduced.
+        entity.setStatus(RecruitmentRequestStatus.APPROVED);
+        entity.setDecidedBy(callerUserId);
+        entity.setDecidedAt(Instant.now());
         requestRepository.save(entity);
+
+        placementService.createForApprovedRequest(entity.getId(), candidate.getId(), callerUserId);
 
         auditLogService.record(callerUserId, "RECRUITMENT_REQUEST_CREATED", "RecruitmentRequest",
                 entity.getId(), null, candidate.getUuid());
-        log.info("[recruitment] {} requested {} for candidate {}", callerUserId, entity.getEngagementType(), candidate.getUuid());
+        log.info("[recruitment] {} shortlisted candidate {} — placement pipeline opened",
+                callerUserId, candidate.getUuid());
         return toResponse(entity, usersById(List.of(entity)));
     }
 

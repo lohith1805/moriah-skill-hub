@@ -9,6 +9,8 @@ import com.moriah.skillhub.common.exception.ForbiddenOperationException;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
 import com.moriah.skillhub.batch.entity.BatchStudentStatus;
 import com.moriah.skillhub.batch.repository.BatchStudentRepository;
+import com.moriah.skillhub.common.notification.NotificationChannel;
+import com.moriah.skillhub.common.notification.NotificationService;
 import com.moriah.skillhub.common.security.SecurityUtils;
 import com.moriah.skillhub.placement.dto.PlacementCandidateOption;
 import com.moriah.skillhub.placement.dto.PlacementResponse;
@@ -16,6 +18,7 @@ import com.moriah.skillhub.placement.dto.UpdatePlacementRequest;
 import com.moriah.skillhub.placement.entity.Placement;
 import com.moriah.skillhub.placement.entity.PlacementStage;
 import com.moriah.skillhub.placement.repository.PlacementRepository;
+import com.moriah.skillhub.user.UserService;
 import com.moriah.skillhub.user.entity.RoleCode;
 import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.repository.UserRepository;
@@ -36,10 +39,12 @@ import java.util.stream.Stream;
 
 /**
  * The client-placement pipeline (frontend-integration Part A). A {@link Placement} row is
- * auto-created by {@code TalentService.decide} when a recruitment request is APPROVED, then
- * advanced through {@link PlacementStage} by the three personas — see that enum's Javadoc for the
- * per-stage ownership rules this service enforces. Stage regressions are rejected; {@code
- * details} is a free-form JSON object merged on each update.
+ * auto-created by {@code TalentService.createRequest} the moment a client shortlists a candidate
+ * (there is no separate HR "approve request" gate), then advanced through {@link PlacementStage}
+ * by the three personas — see that enum's Javadoc for the per-stage ownership rules this service
+ * enforces. Stage regressions are rejected; {@code details} is a free-form JSON object merged on
+ * each update. Each stage change fires an in-app notification to whoever the ball moves to
+ * ({@link #notifyStageChange}).
  */
 @Service
 @RequiredArgsConstructor
@@ -50,6 +55,8 @@ public class PlacementService {
     private final UserRepository userRepository;
     private final BatchStudentRepository batchStudentRepository;
     private final ObjectMapper objectMapper;
+    private final NotificationService notificationService;
+    private final UserService userService;
 
     /** Called from {@code TalentService.decide} on an APPROVED request — primitives only, so this
      * module owns no {@code talent/} type. Idempotent. */
@@ -137,7 +144,67 @@ public class PlacementService {
 
         placement.setStage(target);
         placement.setDetails(mergeDetails(placement.getDetails(), request.details()));
-        return toResponse(placement, usersById(List.of(placement)));
+
+        Map<Long, User> users = usersById(List.of(placement));
+        if (target != current) {
+            notifyStageChange(placement, target, callerUserId, users);
+        }
+        return toResponse(placement, users);
+    }
+
+    /**
+     * In-app notification to whoever the ball is now with. Each transition hands off to a
+     * different actor: the client drives the technical rounds, HR the HR round / documents /
+     * offer, the candidate the final decision — so a stage change is exactly when someone new
+     * needs to be told. Fired {@code enqueueAfterCommit} so a notification is never sent for a
+     * transition that rolls back. One template ({@code PLACEMENT_STAGE_CHANGED}) with an {@code
+     * audience} tag in the payload — the frontend renderer phrases it for the reader.
+     * <p>
+     * Intermediate markers ({@code TECHNICAL_COMPLETED}, {@code HR_COMPLETED}) and the pipeline
+     * open ({@code SHORTLISTED}) notify no one; the "docs verified" / "offer sent" steps happen
+     * inside a stage via {@code details} and are notified from the frontend action instead.
+     */
+    private void notifyStageChange(Placement p, PlacementStage stage, Long actorUserId, Map<Long, User> users) {
+        Long candidateId = p.getCandidateId();
+        Long clientId = p.getClientId();
+        String candidateName = users.get(candidateId) == null ? "" : users.get(candidateId).getFullName();
+        String clientName = users.get(clientId) == null ? "" : users.get(clientId).getFullName();
+
+        switch (stage) {
+            case TECHNICAL_SCHEDULED, HR_SCHEDULED, HR_APPROVED, DOCUMENT_VERIFICATION, CLIENT_SIGNED ->
+                    notifyOne(candidateId, p, stage, "candidate", candidateName, clientName);
+            case TECHNICAL_APPROVED, STUDENT_SIGNED ->
+                    userService.findUserIdsByRole(RoleCode.HR_MANAGER)
+                            .forEach(hr -> notifyOne(hr, p, stage, "hr", candidateName, clientName));
+            case OFFER_CREATED ->
+                    notifyOne(clientId, p, stage, "client", candidateName, clientName);
+            case PLACED -> {
+                notifyOne(candidateId, p, stage, "candidate", candidateName, clientName);
+                notifyOne(clientId, p, stage, "client", candidateName, clientName);
+            }
+            case REJECTED -> {
+                if (!candidateId.equals(actorUserId)) {
+                    notifyOne(candidateId, p, stage, "candidate", candidateName, clientName);
+                }
+                if (!clientId.equals(actorUserId)) {
+                    notifyOne(clientId, p, stage, "client", candidateName, clientName);
+                }
+                userService.findUserIdsByRole(RoleCode.HR_MANAGER).stream()
+                        .filter(hr -> !hr.equals(actorUserId))
+                        .forEach(hr -> notifyOne(hr, p, stage, "hr", candidateName, clientName));
+            }
+            case SHORTLISTED, TECHNICAL_COMPLETED, HR_COMPLETED -> { /* no recipient */ }
+        }
+    }
+
+    private void notifyOne(Long userId, Placement p, PlacementStage stage, String audience,
+            String candidateName, String clientName) {
+        notificationService.enqueueAfterCommit(userId, NotificationChannel.IN_APP, "PLACEMENT_STAGE_CHANGED", Map.of(
+                "placementId", p.getId(),
+                "stage", stage.name(),
+                "audience", audience,
+                "candidateName", Objects.toString(candidateName, ""),
+                "clientName", Objects.toString(clientName, "")));
     }
 
     // --- ownership -----------------------------------------------------
@@ -162,7 +229,12 @@ public class PlacementService {
             case TECHNICAL_SCHEDULED, TECHNICAL_COMPLETED, TECHNICAL_APPROVED, CLIENT_SIGNED -> isThisClient;
             case HR_SCHEDULED, HR_COMPLETED, HR_APPROVED, DOCUMENT_VERIFICATION, OFFER_CREATED, PLACED -> isHr;
             case STUDENT_SIGNED -> isThisCandidate;
-            case REJECTED -> isThisClient || isHr;
+            // The candidate may DECLINE the offer, but only once it's actually in front of them
+            // (the client has signed) — not bail out mid-interview. Client / HR can reject at
+            // any non-terminal stage. `placement.getStage()` here is still the current stage —
+            // `update` mutates it only after this check passes.
+            case REJECTED -> isThisClient || isHr
+                    || (isThisCandidate && placement.getStage() == PlacementStage.CLIENT_SIGNED);
             case SHORTLISTED -> isHr || isThisClient;
         };
         if (!allowed) {
