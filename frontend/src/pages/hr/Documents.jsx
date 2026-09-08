@@ -38,6 +38,41 @@ function generateMeetingLink() {
   return `${window.location.origin}/interview-room/${roomCode}`;
 }
 
+// Per-round outcome for the Interview Documents record. Reads the history
+// fields the Client writes on the Technical Round (technicalRoundApprovedAt/By,
+// rejectedAt) and HR writes on the HR Round (hrRoundApprovedAt), so a passed
+// interview stays on the record for the rest of the pipeline.
+function interviewRoundSummary(r) {
+  const onDate = (d) => (d ? ` · ${new Date(d).toLocaleDateString()}` : "");
+
+  let technical;
+  if (r.stage === REJECTED && r.rejectedAt === "Technical Round") {
+    technical = { label: "Not selected", tone: "error" };
+  } else if (r.technicalRoundApprovedAt || stageIndex(r.stage) >= stageIndex("Technical Round Approved")) {
+    technical = {
+      label: `Passed${onDate(r.technicalRoundApprovedAt)}${r.technicalRoundApprovedBy ? ` · ${r.technicalRoundApprovedBy}` : ""}`,
+      tone: "success",
+    };
+  } else {
+    technical = { label: "Completed — awaiting client decision", tone: "warning" };
+  }
+
+  let hr;
+  if (r.stage === REJECTED && r.rejectedAt === "HR Round") {
+    hr = { label: "Not selected", tone: "error" };
+  } else if (r.hrRoundApprovedAt || stageIndex(r.stage) >= stageIndex("Document Verification")) {
+    hr = { label: `Passed${onDate(r.hrRoundApprovedAt)}`, tone: "success" };
+  } else if (["HR Round Scheduled", "HR Round Completed"].includes(r.stage)) {
+    hr = { label: "In progress", tone: "info" };
+  } else if (r.stage === REJECTED) {
+    hr = { label: "—", tone: "neutral" };
+  } else {
+    hr = { label: "Pending", tone: "neutral" };
+  }
+
+  return { technical, hr };
+}
+
 const INITIAL_DOCS = [];
 
 export default function HrDocuments() {
@@ -462,9 +497,14 @@ export default function HrDocuments() {
     persistRecruitments(updated);
   };
 
-  // Candidates who've cleared interview approval — i.e. everything from
-  // Document Verification onward — are the ones with real HR paperwork.
-  const pipelineCandidates = recruitments.filter((r) => stageIndex(r.stage) >= stageIndex("Document Verification"));
+  // Interview Documents tab: the HR-visible record of every interview that has
+  // actually happened — from the Technical Round onward — plus anyone who was
+  // not selected AT an interview round. It stays visible for the rest of the
+  // pipeline so HR always has the history of how each candidate did.
+  const interviewStageCandidates = recruitments.filter((r) => {
+    if (r.stage === REJECTED) return ["Technical Round", "HR Round"].includes(r.rejectedAt);
+    return stageIndex(r.stage) >= stageIndex("Technical Round Completed");
+  });
   const awaitingHrSchedule = recruitments.filter((r) => r.stage === "Technical Round Approved");
   const hrRoundScheduledList = recruitments.filter((r) => r.stage === "HR Round Scheduled");
   const hrRoundCompletedList = recruitments.filter((r) => r.stage === "HR Round Completed");
@@ -502,26 +542,32 @@ export default function HrDocuments() {
             {active === "interview" && (
               <Card>
                 <div className="px-1 pb-4 text-left">
-                  <h3 className="font-display font-semibold text-ink-900">Interview-Stage Candidates</h3>
-                  <p className="text-xs text-ink-500">Candidates whose interview was approved by the Client/Interviewer, with their current pipeline stage</p>
+                  <h3 className="font-display font-semibold text-ink-900">Interview Outcome Record</h3>
+                  <p className="text-xs text-ink-500">Every candidate whose technical interview has taken place — the result of each round (passed or not selected), kept on the record through the rest of the pipeline</p>
                 </div>
-                {pipelineCandidates.length === 0 ? (
+                {interviewStageCandidates.length === 0 ? (
                   <EmptyState
                     icon={Briefcase}
-                    title="No approved candidates yet"
-                    description="Once a Corporate Client approves a candidate's interview, they'll show up here."
+                    title="No interviews yet"
+                    description="A candidate appears here once the Corporate Client marks their technical interview complete."
                   />
                 ) : (
                   <Table
-                    data={pipelineCandidates}
+                    data={interviewStageCandidates}
                     columns={[
                       { key: "candidateName", header: "Candidate", className: "text-left font-medium text-ink-900" },
-                      { key: "track", header: "Track", className: "text-left" },
                       { key: "clientName", header: "Recruiting Company", className: "text-left", render: (r) => r.clientName || "—" },
                       { key: "date", header: "Interview Date", className: "text-left", render: (r) => (
-                        <span className="flex items-center gap-1"><CalendarClock size={14} className="text-ink-400" /> {r.date} at {r.time}</span>
+                        r.date ? <span className="flex items-center gap-1"><CalendarClock size={14} className="text-ink-400" /> {r.date} at {r.time}</span> : "—"
                       ) },
-                      { key: "roundType", header: "Round", className: "text-left" },
+                      { key: "technical", header: "Technical Round", className: "text-left", render: (r) => {
+                        const { technical } = interviewRoundSummary(r);
+                        return <Badge tone={technical.tone}>{technical.label}</Badge>;
+                      } },
+                      { key: "hr", header: "HR Round", className: "text-left", render: (r) => {
+                        const { hr } = interviewRoundSummary(r);
+                        return <Badge tone={hr.tone}>{hr.label}</Badge>;
+                      } },
                       { key: "stage", header: "Current Stage", className: "text-left", render: (r) => <Badge tone={stageTone(r.stage)}>{r.stage}</Badge> },
                     ]}
                   />
