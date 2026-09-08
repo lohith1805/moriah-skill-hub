@@ -177,9 +177,7 @@ export async function getRecruitmentRequests({ status } = {}) {
 // Looks up the resume a student uploaded via studentService.saveResumeFile
 // (persisted on their registered-user record) so a Corporate Client can
 // actually open a Talent Pool candidate's resume before shortlisting them.
-// Only candidates HR has already published to the Talent Pool reach this —
-// see hrService.trySyncGraduateToTalentPool — so a resume is expected here,
-// but this stays defensive in case the underlying record was cleared.
+// Defensive — returns null if the underlying record was cleared.
 export function getCandidateResume(candidateName) {
   if (!candidateName) return null;
   try {

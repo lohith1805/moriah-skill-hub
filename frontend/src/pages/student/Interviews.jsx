@@ -71,13 +71,20 @@ export default function StudentInterviews() {
     notify("Downloading your offer letter…", { type: "info" });
   };
 
-  // Review & sign: the candidate reviews the client-signed offer and adds their
-  // own digital signature. This is the ONLY path that produces STUDENT_SIGNED,
-  // and it can only run from CLIENT_SIGNED (Document Verification, the offer
-  // letter and the client's signature all had to happen first). Backend enforces
-  // that only this candidate may set STUDENT_SIGNED. There is no student "reject"
-  // — the backend only lets the client or HR move a placement to REJECTED.
+  // Review the client-signed offer, then either accept (add a digital signature
+  // -> STUDENT_SIGNED) or decline (-> REJECTED). Both run only from CLIENT_SIGNED
+  // and the backend enforces that only this candidate may drive them from here.
   const [signing, setSigning] = useState(false);
+  const [declineMode, setDeclineMode] = useState(false);
+  const [declineReason, setDeclineReason] = useState("");
+  const [declining, setDeclining] = useState(false);
+
+  const closeSignModal = () => {
+    setSigningOffer(null);
+    setDeclineMode(false);
+    setDeclineReason("");
+  };
+
   const handleSign = async () => {
     if (!signingOffer) return;
     if (!signatureUrl) {
@@ -92,12 +99,31 @@ export default function StudentInterviews() {
         studentSignedWithSignature: true,
       });
       notify("Digital signature captured — HR will finalise your placement.", { type: "success", title: "Signed" });
-      setSigningOffer(null);
+      closeSignModal();
       load();
     } catch (e) {
       notify(e?.message || "Couldn't record your signature. Please try again.", { type: "error" });
     } finally {
       setSigning(false);
+    }
+  };
+
+  const handleDecline = async () => {
+    if (!signingOffer) return;
+    setDeclining(true);
+    try {
+      await advancePlacement(signingOffer.id, REJECTED, {
+        rejectedAt: new Date().toISOString(),
+        rejectedBy: "student",
+        rejectionReason: declineReason.trim() || "Declined by the candidate",
+      });
+      notify("Offer declined — HR and the recruiting company have been notified.", { type: "success", title: "Offer declined" });
+      closeSignModal();
+      load();
+    } catch (e) {
+      notify(e?.message || "Couldn't record your decision. Please try again.", { type: "error" });
+    } finally {
+      setDeclining(false);
     }
   };
 
@@ -347,31 +373,53 @@ export default function StudentInterviews() {
         )}
       </Modal>
 
-      {/* Student Digital Signature Modal */}
+      {/* Student offer decision modal — accept (sign) or decline */}
       <Modal
         open={!!signingOffer}
-        onClose={() => setSigningOffer(null)}
-        title="Sign Your Offer Letter"
+        onClose={closeSignModal}
+        title={declineMode ? "Decline Offer Letter" : "Sign Your Offer Letter"}
         size="lg"
         footer={
-          <div className="flex justify-between w-full items-center">
-            <Button variant="secondary" icon={Download} onClick={() => downloadOfferLetter(signingOffer)}>Download</Button>
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => setSigningOffer(null)} disabled={signing}>Cancel</Button>
-              <Button icon={ShieldCheck} loading={signing} onClick={handleSign} disabled={!signatureUrl}>Digitally Sign & Accept</Button>
+          declineMode ? (
+            <div className="flex justify-end w-full gap-2">
+              <Button variant="secondary" onClick={() => setDeclineMode(false)} disabled={declining}>Back</Button>
+              <Button variant="danger" icon={CalendarX2} loading={declining} onClick={handleDecline}>Confirm Decline</Button>
             </div>
-          </div>
+          ) : (
+            <div className="flex justify-between w-full items-center">
+              <Button variant="secondary" icon={Download} onClick={() => downloadOfferLetter(signingOffer)}>Download</Button>
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={closeSignModal} disabled={signing}>Cancel</Button>
+                <Button variant="danger" onClick={() => setDeclineMode(true)} disabled={signing}>Decline Offer</Button>
+                <Button icon={ShieldCheck} loading={signing} onClick={handleSign} disabled={!signatureUrl}>Digitally Sign & Accept</Button>
+              </div>
+            </div>
+          )
         }
       >
         {signingOffer && (
           <div className="flex flex-col gap-4 text-left font-sans">
             <p className="text-sm text-ink-500">
-              This offer letter has already been reviewed and signed by <strong>{signingOffer.clientName || "the recruiting company"}</strong>. Review it and add your digital signature below to accept and finalise your placement.
+              This offer letter has already been reviewed and signed by <strong>{signingOffer.clientName || "the recruiting company"}</strong>.{" "}
+              {declineMode
+                ? "Declining is final — the recruiting company and HR will be notified and this placement closes."
+                : "Review it and add your digital signature below to accept and finalise your placement, or decline it."}
             </p>
             <div className="whitespace-pre-line font-mono text-xs leading-relaxed text-ink-800 bg-cream-50/50 p-4 rounded-lg border border-border/80">
               {offerDoc ? renderTemplateText(offerDoc) : "Offer letter not found."}
             </div>
-            {signatureUrl ? (
+            {declineMode ? (
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-ink-900">Reason for declining <span className="font-normal text-ink-400">(optional)</span></span>
+                <textarea
+                  rows={3}
+                  className="rounded-lg border border-border p-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100 resize-y"
+                  placeholder="e.g. I've accepted another offer."
+                  value={declineReason}
+                  onChange={(e) => setDeclineReason(e.target.value)}
+                />
+              </label>
+            ) : signatureUrl ? (
               <div className="rounded-lg border border-border/80 p-4">
                 <p className="text-xs text-ink-500 mb-2">Your saved signature — this is what will be applied:</p>
                 <img src={signatureUrl} alt="Your signature" className="max-h-20 object-contain" />

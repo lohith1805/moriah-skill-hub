@@ -3,7 +3,6 @@ import { TASKS, BATCHES } from "./mockData";
 import { SUBSCRIPTION_PLANS, PLAN_CODE_TO_FE } from "../utils/constants";
 import { getPersistedUser } from "./authService";
 import { evaluateStudentAutoPip } from "./pipEngine";
-import { trySyncGraduateToTalentPool } from "./hrService";
 
 // ---------------------------------------------------------------------------
 // WIRED to the backend (this session): video lessons + quiz (/api/v1/lessons,

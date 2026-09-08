@@ -69,6 +69,40 @@ const TEMPLATE_RENDERERS = {
     body: `Your ${p.planName || "subscription"} is active${p.startDate ? `, starting ${p.startDate}` : ""}.`,
     tone: "success",
   }),
+  // Placement pipeline hand-off. The backend sends one code with an `audience`
+  // tag ("candidate" | "client" | "hr"); the copy is phrased for the reader.
+  PLACEMENT_STAGE_CHANGED: (p) => {
+    const cand = p.candidateName || "the candidate";
+    const client = p.clientName || "the recruiting company";
+    const byStage = {
+      TECHNICAL_SCHEDULED: { candidate: ["Technical interview scheduled", `${client} has scheduled your technical interview.`] },
+      TECHNICAL_APPROVED: { hr: ["Candidate cleared the technical round", `${cand} passed ${client}'s technical round — schedule the HR round.`] },
+      HR_SCHEDULED: { candidate: ["HR interview scheduled", `Your HR interview for the ${client} placement has been scheduled.`] },
+      HR_APPROVED: { candidate: ["You cleared the HR round", `${client} cleared you at the HR round — document verification is next.`] },
+      DOCUMENT_VERIFICATION: { candidate: ["Upload your documents", `Upload your documents for the ${client} placement so HR can verify them.`] },
+      OFFER_CREATED: { client: ["Offer letter ready to sign", `HR has prepared the offer letter for ${cand}. Review and add your signature.`] },
+      CLIENT_SIGNED: { candidate: ["Your offer letter is ready", `${client} has signed your offer letter — review it and accept or decline.`] },
+      STUDENT_SIGNED: { hr: ["Candidate accepted the offer", `${cand} accepted ${client}'s offer — finalise the placement.`] },
+      PLACED: {
+        candidate: ["You're placed! 🎉", `Your placement with ${client} is finalised. Congratulations!`],
+        client: ["Placement finalised", `${cand}'s placement is finalised.`],
+      },
+      REJECTED: {
+        candidate: ["Placement closed", `Your placement process with ${client} has been closed.`],
+        client: ["Placement closed", `The placement process for ${cand} has been closed.`],
+        hr: ["Placement rejected", `The placement between ${cand} and ${client} was rejected.`],
+      },
+    };
+    const entry =
+      byStage[p.stage]?.[p.audience] ||
+      byStage[p.stage]?.candidate ||
+      [humanize(p.stage) || "Placement update", `Placement update for ${cand}.`];
+    return {
+      title: entry[0],
+      body: entry[1],
+      tone: p.stage === "REJECTED" ? "warning" : p.stage === "PLACED" ? "success" : "info",
+    };
+  },
 };
 
 function render(n) {

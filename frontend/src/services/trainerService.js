@@ -635,75 +635,12 @@ export async function issueCertificate(batchId, userUuid, certificateType = "COM
   return res;
 }
 
-// Approving graduation now actually issues a certificate — writes into the
-// same "msh_certificates" list the Student portal's Certificates page and
-// the public /verify/:code checker both read from.
-// Writes (or backfills) the HR-facing exit-clearance record for a graduated
-// student. Exported and idempotent — safe to call both at the moment a
-// trainer clicks Approve, AND as a backfill for students who were already
-// cleared/certificated before this handoff existed (their certificate is
-// already on record, but nothing was ever written for HR to see, so a
-// one-time approval done under the old code silently never reaches Exit
-// Management). Skips if a "Graduating Student" exit record for this name
-// already exists, so calling it repeatedly is harmless.
-export function ensureGraduationExitHandoff({ studentId, studentName, track, certificateId }) {
-  if (!studentName) return;
-  try {
-    const raw = localStorage.getItem("msh_hr_exits");
-    const exits = raw ? JSON.parse(raw) : [];
-    const alreadyHandedOff = exits.some(
-      (x) => x.type === "Graduating Student" && x.name?.toLowerCase() === studentName.toLowerCase()
-    );
-    if (!alreadyHandedOff) {
-      exits.unshift({
-        id: `x_grad_${studentId || Date.now()}`,
-        name: studentName,
-        type: "Graduating Student",
-        department: track || "Full-Stack Development",
-        reason: "Course completion — graduation clearance",
-        exitDate: new Date().toISOString().slice(0, 10),
-        itClearance: "Pending",
-        accountsClearance: "Pending",
-        exitInterview: "Scheduled",
-        clearance: "Pending",
-        sourceCertificateId: certificateId || null,
-      });
-      localStorage.setItem("msh_hr_exits", JSON.stringify(exits));
-    }
-  } catch (err) {
-    console.warn("[trainerService] Could not hand off graduation exit record to HR:", err.message);
-  }
-}
-
-export async function approveGraduation(studentId, studentName, track, studentEmail) {
-  const verifyCode = `MSH-CERT-${Math.floor(10000 + Math.random() * 89999)}`;
-  const certificate = {
-    id: `c${Date.now()}`,
-    studentName: studentName || "Student",
-    studentEmail: studentEmail || null,
-    title: `${track || "Full-Stack Development"} — Graduation Track`,
-    track: track || "Full-Stack Development",
-    issuedOn: new Date().toISOString().slice(0, 10),
-    verifyCode,
-    status: "Issued",
-    hash: `sha256:${Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join("")}`,
-  };
-
-  try {
-    const raw = localStorage.getItem("msh_certificates");
-    const certs = raw ? JSON.parse(raw) : [];
-    certs.unshift(certificate);
-    localStorage.setItem("msh_certificates", JSON.stringify(certs));
-  } catch (err) {
-    console.warn("[trainerService] Could not persist certificate:", err.message);
-  }
-
-  // Hand off to HR — see ensureGraduationExitHandoff above.
-  ensureGraduationExitHandoff({ studentId, studentName, track, certificateId: certificate.id });
-
-  await mockRequest(null, { delay: 800 });
-  return { studentId, status: "Cleared for Graduation", certificate };
-}
+// NOTE: the old mock approveGraduation() + ensureGraduationExitHandoff() lived
+// here. They minted a fake certificate into localStorage "msh_certificates" and
+// wrote a fake "Graduating Student" record into "msh_hr_exits". Neither was
+// used — real graduation is graduateStudent() + issueCertificate() against the
+// backend (trainer/Graduation.jsx), and students have no exit-clearance flow.
+// Both deleted.
 
 // Student Management for Trainers
 export async function getAllStudents() {
