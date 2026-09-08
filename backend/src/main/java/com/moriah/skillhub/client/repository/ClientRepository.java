@@ -1,6 +1,7 @@
 package com.moriah.skillhub.client.repository;
 
 import com.moriah.skillhub.client.entity.Client;
+import com.moriah.skillhub.client.entity.ClientStatus;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -9,6 +10,12 @@ import java.util.List;
 import java.util.Optional;
 
 public interface ClientRepository extends JpaRepository<Client, Long> {
+
+    /** {@code GET /api/v1/clients} — the "choose a client company" picker (HR letter generation,
+     * and any future such UI). {@code @EntityGraph} on {@code user} so {@code
+     * ClientService#toResponse} reads {@code user.uuid} without a lazy round trip per row. */
+    @EntityGraph(attributePaths = "user")
+    List<Client> findByStatusOrderByCompanyNameAsc(ClientStatus status);
 
     /** {@code ClientProjectService#create}'s "resolve the caller's own client_id via
      * clients.user_id = callerUserId" lookup (build-plan.md feature 21 decision). {@code

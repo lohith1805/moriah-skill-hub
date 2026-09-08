@@ -7,7 +7,10 @@ import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ForbiddenOperationException;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
+import com.moriah.skillhub.batch.entity.BatchStudentStatus;
+import com.moriah.skillhub.batch.repository.BatchStudentRepository;
 import com.moriah.skillhub.common.security.SecurityUtils;
+import com.moriah.skillhub.placement.dto.PlacementCandidateOption;
 import com.moriah.skillhub.placement.dto.PlacementResponse;
 import com.moriah.skillhub.placement.dto.UpdatePlacementRequest;
 import com.moriah.skillhub.placement.entity.Placement;
@@ -45,6 +48,7 @@ public class PlacementService {
 
     private final PlacementRepository placementRepository;
     private final UserRepository userRepository;
+    private final BatchStudentRepository batchStudentRepository;
     private final ObjectMapper objectMapper;
 
     /** Called from {@code TalentService.decide} on an APPROVED request — primitives only, so this
@@ -80,6 +84,34 @@ public class PlacementService {
         Placement placement = require(id);
         requireViewer(placement, callerUserId);
         return toResponse(placement, usersById(List.of(placement)));
+    }
+
+    /** {@code GET /api/v1/placements/candidates} (HR_MANAGER/ADMIN) — every non-REJECTED
+     * shortlisting as a picker option for letter generation. {@code graduated} is resolved for
+     * the whole set in one batch query. */
+    @Transactional(readOnly = true)
+    public List<PlacementCandidateOption> candidateOptions() {
+        List<Placement> placements = placementRepository.findByStageNotOrderByUpdatedAtDesc(PlacementStage.REJECTED);
+        if (placements.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, User> users = usersById(placements);
+        List<Long> candidateIds = placements.stream().map(Placement::getCandidateId).filter(Objects::nonNull).distinct().toList();
+        java.util.Set<Long> graduatedIds = candidateIds.isEmpty() ? java.util.Set.of()
+                : new java.util.HashSet<>(batchStudentRepository.findUserIdsByStatusAndUserIdIn(BatchStudentStatus.GRADUATED, candidateIds));
+        return placements.stream().map(p -> {
+            User candidate = users.get(p.getCandidateId());
+            User client = users.get(p.getClientId());
+            return new PlacementCandidateOption(
+                    p.getId(),
+                    candidate == null ? null : candidate.getUuid(),
+                    candidate == null ? null : candidate.getFullName(),
+                    client == null ? null : client.getUuid(),
+                    client == null ? null : client.getFullName(),
+                    p.getStage(),
+                    graduatedIds.contains(p.getCandidateId()),
+                    readDetails(p.getDetails()));
+        }).toList();
     }
 
     @Transactional

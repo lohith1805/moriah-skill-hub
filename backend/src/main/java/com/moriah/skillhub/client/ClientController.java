@@ -52,6 +52,14 @@ public class ClientController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
     }
 
+    @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN','HR_MANAGER','BUSINESS_ANALYST')")
+    @Operation(summary = "Every ACTIVE client company — the picker list for HR letter generation "
+            + "(so the recruiting-company name is chosen, never free-typed)")
+    public ResponseEntity<ApiResponse<java.util.List<ClientResponse>>> listClients() {
+        return ResponseEntity.ok(ApiResponse.success(clientService.listActive()));
+    }
+
     @PostMapping("/projects")
     @PreAuthorize("hasRole('CLIENT')")
     @Operation(summary = "Submit a new project scope as the caller's own client company",

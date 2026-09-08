@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ForbiddenOperationException;
+import com.moriah.skillhub.batch.repository.BatchStudentRepository;
 import com.moriah.skillhub.common.security.AuthenticatedPrincipal;
 import com.moriah.skillhub.placement.dto.UpdatePlacementRequest;
 import com.moriah.skillhub.placement.entity.Placement;
@@ -34,9 +35,11 @@ class PlacementServiceTest {
     private PlacementRepository placementRepository;
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private BatchStudentRepository batchStudentRepository;
 
     private PlacementService service() {
-        return new PlacementService(placementRepository, userRepository, new ObjectMapper());
+        return new PlacementService(placementRepository, userRepository, batchStudentRepository, new ObjectMapper());
     }
 
     @AfterEach

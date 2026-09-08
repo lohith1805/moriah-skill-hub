@@ -3,6 +3,7 @@ package com.moriah.skillhub.placement;
 import com.moriah.skillhub.common.dto.ApiResponse;
 import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.common.security.CurrentUser;
+import com.moriah.skillhub.placement.dto.PlacementCandidateOption;
 import com.moriah.skillhub.placement.dto.PlacementResponse;
 import com.moriah.skillhub.placement.dto.UpdatePlacementRequest;
 import com.moriah.skillhub.placement.entity.PlacementStage;
@@ -47,6 +48,15 @@ public class PlacementController {
             @PageableDefault(size = 20, sort = "updatedAt", direction = Sort.Direction.DESC) Pageable pageable) {
 
         return ResponseEntity.ok(ApiResponse.success(placementService.list(stage, callerUserId, pageable)));
+    }
+
+    @GetMapping("/candidates")
+    @PreAuthorize("hasAnyRole('HR_MANAGER','ADMIN')")
+    @Operation(summary = "Every client-shortlisted candidate as a picker option for HR letter "
+            + "generation (recipient is chosen, never free-typed). `graduated` flags the ones who "
+            + "have finished a batch.")
+    public ResponseEntity<ApiResponse<java.util.List<PlacementCandidateOption>>> candidates() {
+        return ResponseEntity.ok(ApiResponse.success(placementService.candidateOptions()));
     }
 
     @GetMapping("/{id}")

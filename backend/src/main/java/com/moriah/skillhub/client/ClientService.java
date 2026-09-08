@@ -109,6 +109,14 @@ public class ClientService {
         return user;
     }
 
+    /** {@code GET /api/v1/clients} — every ACTIVE client company, company-name order. Used by the
+     * HR letter generator's "Recruiting Company" picker so it can't be free-typed. */
+    @Transactional(readOnly = true)
+    public java.util.List<ClientResponse> listActive() {
+        return clientRepository.findByStatusOrderByCompanyNameAsc(ClientStatus.ACTIVE)
+                .stream().map(this::toResponse).toList();
+    }
+
     private ClientResponse toResponse(Client client) {
         return new ClientResponse(
                 client.getId(),

@@ -11,12 +11,20 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
 public interface BatchStudentRepository extends JpaRepository<BatchStudent, Long> {
 
     Optional<BatchStudent> findByBatchIdAndUserId(Long batchId, Long userId);
+
+    /** Batch "which of these users have ever reached {@code status} in some batch" — one query
+     * for a whole page of placement candidates ({@code PlacementService#candidateOptions}'s
+     * graduated flag), instead of an {@code existsByUserIdAndStatus} per row. */
+    @Query("SELECT DISTINCT bs.user.id FROM BatchStudent bs WHERE bs.status = :status AND bs.user.id IN :userIds")
+    List<Long> findUserIdsByStatusAndUserIdIn(@Param("status") BatchStudentStatus status,
+                                              @Param("userIds") Collection<Long> userIds);
 
     /** A student is only ever in one batch at a time in practice (one {@code ACTIVE}
      * subscription -> at most one live allocation) — used by de-allocation, which doesn't
