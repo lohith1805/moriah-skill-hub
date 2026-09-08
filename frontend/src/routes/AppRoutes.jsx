@@ -49,6 +49,7 @@ import TrainerBatches from "../pages/trainer/Batches";
 import TrainerSprintPlanning from "../pages/trainer/SprintPlanning";
 import TrainerStandups from "../pages/trainer/Standups";
 import TrainerCodeReview from "../pages/trainer/CodeReview";
+import TrainerWeeklyReviews from "../pages/trainer/WeeklyReviews";
 import TrainerAssessments from "../pages/trainer/Assessments";
 import TrainerAnalytics from "../pages/trainer/Analytics";
 import TrainerPipManagement from "../pages/trainer/PIPManagement";
@@ -150,6 +151,7 @@ export default function AppRoutes() {
           <Route path="/trainer/sprints" element={<TrainerSprintPlanning />} />
           <Route path="/trainer/standups" element={<TrainerStandups />} />
           <Route path="/trainer/code-review" element={<TrainerCodeReview />} />
+          <Route path="/trainer/weekly-reviews" element={<TrainerWeeklyReviews />} />
           <Route path="/trainer/assessments" element={<TrainerAssessments />} />
           <Route path="/trainer/analytics" element={<TrainerAnalytics />} />
           <Route path="/trainer/pip" element={<TrainerPipManagement />} />

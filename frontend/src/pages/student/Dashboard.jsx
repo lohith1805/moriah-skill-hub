@@ -353,19 +353,30 @@ export default function StudentDashboard() {
         </Card>
 
         <Card>
-          <CardHeader title="PIP & Performance" subtitle="Real-time recovery status" />
-          {pip && pip.status !== "Terminated" ? (
+          <CardHeader title="PIP & Performance" subtitle="Recovery status (updated nightly)" />
+          {pip && pip.status !== "TERMINATED" ? (() => {
+            const start = pip.startDate ? new Date(`${pip.startDate}T00:00:00`) : null;
+            const end = pip.endDate ? new Date(`${pip.endDate}T00:00:00`) : null;
+            const total = start && end ? Math.max(1, Math.round((end - start) / 86400000)) : 15;
+            const elapsed = start ? Math.max(0, Math.min(total, Math.round((Date.now() - start) / 86400000))) : 0;
+            const remaining = Math.max(0, total - elapsed);
+            const doneCount = (pip.milestones || []).filter((m) => m.done).length;
+            return (
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2 rounded-lg bg-warning-50 px-3 py-2.5">
                 <AlertTriangle size={16} className="text-warning-600 shrink-0" />
                 <p className="text-sm text-warning-600">Active PIP: {pip.reason}</p>
               </div>
-              <ProgressBar value={pip.daysRemaining > 0 ? ((15 - pip.daysRemaining) / 15) * 100 : 100} tone="warning" label={`${Math.max(pip.daysRemaining, 0)} days remaining`} />
+              <ProgressBar value={(elapsed / total) * 100} tone="warning" label={`${remaining} of ${total} days left`} showValue={false} />
+              {(pip.milestones || []).length > 0 && (
+                <p className="text-xs text-ink-500">{doneCount}/{pip.milestones.length} recovery tasks done</p>
+              )}
               <Link to="/student/pip">
                 <Button variant="secondary" size="sm" fullWidth>View recovery plan</Button>
               </Link>
             </div>
-          ) : (
+            );
+          })() : (
             <div className="flex flex-col items-center text-center py-6">
               <Trophy className="text-success-600" size={28} />
               <p className="text-sm font-medium text-ink-800 mt-2">You're in good standing</p>

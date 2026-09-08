@@ -69,6 +69,20 @@ const TEMPLATE_RENDERERS = {
     body: `Your ${p.planName || "subscription"} is active${p.startDate ? `, starting ${p.startDate}` : ""}.`,
     tone: "success",
   }),
+  PIP_AUTO_CLEARED: (p) => ({
+    title: "PIP cleared",
+    body:
+      `${p.studentName ? `${p.studentName}'s` : "Your"} Performance Improvement Plan was cleared automatically — ` +
+      `the 15-day window ended with every recovery task done and all criteria met.`,
+    tone: "success",
+  }),
+  PIP_WINDOW_ELAPSED: (p) => ({
+    title: "PIP window elapsed — review needed",
+    body:
+      `${p.studentName || "A student"}'s PIP window has ended and they have not met the recovery criteria. ` +
+      `Open PIP Management to terminate or reassign.`,
+    tone: "warning",
+  }),
   PAYSLIP_READY: (p) => ({
     title: "Payslip ready",
     body: `Your payslip for ${p.periodMonth || "the latest period"} is ready` +

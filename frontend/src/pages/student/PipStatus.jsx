@@ -1,61 +1,56 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Clock } from "lucide-react";
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card, { CardHeader } from "../../components/ui/Card";
-import ProgressBar from "../../components/ui/ProgressBar";
 import Badge from "../../components/ui/Badge";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import EmptyState from "../../components/ui/EmptyState";
-import { getMyPipStatus } from "../../services/studentService";
+import PipProgressPanel from "../../components/pip/PipProgressPanel";
+import { getMyPipProgress, RULE_LABEL } from "../../services/pipService";
 import { PIP_TRIGGERS } from "../../utils/constants";
 
 export default function StudentPipStatus() {
-  const [pip, setPip] = useState(null);
+  const [progress, setProgress] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getMyPipStatus()
-      .then((p) => setPip(p))
-      .catch(() => setPip(null))
+    getMyPipProgress()
+      .then(setProgress)
+      .catch(() => setProgress(null))
       .finally(() => setLoading(false));
   }, []);
 
   return (
     <div>
-      <PageHeader title="PIP & Performance" subtitle="Automated Performance Improvement Plan tracking" breadcrumbs={[{ label: "Dashboard", to: "/student/dashboard" }, { label: "PIP Status" }]} />
+      <PageHeader
+        title="PIP & Performance"
+        subtitle="Your Performance Improvement Plan — what to do to clear it (metrics refresh nightly)"
+        breadcrumbs={[{ label: "Dashboard", to: "/student/dashboard" }, { label: "PIP Status" }]}
+      />
 
       {loading ? (
         <div className="flex justify-center py-16"><LoadingSpinner label="Checking your status…" /></div>
-      ) : pip ? (
+      ) : progress ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Card className="lg:col-span-2">
-            <CardHeader title="Active Recovery Plan" subtitle={`Triggered on ${pip.triggeredOn}`} action={<Badge tone="warning" dot>{pip.status}</Badge>} />
-            <div className="flex items-center gap-2 rounded-lg bg-warning-50 px-4 py-3 mb-4">
-              <AlertTriangle size={17} className="text-warning-600 shrink-0" />
-              <p className="text-sm text-warning-600"><strong>{pip.reason}</strong> triggered this recovery track.</p>
+            <CardHeader
+              title="Your recovery plan"
+              subtitle={RULE_LABEL[progress.ruleCode] || progress.reason}
+              action={<Badge tone="warning" dot>{progress.status === "TRIGGERED" ? "Triggered" : "In recovery"}</Badge>}
+            />
+            <div className="flex items-start gap-2 rounded-lg bg-warning-50 px-4 py-3 mb-4">
+              <AlertTriangle size={17} className="text-warning-600 shrink-0 mt-0.5" />
+              <p className="text-sm text-warning-700">
+                <strong>{RULE_LABEL[progress.ruleCode] || progress.reason}</strong> put you on this plan. Work through the
+                recovery tasks your PM sets below and hit the clearance criteria — do that and you're cleared,
+                automatically once the 15-day window ends even if your PM hasn't reviewed it yet.
+              </p>
             </div>
-            <ProgressBar value={pip.daysRemaining > 0 ? ((15 - pip.daysRemaining) / 15) * 100 : 100} tone="warning" label={`${Math.max(pip.daysRemaining, 0)} of 15 days remaining`} />
-
-            <div className="mt-6">
-              <p className="text-sm font-semibold text-ink-800 mb-3">Recovery milestones</p>
-              <div className="flex flex-col gap-3">
-                {[
-                  { label: "Formal PIP notice dispatched", done: true },
-                  { label: "Daily mentor check-ins scheduled", done: true },
-                  { label: "≥ 85% task completion target", done: false },
-                  { label: "Formal exit review with PM", done: false },
-                ].map((m) => (
-                  <div key={m.label} className="flex items-center gap-2.5 text-sm">
-                    <CheckCircle2 size={16} className={m.done ? "text-success-600" : "text-ink-300"} />
-                    <span className={m.done ? "text-ink-700" : "text-ink-400"}>{m.label}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <PipProgressPanel progress={progress} editable={false} />
           </Card>
 
           <Card>
-            <CardHeader title="PIP Trigger Reference" subtitle="Platform-wide thresholds" />
+            <CardHeader title="How a PIP is triggered" subtitle="Platform-wide thresholds" />
             <div className="flex flex-col gap-3">
               {PIP_TRIGGERS.map((t) => (
                 <div key={t.reason} className="flex items-start justify-between gap-2 text-sm">
@@ -70,7 +65,7 @@ export default function StudentPipStatus() {
           </Card>
         </div>
       ) : (
-        <EmptyState icon={CheckCircle2} title="You're in good standing" description="No active PIP flags on your account." />
+        <EmptyState icon={CheckCircle2} title="You're in good standing" description="No active PIP on your account." />
       )}
     </div>
   );

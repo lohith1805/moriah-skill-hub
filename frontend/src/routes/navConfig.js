@@ -32,6 +32,7 @@ export const NAV_CONFIG = {
     { to: "/trainer/sprints", label: "Sprint Planning", icon: KanbanSquare },
     { to: "/trainer/standups", label: "Standups & Attendance", icon: CalendarClock },
     { to: "/trainer/code-review", label: "Code Review", icon: GitPullRequest },
+    { to: "/trainer/weekly-reviews", label: "Weekly Reviews", icon: ClipboardList },
     { to: "/trainer/assessments", label: "Assessments", icon: Rocket },
     { to: "/trainer/analytics", label: "Performance Analytics", icon: BarChart3 },
     { to: "/trainer/pip", label: "PIP Management", icon: AlertTriangle },
