@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Calendar, Hash, Target, FileText, CheckSquare, Layers, HelpCircle, MessageSquare } from "lucide-react";
+import { Calendar, Hash, Target, FileText, CheckSquare, Layers, HelpCircle, MessageSquare, Sun, CalendarRange } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
 import Badge from "../../components/ui/Badge";
@@ -10,7 +10,18 @@ import Button from "../../components/ui/Button";
 import { getMyTasks, getMySprints, updateTaskStatus } from "../../services/studentService";
 import { useToast } from "../../context/ToastContext";
 
-const KANBAN_COLUMNS = ["Backlog", "Weekly Assignments", "Daily Tasks", "Review", "Completed"];
+// Real task statuses — no more columns that are secretly a task type.
+const KANBAN_COLUMNS = ["To Do", "In Progress", "In Review", "Completed"];
+
+// backend status label -> board column
+const STATUS_TO_COLUMN = {
+  Backlog: "To Do",
+  Assigned: "To Do",
+  "In Progress": "In Progress",
+  Review: "In Review",
+  Completed: "Completed",
+  Rejected: "In Progress", // changes-requested — back on the student's plate
+};
 
 export default function StudentTasks() {
   const [tasks, setTasks] = useState([]);
@@ -34,33 +45,17 @@ export default function StudentTasks() {
   }, []);
 
   const move = async (taskId, columnLabel) => {
-    const statusMap = {
-      "Backlog": "Backlog",
-      "Weekly Assignments": "Assigned",
-      "Daily Tasks": "In Progress",
-      "Review": "Review",
-      "Completed": "Completed"
-    };
-    const status = statusMap[columnLabel];
-
-    // The backend is the single source of truth for whether a move is allowed.
-    // POST /tasks/{id}/pull enforces the real PIP block (an open PROJECT_DELAY
-    // record with blocks_task_pull) and returns TASK_PULL_BLOCKED_BY_PIP;
-    // /start has no PIP restriction by design. A rejected move surfaces below as
-    // res.ok === false with the server's own message. This replaced a stale
-    // client-side heuristic that guessed "overdue milestone" / quiz-average
-    // locks from localStorage and blocked legitimate moves whenever any task on
-    // the board happened to be past due.
-
-    // Optimistic move, then reconcile with the server.
-    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status } : t)));
-    const res = await updateTaskStatus(taskId, status);
-    if (res?.started) {
+    // The only student-driven move is "start work" (To Do -> In Progress). The
+    // service handles pull-then-start for a task that's still BACKLOG. Every
+    // other transition is the PM's or the PR-review flow's.
+    if (columnLabel !== "In Progress") {
+      notify("Submit a PR from Submissions to send a task for review — your PM moves the rest.", { type: "info" });
+      return;
+    }
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: "In Progress" } : t)));
+    const res = await updateTaskStatus(taskId, "In Progress");
+    if (res?.started || res?.pulled) {
       notify("Task started — it's now in progress.", { type: "success" });
-    } else if (res?.pulled) {
-      notify("Task pulled onto your board.", { type: "success" });
-    } else if (res?.unsupported) {
-      notify("Your PM and the review flow move tasks between the other columns.", { type: "info" });
     } else if (res && res.ok === false) {
       notify(res.error || "Couldn't move that task.", { type: "error" });
     }
@@ -70,47 +65,63 @@ export default function StudentTasks() {
   const toggleCriteria = (task, criteria) => {
     const completed = task.completedCriteria || [];
     const newCompleted = completed.includes(criteria)
-      ? completed.filter(c => c !== criteria)
+      ? completed.filter((c) => c !== criteria)
       : [...completed, criteria];
-      
     const updatedTask = { ...task, completedCriteria: newCompleted };
-    
-    // Save back to local storage
-    try {
-      let allTasks = [];
-      const raw = localStorage.getItem("msh_sprint_tasks");
-      allTasks = raw ? JSON.parse(raw) : [];
-      const idx = allTasks.findIndex(t => t.id === task.id);
-      if (idx > -1) {
-        allTasks[idx] = updatedTask;
-        localStorage.setItem("msh_sprint_tasks", JSON.stringify(allTasks));
-      }
-    } catch (e) {
-      console.warn("Failed to save criteria:", e);
-    }
-    
-    // Update local state
-    setTasks(prev => prev.map(t => t.id === task.id ? updatedTask : t));
-    if (selectedTask && selectedTask.id === task.id) {
-      setSelectedTask(updatedTask);
-    }
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? updatedTask : t)));
+    if (selectedTask && selectedTask.id === task.id) setSelectedTask(updatedTask);
   };
 
-  // Map backend statuses to kanban columns
-  const displayTasks = tasks.map(t => {
-    const displayMap = {
-      "Backlog": "Backlog",
-      "Assigned": "Weekly Assignments",
-      "In Progress": "Daily Tasks",
-      "Review": "Review",
-      "Completed": "Completed"
-    };
-    return { ...t, status: displayMap[t.status] || t.status };
-  });
+  const displayTasks = tasks.map((t) => ({ ...t, status: STATUS_TO_COLUMN[t.status] || t.status }));
+  const dailyTasks = displayTasks.filter((t) => t.type === "Daily");
+  const weeklyTasks = displayTasks.filter((t) => t.type !== "Daily");
+
+  const renderCard = (t) => (
+    <div onClick={() => setSelectedTask(t)} className="cursor-pointer group text-left">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <Badge tone={t.type === "Daily" ? "info" : "neutral"} className="text-[10px] uppercase font-semibold">
+          {t.type === "Daily" ? "Daily" : "Weekly"}
+        </Badge>
+        {t.type !== "Daily" && (
+          <span className="text-[10px] font-bold text-primary-700 font-mono tracking-wider bg-primary-50 px-1.5 py-0.5 rounded shrink-0">
+            {t.epic || "General"}
+          </span>
+        )}
+      </div>
+      <p className="text-sm font-semibold text-ink-900 group-hover:text-primary-600 transition-colors leading-snug">{t.title}</p>
+      <div className="flex items-center justify-between mt-4 pt-2.5 border-t border-border/40 text-[10px] text-ink-500">
+        <span className="flex items-center gap-1"><Calendar size={11} /> {t.due || "—"}</span>
+        <span className="flex items-center gap-1 font-bold text-ink-800"><Hash size={11} /> {t.points} pts</span>
+      </div>
+      {t.githubPr && <Badge tone="success" className="mt-2 text-[9px] w-full text-center block">PR Linked</Badge>}
+    </div>
+  );
+
+  const section = (title, icon, subtitle, items) => (
+    <Card padding={false} className="p-4">
+      <div className="flex items-center gap-2 mb-3 px-1">
+        {icon}
+        <div>
+          <p className="text-sm font-semibold text-ink-800">{title}</p>
+          <p className="text-xs text-ink-400">{subtitle}</p>
+        </div>
+        <Badge tone="neutral" className="ml-auto">{items.length}</Badge>
+      </div>
+      {items.length === 0 ? (
+        <p className="text-xs text-ink-400 text-center py-8">Nothing here right now.</p>
+      ) : (
+        <KanbanBoard columns={KANBAN_COLUMNS} items={items} onMove={move} renderCard={renderCard} />
+      )}
+    </Card>
+  );
 
   return (
     <div>
-      <PageHeader title="Sprint Board" subtitle="Drag tasks across the board as you make progress" breadcrumbs={[{ label: "Dashboard", to: "/student/dashboard" }, { label: "Sprint Board" }]} />
+      <PageHeader
+        title="Sprint Board"
+        subtitle="Daily tasks and weekly assignments — drag a card to In Progress to start it"
+        breadcrumbs={[{ label: "Dashboard", to: "/student/dashboard" }, { label: "Sprint Board" }]}
+      />
 
       {!loading && sprints.length > 0 && (
         <div className="flex flex-col gap-3 mb-4">
@@ -131,88 +142,57 @@ export default function StudentTasks() {
         </div>
       )}
 
-      <Card padding={false} className="p-4">
-        {loading ? (
-          <div className="flex justify-center py-16"><LoadingSpinner label="Loading sprint board…" /></div>
-        ) : (
-          <KanbanBoard
-            columns={KANBAN_COLUMNS}
-            items={displayTasks}
-            onMove={move}
-            renderCard={(t) => (
-              <div onClick={() => setSelectedTask(t)} className="cursor-pointer group text-left">
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <Badge tone={t.type === "Bug" ? "error" : t.type === "User Story" ? "info" : "neutral"} className="text-[10px] uppercase font-semibold">
-                    {t.type || "Task"}
-                  </Badge>
-                  <span className="text-[10px] font-bold text-primary-700 font-mono tracking-wider bg-primary-50 px-1.5 py-0.5 rounded shrink-0">
-                    {t.epic || "General"}
-                  </span>
-                </div>
-                <p className="text-sm font-semibold text-ink-900 group-hover:text-primary-600 transition-colors leading-snug">
-                  {t.title}
-                </p>
-                <div className="flex items-center justify-between mt-4 pt-2.5 border-t border-border/40 text-[10px] text-ink-500">
-                  <span className="flex items-center gap-1"><Calendar size={11} /> {t.due}</span>
-                  <span className="flex items-center gap-1 font-bold text-ink-800"><Hash size={11} /> {t.points} pts</span>
-                </div>
-                {t.githubPr && <Badge tone="success" className="mt-2 text-[9px] w-full text-center block">PR Linked</Badge>}
-              </div>
-            )}
-          />
-        )}
-      </Card>
+      {loading ? (
+        <Card><div className="flex justify-center py-16"><LoadingSpinner label="Loading sprint board…" /></div></Card>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {section("Daily Tasks", <Sun size={16} className="text-info-600 shrink-0" />, "Short pieces of work to keep momentum day to day", dailyTasks)}
+          {section("Weekly Assignments", <CalendarRange size={16} className="text-primary-600 shrink-0" />, "The larger deliverables due across the sprint", weeklyTasks)}
+        </div>
+      )}
 
-      {/* Task Detail Modal */}
       {selectedTask && (
         <Modal
           open={!!selectedTask}
           onClose={() => setSelectedTask(null)}
           title={selectedTask.title}
-          description={`Sprint Point Weight: ${selectedTask.points} pts · Due Date: ${selectedTask.due}`}
-          footer={
-            <Button variant="primary" fullWidth onClick={() => setSelectedTask(null)}>
-              Close Panel
-            </Button>
-          }
+          description={`${selectedTask.type === "Daily" ? "Daily task" : "Weekly assignment"} · ${selectedTask.points} pts · Due ${selectedTask.due || "—"}`}
+          footer={<Button variant="primary" fullWidth onClick={() => setSelectedTask(null)}>Close Panel</Button>}
         >
           <div className="flex flex-col gap-5 text-left mt-3">
-            {/* Header Attributes */}
             <div className="flex items-center gap-3">
               <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] text-ink-400 font-bold uppercase">Epic Reference</span>
-                <span className="text-xs font-semibold text-primary-800 bg-primary-50 px-2 py-0.5 rounded border border-primary-100 flex items-center gap-1">
-                  <Layers size={12} /> {selectedTask.epic || "General"}
-                </span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] text-ink-400 font-bold uppercase">Work Classification</span>
-                <Badge tone={selectedTask.type === "Bug" ? "error" : selectedTask.type === "User Story" ? "info" : "neutral"} className="text-xs">
-                  {selectedTask.type || "Task"}
+                <span className="text-[10px] text-ink-400 font-bold uppercase">Type</span>
+                <Badge tone={selectedTask.type === "Daily" ? "info" : "neutral"} className="text-xs">
+                  {selectedTask.type === "Daily" ? "Daily task" : "Weekly assignment"}
                 </Badge>
               </div>
+              {selectedTask.type !== "Daily" && (
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[10px] text-ink-400 font-bold uppercase">Epic</span>
+                  <span className="text-xs font-semibold text-primary-800 bg-primary-50 px-2 py-0.5 rounded border border-primary-100 flex items-center gap-1">
+                    <Layers size={12} /> {selectedTask.epic || "General"}
+                  </span>
+                </div>
+              )}
             </div>
 
-            {/* User Story */}
-            {selectedTask.userStory && (
-              <div className="rounded-lg bg-slate-900/50 border border-slate-800 p-4">
-                <p className="text-xs text-slate-400 font-bold uppercase flex items-center gap-1.5 mb-1.5">
-                  <FileText size={13} className="text-[#635BFF]" /> Agile User Story
+            {selectedTask.description && (
+              <div className="rounded-lg bg-cream-50 border border-border/50 p-4">
+                <p className="text-xs text-ink-500 font-bold uppercase flex items-center gap-1.5 mb-1.5">
+                  <FileText size={13} className="text-primary-600" /> Details
                 </p>
-                <p className="text-sm text-slate-200 italic leading-relaxed">
-                  "{selectedTask.userStory}"
-                </p>
+                <p className="text-sm text-ink-700 whitespace-pre-line leading-relaxed">{selectedTask.description}</p>
               </div>
             )}
 
-            {/* Acceptance Criteria Checklist */}
             <div className="border-t border-border pt-4">
               <p className="text-xs text-ink-500 font-bold uppercase flex items-center gap-1.5 mb-3">
-                <CheckSquare size={13} className="text-success-600" /> Acceptance Criteria Checklist
+                <CheckSquare size={13} className="text-success-600" /> Acceptance Criteria
               </p>
               {selectedTask.acceptanceCriteria ? (
                 <div className="flex flex-col gap-2.5">
-                  {selectedTask.acceptanceCriteria.split("\n").filter(line => line.trim()).map((crit, idx) => {
+                  {selectedTask.acceptanceCriteria.split("\n").filter((line) => line.trim()).map((crit, idx) => {
                     const isCompleted = (selectedTask.completedCriteria || []).includes(crit);
                     return (
                       <label key={idx} className="flex items-start gap-2.5 cursor-pointer hover:bg-cream-50/50 p-2 rounded-lg border border-transparent hover:border-border/30 transition-all">
@@ -222,9 +202,7 @@ export default function StudentTasks() {
                           onChange={() => toggleCriteria(selectedTask, crit)}
                           className="mt-0.5 h-4 w-4 rounded border-border text-primary-600 focus:ring-primary-500/20"
                         />
-                        <span className={`text-sm select-none ${isCompleted ? "line-through text-ink-400" : "text-ink-700"}`}>
-                          {crit}
-                        </span>
+                        <span className={`text-sm select-none ${isCompleted ? "line-through text-ink-400" : "text-ink-700"}`}>{crit}</span>
                       </label>
                     );
                   })}
@@ -232,32 +210,20 @@ export default function StudentTasks() {
               ) : (
                 <div className="flex items-center gap-2 text-xs text-ink-400 bg-cream-50 p-3 rounded-lg border border-border/30">
                   <HelpCircle size={14} />
-                  <span>No explicit acceptance criteria defined for this backlog task.</span>
+                  <span>No explicit acceptance criteria for this task.</span>
                 </div>
               )}
             </div>
 
-            {/* Trainer Inline Code Comments */}
             {selectedTask.inlineComments && selectedTask.inlineComments.length > 0 && (
               <div className="border-t border-border pt-4">
                 <p className="text-xs text-ink-500 font-bold uppercase flex items-center gap-1.5 mb-3">
-                  <MessageSquare size={13} className="text-primary-600" /> Mentor Inline Code Comments
+                  <MessageSquare size={13} className="text-primary-600" /> Mentor Comments
                 </p>
                 <div className="flex flex-col gap-3">
                   {selectedTask.inlineComments.map((c, idx) => (
                     <div key={idx} className="rounded-lg bg-primary-50/50 border border-primary-100 p-3 text-xs">
-                      <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <span className="font-mono font-semibold text-primary-850 bg-primary-100/60 px-1.5 py-0.5 rounded">
-                          {c.file} : Line {c.line}
-                        </span>
-                        <span className="text-[10px] text-ink-400 font-medium">By {c.author || "Trainer"}</span>
-                      </div>
-                      <p className="font-mono text-[11px] text-ink-700 bg-white border border-border p-1.5 rounded mb-2 leading-relaxed whitespace-pre truncate">
-                        {c.codeLine}
-                      </p>
-                      <p className="text-ink-800 font-medium italic leading-relaxed">
-                        "{c.comment}"
-                      </p>
+                      <p className="text-ink-800 font-medium italic leading-relaxed">"{c.comment}"</p>
                     </div>
                   ))}
                 </div>

@@ -203,8 +203,11 @@ const TASK_STATUS_TO_FE = {
   COMPLETED: "Completed",
   REJECTED: "Rejected",
 };
-const TASK_TYPE_TO_FE = { STORY: "User Story", BUGFIX: "Bug", ASSIGNMENT: "Task", DAILY: "Daily" };
-const FE_TYPE_TO_TASK = { "User Story": "STORY", Bug: "BUGFIX", Task: "ASSIGNMENT", Daily: "DAILY" };
+// A task is either a DAILY task or a WEEKLY assignment — the two things the PM
+// assigns separately. STORY / BUGFIX still exist in older data; both read as
+// "Weekly" so the student board only ever has to group by Daily vs Weekly.
+const TASK_TYPE_TO_FE = { DAILY: "Daily", ASSIGNMENT: "Weekly", STORY: "Weekly", BUGFIX: "Weekly" };
+const FE_TYPE_TO_TASK = { Daily: "DAILY", Weekly: "ASSIGNMENT", "User Story": "STORY", Bug: "BUGFIX", Task: "ASSIGNMENT" };
 
 export function toFeTask(t) {
   return {
@@ -213,7 +216,7 @@ export function toFeTask(t) {
     projectId: t.projectId ?? null,
     title: t.title,
     description: t.description || "",
-    type: TASK_TYPE_TO_FE[t.taskType] || "Task",
+    type: TASK_TYPE_TO_FE[t.taskType] || "Weekly",
     epic: "General", // no epic field on the API — folded into description on create
     userStory: "",
     acceptanceCriteria: "",

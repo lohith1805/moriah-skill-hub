@@ -27,7 +27,7 @@ export default function TrainerSprintPlanning() {
   // Task creation, scoped to whichever sprint's "Add Task" was clicked.
   const [activeSprint, setActiveSprint] = useState(null);
   const [taskStudents, setTaskStudents] = useState([]);
-  const [taskValues, setTaskValues] = useState({ title: "", points: "3", dueDate: "", assigneeUuid: "" });
+  const [taskValues, setTaskValues] = useState({ title: "", type: "Weekly", points: "3", dueDate: "", assigneeUuid: "" });
   const [taskErrors, setTaskErrors] = useState({});
   const [taskSubmitting, setTaskSubmitting] = useState(false);
 
@@ -61,6 +61,17 @@ export default function TrainerSprintPlanning() {
   const submit = async (e) => {
     e.preventDefault();
     const validation = validateForm(values, { batchId: [required], number: [required], goal: [required], startDate: [required], endDate: [required] });
+    // Mirror the backend's CreateSprintRequest rules so the trainer sees the
+    // problem inline instead of a round-trip and a toast.
+    if (!validation.startDate && !validation.endDate) {
+      const start = new Date(values.startDate);
+      const end = new Date(values.endDate);
+      const today = new Date(new Date().toDateString());
+      const days = Math.round((end - start) / 86400000) + 1; // inclusive of both ends
+      if (start < today) validation.startDate = "A sprint can't start in the past.";
+      else if (end <= start) validation.endDate = "End date must be after the start date.";
+      else if (days < 7 || days > 14) validation.endDate = `A sprint must run 7–14 days — this is ${days}.`;
+    }
     setErrors(validation);
     if (Object.keys(validation).length) return;
     setSubmitting(true);
@@ -74,6 +85,14 @@ export default function TrainerSprintPlanning() {
       );
       setModalOpen(false);
       load();
+    } catch (err) {
+      // Without this the create failed silently — the modal just sat there with
+      // no feedback, so the trainer had no idea why (most often the 7–14 day
+      // sprint-duration rule the backend enforces).
+      notify(err?.message || "Couldn't create the sprint. Check the dates and try again.", {
+        type: "error",
+        title: "Sprint not created",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -83,7 +102,7 @@ export default function TrainerSprintPlanning() {
 
   const openTaskModal = (sprint) => {
     setActiveSprint(sprint);
-    setTaskValues({ title: "", points: "3", dueDate: "", assigneeUuid: "" });
+    setTaskValues({ title: "", type: "Weekly", points: "3", dueDate: "", assigneeUuid: "" });
     setTaskErrors({});
     setTaskStudents([]);
     getStudentsForBatch(sprint.batchId).then(setTaskStudents).catch(() => setTaskStudents([]));
@@ -170,9 +189,12 @@ export default function TrainerSprintPlanning() {
                 {tasksForSprint(s.id).length > 0 && (
                   <div className="flex flex-col gap-1.5">
                     {tasksForSprint(s.id).map((t) => (
-                      <div key={t.id} className="flex items-center justify-between text-xs bg-cream-50 rounded-md px-2.5 py-1.5">
-                        <span className="text-ink-700">{t.title} <span className="text-ink-400">· {t.assignee}</span></span>
-                        <Badge tone={t.status === "Completed" ? "success" : t.status === "Review" ? "info" : "neutral"}>{t.status}</Badge>
+                      <div key={t.id} className="flex items-center justify-between gap-2 text-xs bg-cream-50 rounded-md px-2.5 py-1.5">
+                        <span className="text-ink-700 truncate">
+                          <Badge tone={t.type === "Daily" ? "info" : "neutral"} className="text-[9px] uppercase mr-1.5">{t.type === "Daily" ? "Daily" : "Weekly"}</Badge>
+                          {t.title} <span className="text-ink-400">· {t.assignee}</span>
+                        </span>
+                        <Badge tone={t.status === "Completed" ? "success" : t.status === "Review" ? "info" : "neutral"} className="shrink-0">{t.status}</Badge>
                       </div>
                     ))}
                   </div>
@@ -214,9 +236,12 @@ export default function TrainerSprintPlanning() {
           />
           <Input label="Sprint number" type="number" required placeholder="5" value={values.number} onChange={(e) => setValues((v) => ({ ...v, number: e.target.value }))} error={errors.number} />
           <Textarea label="Sprint goal" required placeholder="e.g. Implement payment webhook handling" value={values.goal} onChange={(e) => setValues((v) => ({ ...v, goal: e.target.value }))} error={errors.goal} />
-          <div className="grid grid-cols-2 gap-4">
-            <Input label="Start date" type="date" required value={values.startDate} onChange={(e) => setValues((v) => ({ ...v, startDate: e.target.value }))} error={errors.startDate} />
-            <Input label="End date" type="date" required value={values.endDate} onChange={(e) => setValues((v) => ({ ...v, endDate: e.target.value }))} error={errors.endDate} />
+          <div>
+            <div className="grid grid-cols-2 gap-4">
+              <Input label="Start date" type="date" required value={values.startDate} onChange={(e) => setValues((v) => ({ ...v, startDate: e.target.value }))} error={errors.startDate} />
+              <Input label="End date" type="date" required value={values.endDate} onChange={(e) => setValues((v) => ({ ...v, endDate: e.target.value }))} error={errors.endDate} />
+            </div>
+            <p className="text-xs text-ink-400 mt-1.5">A sprint must run 7–14 days (both dates inclusive) and can't start in the past.</p>
           </div>
         </form>
       </Modal>
@@ -233,6 +258,14 @@ export default function TrainerSprintPlanning() {
       >
         <form className="flex flex-col gap-4" onSubmit={submitTask}>
           <Input label="Task title" required placeholder="e.g. Build login & OAuth screen" value={taskValues.title} onChange={(e) => setTaskValues((v) => ({ ...v, title: e.target.value }))} error={taskErrors.title} />
+          <Select
+            label="Task type"
+            required
+            hint="Daily tasks and weekly assignments show in separate sections on the student's board."
+            options={[{ value: "Weekly", label: "Weekly assignment" }, { value: "Daily", label: "Daily task" }]}
+            value={taskValues.type}
+            onChange={(e) => setTaskValues((v) => ({ ...v, type: e.target.value }))}
+          />
           <div className="grid grid-cols-2 gap-4">
             <Input label="Points" type="number" min="1" value={taskValues.points} onChange={(e) => setTaskValues((v) => ({ ...v, points: e.target.value }))} />
             <Input label="Due date" type="date" required value={taskValues.dueDate} onChange={(e) => setTaskValues((v) => ({ ...v, dueDate: e.target.value }))} error={taskErrors.dueDate} />

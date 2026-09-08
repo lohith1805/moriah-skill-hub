@@ -101,7 +101,8 @@ const TASK_STATUS_TO_FE = {
   COMPLETED: "Completed",
   REJECTED: "Rejected",
 };
-const TASK_TYPE_TO_FE = { STORY: "User Story", BUGFIX: "Bug", ASSIGNMENT: "Task", DAILY: "Daily" };
+// Daily task vs Weekly assignment — the split the sprint board groups by.
+const TASK_TYPE_TO_FE = { DAILY: "Daily", ASSIGNMENT: "Weekly", STORY: "Weekly", BUGFIX: "Weekly" };
 
 function toFeStudentTask(t) {
   return {
@@ -109,7 +110,7 @@ function toFeStudentTask(t) {
     sprintId: t.sprintId,
     title: t.title,
     description: t.description || "",
-    type: TASK_TYPE_TO_FE[t.taskType] || "Task",
+    type: TASK_TYPE_TO_FE[t.taskType] || "Weekly",
     epic: "General",
     userStory: "",
     acceptanceCriteria: "",
