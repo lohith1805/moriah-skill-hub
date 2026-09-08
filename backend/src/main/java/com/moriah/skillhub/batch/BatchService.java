@@ -349,6 +349,17 @@ public class BatchService {
                 .isPresent();
     }
 
+    /** {@code TaskService#listMine} ({@code GET /api/v1/tasks/me}) — the batch ids a student is a
+     * live member of ({@code ACTIVE}/{@code ON_PIP}), so tasks can be scoped without {@code
+     * TaskService} reading {@code BatchStudent} itself (architecture.md layer rule: a feature
+     * module calls another's service, not its repository/entity — {@link #isActiveMember} already
+     * crosses exactly this boundary for the same reason). Empty when the student hasn't been
+     * placed into a batch yet. */
+    @Transactional(readOnly = true)
+    public List<Long> activeBatchIdsForUser(Long userId) {
+        return batchStudentRepository.findActiveBatchIdsByUserId(userId);
+    }
+
     /** feature 13's {@code AttendanceFinalisationJob}: "every enrolled student with no attendance
      * row" — enrolled means {@code ACTIVE} or {@code ON_PIP} in {@code batch_students} at
      * finalisation time, the same definition {@link #isActiveMember} already uses (`/architect

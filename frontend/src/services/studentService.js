@@ -192,20 +192,13 @@ export async function getMyAttendance() {
   }));
 }
 
-// GET /api/v1/tasks?sprintId= for every sprint in the caller's batches, kept
-// to tasks assigned to the caller OR still in the BACKLOG (pullable).
+// GET /api/v1/tasks/me — the caller's whole board in one query: tasks assigned
+// to them, plus still-pullable BACKLOG tasks, across every sprint in the batches
+// they're a live member of. (Was a client-side fan-out over /batches ->
+// /sprints -> /tasks-per-sprint; the backend does that join now.)
 export async function getMyTasks() {
-  const myUuid = getPersistedUser()?.uuid;
-  const sprints = await getMySprints();
-  const perSprint = await Promise.all(
-    sprints.map((s) =>
-      apiClient.get("/tasks", { sprintId: s.id, size: 100 }).then(asRows).catch(() => [])
-    )
-  );
-  return perSprint
-    .flat()
-    .filter((t) => t.status === "BACKLOG" || (myUuid && t.assignedToUuid === myUuid))
-    .map(toFeStudentTask);
+  const res = await apiClient.get("/tasks/me", { size: 200 }).catch(() => null);
+  return asRows(res).map(toFeStudentTask);
 }
 
 // A student's account only stores their batch's NAME (see authService's
@@ -335,18 +328,41 @@ export async function submitBugChallenge(challengeId, { solutionCode, notes }) {
   return toFeChallengeSubmission(s);
 }
 
-// A STUDENT can only self-assign a BACKLOG task (POST /tasks/{id}/pull ->
-// IN_PROGRESS). Every other board transition is driven by the PM or the
-// review flow, so those moves are no-ops here (the board re-syncs on reload).
+// POST /api/v1/tasks/{id}/start — a student moves their own ASSIGNED task to
+// IN_PROGRESS. The one self-service step between pull (BACKLOG -> ASSIGNED) and
+// submitting a PR (IN_PROGRESS -> IN_REVIEW).
+export async function startTask(taskId) {
+  return apiClient.post(`/tasks/${taskId}/start`, {});
+}
+
+// The two student-driven board moves:
+//  - onto the board  : POST /tasks/{id}/pull   (BACKLOG  -> ASSIGNED)
+//  - start work      : POST /tasks/{id}/start  (ASSIGNED -> IN_PROGRESS)
+// A drag straight from Backlog into an "in progress" column needs both, in
+// order. Every other transition is the PM's or the review flow's.
 export async function updateTaskStatus(taskId, status) {
-  if (status === "In Progress" || status === "Assigned") {
-    try {
+  try {
+    if (status === "Assigned") {
       await apiClient.post(`/tasks/${taskId}/pull`, {});
       return { ok: true, pulled: true };
-    } catch (e) {
-      // 409 = not BACKLOG / already pulled / blocked by an open PROJECT_DELAY PIP
-      return { ok: false, error: e?.message || "Could not pull this task." };
     }
+    if (status === "In Progress") {
+      try {
+        await apiClient.post(`/tasks/${taskId}/start`, {});
+      } catch (e) {
+        // 409 here means the task is still BACKLOG — pull it first, then start.
+        if (e?.status === 409) {
+          await apiClient.post(`/tasks/${taskId}/pull`, {});
+          await apiClient.post(`/tasks/${taskId}/start`, {});
+        } else {
+          throw e;
+        }
+      }
+      return { ok: true, started: true };
+    }
+  } catch (e) {
+    // pull 409 = not BACKLOG / already pulled / blocked by an open PROJECT_DELAY PIP
+    return { ok: false, error: e?.message || "Could not move this task." };
   }
   return { ok: false, unsupported: true };
 }

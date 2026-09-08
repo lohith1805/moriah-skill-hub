@@ -294,6 +294,76 @@ class TaskServiceTest {
         verify(taskRepository).search(eq(10L), eq(TaskStatus.BACKLOG), eq(5L), any());
     }
 
+    @Test
+    void start_ownAssignedTask_movesToInProgress() {
+        Task task = task(1L, TaskStatus.ASSIGNED);
+        task.setAssignedTo(student);
+        when(taskRepository.findById(1L)).thenReturn(Optional.of(task));
+
+        TaskResponse response = taskService.start(5L, 1L);
+
+        assertThat(response.status()).isEqualTo(TaskStatus.IN_PROGRESS);
+    }
+
+    @Test
+    void start_notTheAssignee_throwsNotResourceOwner() {
+        Task task = task(1L, TaskStatus.ASSIGNED);
+        task.setAssignedTo(student); // owned by user 5
+        when(taskRepository.findById(1L)).thenReturn(Optional.of(task));
+
+        assertThatThrownBy(() -> taskService.start(999L, 1L))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.NOT_RESOURCE_OWNER);
+        assertThat(task.getStatus()).isEqualTo(TaskStatus.ASSIGNED);
+    }
+
+    @Test
+    void start_taskStillBacklog_throwsTaskInvalidTransition() {
+        Task task = task(1L, TaskStatus.BACKLOG);
+        task.setAssignedTo(student);
+        when(taskRepository.findById(1L)).thenReturn(Optional.of(task));
+
+        assertThatThrownBy(() -> taskService.start(5L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.TASK_INVALID_TRANSITION);
+    }
+
+    /** {@code IN_REVIEW -> IN_PROGRESS} is a legal transition in {@code ALLOWED_TRANSITIONS} (the
+     * changes-requested path), but {@code start} must not let a student pull their own task back
+     * out of the PM's review queue. */
+    @Test
+    void start_taskInReview_throwsTaskInvalidTransition() {
+        Task task = task(1L, TaskStatus.IN_REVIEW);
+        task.setAssignedTo(student);
+        when(taskRepository.findById(1L)).thenReturn(Optional.of(task));
+
+        assertThatThrownBy(() -> taskService.start(5L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.TASK_INVALID_TRANSITION);
+        assertThat(task.getStatus()).isEqualTo(TaskStatus.IN_REVIEW);
+    }
+
+    @Test
+    void listMine_studentInNoBatch_returnsEmptyWithoutQueryingTasks() {
+        when(batchService.activeBatchIdsForUser(5L)).thenReturn(java.util.List.of());
+
+        var page = taskService.listMine(5L, org.springframework.data.domain.Pageable.unpaged());
+
+        assertThat(page.content()).isEmpty();
+        verify(taskRepository, never()).findMyBoard(any(), anyLong(), any());
+    }
+
+    @Test
+    void listMine_scopesToTheCallersActiveBatches() {
+        when(batchService.activeBatchIdsForUser(5L)).thenReturn(java.util.List.of(100L, 101L));
+        when(taskRepository.findMyBoard(eq(java.util.List.of(100L, 101L)), eq(5L), any()))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+
+        taskService.listMine(5L, org.springframework.data.domain.Pageable.unpaged());
+
+        verify(taskRepository).findMyBoard(eq(java.util.List.of(100L, 101L)), eq(5L), any());
+    }
+
     private UpdateTaskRequest updateRequest(TaskStatus status) {
         return updateRequest(status, 3);
     }

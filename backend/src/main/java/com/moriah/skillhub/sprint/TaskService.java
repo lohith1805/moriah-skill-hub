@@ -21,6 +21,7 @@ import com.moriah.skillhub.user.entity.RoleCode;
 import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -98,6 +99,21 @@ public class TaskService {
         Long assignedToId = assignedToUuid == null ? null : requireUserByUuid(assignedToUuid).getId();
         return PageResponse.from(taskRepository.search(sprintId, status, assignedToId, pageable)
                 .map(this::toResponse));
+    }
+
+    /** {@code GET /api/v1/tasks/me} — a STUDENT's own board across every sprint in the batches
+     * they're a live member of: tasks assigned to them, plus still-pullable {@code BACKLOG}
+     * tasks. Replaces the old client-side fan-out over {@code /batches} + {@code /sprints} +
+     * {@code /tasks}. Batch scope comes from {@link BatchService#activeBatchIdsForUser}, not a
+     * {@code BatchStudent} read here (same cross-package-service boundary {@code pull}/{@code
+     * assign} already use). A student not yet placed in any batch gets an empty page. */
+    @Transactional(readOnly = true)
+    public PageResponse<TaskResponse> listMine(Long callerUserId, Pageable pageable) {
+        List<Long> batchIds = batchService.activeBatchIdsForUser(callerUserId);
+        if (batchIds.isEmpty()) {
+            return PageResponse.from(Page.<TaskResponse>empty(pageable));
+        }
+        return PageResponse.from(taskRepository.findMyBoard(batchIds, callerUserId, pageable).map(this::toResponse));
     }
 
     /** {@code sprintId} is immutable here (see {@code UpdateTaskRequest}'s Javadoc); {@code
@@ -183,6 +199,34 @@ public class TaskService {
         task.setAssignedTo(student);
         task.setStatus(TaskStatus.ASSIGNED);
 
+        return toResponse(task);
+    }
+
+    /** {@code POST /api/v1/tasks/{id}/start} — a STUDENT moves their own {@code ASSIGNED} task to
+     * {@code IN_PROGRESS}, the missing self-service step between {@link #pull} ({@code BACKLOG ->
+     * ASSIGNED}) and {@link #markInReview} ({@code IN_PROGRESS -> IN_REVIEW}, driven by a PR
+     * submission). Authorization is "you are this task's {@code assignedTo}", exactly like {@code
+     * markInReview}, not {@code requireOwnerOrAdmin}. Deliberately does <b>not</b> call {@code
+     * taskPullGuard.blocksPull} (matching {@code markInReview}, unlike {@code pull}): a {@code
+     * PROJECT_DELAY} PIP blocks pulling <i>new</i> work onto an overdue plate, not progressing a
+     * task already assigned to the student.
+     * <p>
+     * Guards {@code ASSIGNED} specifically rather than delegating to {@link
+     * #requireLegalTransition}: {@code ALLOWED_TRANSITIONS} also permits {@code IN_REVIEW ->
+     * IN_PROGRESS} (the changes-requested path, driven by {@code submission/CodeReviewService}),
+     * and a student must not be able to yank their own task back out of the PM's review queue. */
+    @Transactional
+    public TaskResponse start(Long callerUserId, Long taskId) {
+        Task task = requireTask(taskId);
+        User assignee = task.getAssignedTo();
+        if (assignee == null || !assignee.getId().equals(callerUserId)) {
+            throw new ForbiddenOperationException(ErrorCode.NOT_RESOURCE_OWNER);
+        }
+        if (task.getStatus() != TaskStatus.ASSIGNED) {
+            throw new BusinessException(ErrorCode.TASK_INVALID_TRANSITION,
+                    "Only an ASSIGNED task can be started (current status: %s).".formatted(task.getStatus()));
+        }
+        task.setStatus(TaskStatus.IN_PROGRESS);
         return toResponse(task);
     }
 

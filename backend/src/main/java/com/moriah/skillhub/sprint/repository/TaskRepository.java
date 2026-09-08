@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 
 public interface TaskRepository extends JpaRepository<Task, Long> {
@@ -51,6 +52,24 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
              ORDER BY t.dueAt ASC
             """)
     Page<Task> findReviewQueue(@Param("status") TaskStatus status, @Param("pmId") Long pmId, Pageable pageable);
+
+    /** Backs {@code GET /api/v1/tasks/me} — a STUDENT's whole board in one query instead of the
+     * old client fan-out ({@code GET /batches} -> {@code GET /sprints?batchId=} -> {@code GET
+     * /tasks?sprintId=} per sprint). {@code batchIds} is the caller's live enrolment, resolved by
+     * {@code BatchService#activeBatchIdsForUser} (never a {@code BatchStudent} read here — same
+     * boundary {@code findReviewQueue}'s {@code b.pm.id} filter respects). Rows: tasks assigned to
+     * the caller, plus still-pullable {@code BACKLOG} tasks anywhere in those batches. {@code
+     * @EntityGraph} on {@code assignedTo}, not {@code JOIN FETCH}, for the same paginate-safety
+     * reason {@link #search}/{@link #findReviewQueue} document. */
+    @EntityGraph(attributePaths = "assignedTo")
+    @Query("""
+            SELECT t FROM Task t
+             JOIN t.sprint s
+             WHERE s.batch.id IN :batchIds
+               AND (t.assignedTo.id = :userId OR t.status = 'BACKLOG')
+             ORDER BY t.dueAt ASC, t.id ASC
+            """)
+    Page<Task> findMyBoard(@Param("batchIds") Collection<Long> batchIds, @Param("userId") Long userId, Pageable pageable);
 
     /** {@code TaskService#completedProjectIdsFor}'s backing query — the Open Stub cleared this
      * feature: {@code UserService#getPortfolio}'s {@code completedProjects}, defined as "at least

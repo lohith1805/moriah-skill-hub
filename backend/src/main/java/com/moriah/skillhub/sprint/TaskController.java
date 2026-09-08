@@ -61,6 +61,15 @@ public class TaskController {
         return ResponseEntity.ok(ApiResponse.success(taskService.list(sprintId, status, assignedTo, pageable)));
     }
 
+    @GetMapping("/me")
+    @PreAuthorize("hasRole('STUDENT')")
+    @Operation(summary = "The caller's own board — tasks assigned to them, plus pullable BACKLOG, across their active batches")
+    public ResponseEntity<ApiResponse<PageResponse<TaskResponse>>> mine(
+            @CurrentUser Long callerUserId, @PageableDefault(size = 100) Pageable pageable) {
+
+        return ResponseEntity.ok(ApiResponse.success(taskService.listMine(callerUserId, pageable)));
+    }
+
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
     @Operation(summary = "Update a task, including driving its status forward")
@@ -86,5 +95,14 @@ public class TaskController {
             @PathVariable Long id, @CurrentUser Long callerUserId) {
 
         return ResponseEntity.ok(ApiResponse.success(taskService.pull(callerUserId, id)));
+    }
+
+    @PostMapping("/{id}/start")
+    @PreAuthorize("hasRole('STUDENT')")
+    @Operation(summary = "Student moves their own ASSIGNED task to IN_PROGRESS")
+    public ResponseEntity<ApiResponse<TaskResponse>> start(
+            @PathVariable Long id, @CurrentUser Long callerUserId) {
+
+        return ResponseEntity.ok(ApiResponse.success(taskService.start(callerUserId, id)));
     }
 }

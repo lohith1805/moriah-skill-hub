@@ -7,7 +7,11 @@ import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
 import { Input, Select } from "../../components/ui/FormField";
-import { getMyTasks, submitGithubPR } from "../../services/studentService";
+import { getMyTasks, submitGithubPR, startTask } from "../../services/studentService";
+
+// A PR can only be linked to a task the student is actively working. BACKLOG
+// tasks need a pull first (Sprint Board), COMPLETED/REJECTED are done.
+const SUBMITTABLE = new Set(["ASSIGNED", "IN_PROGRESS", "IN_REVIEW"]);
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required, isUrl } from "../../utils/validators";
 
@@ -139,6 +143,12 @@ export default function StudentSubmissions() {
 
     setSubmitting(true);
     try {
+      // Submitting needs the task IN_PROGRESS. If it's still just ASSIGNED
+      // (pulled but not started), start it first so the submit doesn't 409.
+      const picked = tasks.find((t) => String(t.id) === String(values.taskId));
+      if (picked?.backendStatus === "ASSIGNED") {
+        await startTask(picked.id);
+      }
       await submitGithubPR(values.taskId, values.prUrl, values.videoUrl || "");
       notify("Your submission has been registered and the task moved to review.", { type: "success", title: "Submission Recorded" });
       setModalOpen(false);
@@ -210,10 +220,13 @@ export default function StudentSubmissions() {
             label="Sprint Task to Submit"
             required
             placeholder="Select a task"
-            options={tasks.map((t) => ({ value: t.id, label: t.title }))}
+            options={tasks
+              .filter((t) => SUBMITTABLE.has(t.backendStatus))
+              .map((t) => ({ value: t.id, label: t.title }))}
             value={values.taskId}
             onChange={(e) => setValues((v) => ({ ...v, taskId: e.target.value }))}
             error={errors.taskId}
+            hint="Only tasks you're assigned and working show here. Pull a task on the Sprint Board first."
           />
           <Input
             label="Pull Request URL (GitHub)"

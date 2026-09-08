@@ -69,4 +69,11 @@ public interface BatchStudentRepository extends JpaRepository<BatchStudent, Long
      * A student can graduate from at most one batch in practice, but this checks existence across
      * all of them rather than assuming that, since nothing enforces it at the schema level. */
     boolean existsByUserIdAndStatus(Long userId, BatchStudentStatus status);
+
+    /** {@code BatchService#activeBatchIdsForUser} — every batch a student is currently a live
+     * member of ({@code ACTIVE} or {@code ON_PIP}, the same "still enrolled" definition {@link
+     * #findActiveMembers} uses). Backs {@code GET /api/v1/tasks/me}: one query for the caller's
+     * batch scope instead of paging {@code GET /batches} and reading ids off it client-side. */
+    @Query("SELECT bs.batch.id FROM BatchStudent bs WHERE bs.user.id = :userId AND bs.status IN ('ACTIVE', 'ON_PIP')")
+    List<Long> findActiveBatchIdsByUserId(@Param("userId") Long userId);
 }
