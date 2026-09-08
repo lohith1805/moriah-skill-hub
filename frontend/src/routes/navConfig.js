@@ -3,7 +3,7 @@ import {
   Users, CalendarClock, GitPullRequest, BarChart3, GraduationCap, FolderKanban, Bug, Library,
   Target, Megaphone, Trophy, Wallet, FileText, LogOut as LogOutIcon, FilePenLine,
   CalendarCheck, MonitorCheck, ShieldCheck, Settings2, ScrollText, FileBarChart, Briefcase, Rocket,
-  PlayCircle, Video, UserPlus, UserCheck, FileCheck2,
+  PlayCircle, Video, UserPlus, UserCheck, FileCheck2, KeyRound,
 } from "lucide-react";
 import { ROLES } from "../utils/constants";
 
@@ -89,6 +89,7 @@ export const NAV_CONFIG = {
   [ROLES.ADMIN]: [
     { to: "/admin/dashboard", label: "Executive Dashboard", icon: LayoutDashboard },
     { to: "/admin/users", label: "User & Role Management", icon: ShieldCheck },
+    { to: "/admin/permissions", label: "Role Permissions", icon: KeyRound },
     { to: "/admin/plans", label: "Subscription & Pricing", icon: Settings2 },
     { to: "/admin/transactions", label: "Transactions & Refunds", icon: Wallet },
     { to: "/admin/audit-logs", label: "Audit & Security Logs", icon: ScrollText },

@@ -375,3 +375,23 @@ export async function assignClientProjectStaff(clientProjectId, { baUuid, develo
     developerUuid: developerUuid || undefined,
   });
 }
+
+// ---- granular permissions (V52) ------------------------------------
+// GET  /api/v1/admin/permissions              -> { permissions:[{code,label,category}], roles:[{role,permissionCodes}] }
+// PUT  /api/v1/admin/roles/{roleCode}/permissions  { codes: [...] }  (full replace)
+
+export async function getPermissionMatrix() {
+  const res = await apiClient.get("/admin/permissions");
+  return {
+    permissions: res?.permissions || [],
+    roles: res?.roles || [],
+  };
+}
+
+export async function setRolePermissions(roleCode, codes) {
+  const res = await apiClient.put(`/admin/roles/${roleCode}/permissions`, { codes });
+  return {
+    permissions: res?.permissions || [],
+    roles: res?.roles || [],
+  };
+}

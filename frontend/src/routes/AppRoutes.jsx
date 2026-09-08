@@ -87,6 +87,7 @@ import BaMeetings from "../pages/ba/Meetings";
 // Admin
 import AdminDashboard from "../pages/admin/Dashboard";
 import AdminUserManagement from "../pages/admin/UserManagement";
+import AdminPermissions from "../pages/admin/Permissions";
 import AdminPlans from "../pages/admin/Plans";
 import AdminTransactions from "../pages/admin/Transactions";
 import AdminAuditLogs from "../pages/admin/AuditLogs";
@@ -225,6 +226,7 @@ export default function AppRoutes() {
         <Route element={<DashboardLayout />}>
           <Route path="/admin/dashboard" element={<AdminDashboard />} />
           <Route path="/admin/users" element={<AdminUserManagement />} />
+          <Route path="/admin/permissions" element={<AdminPermissions />} />
           <Route path="/admin/plans" element={<AdminPlans />} />
           <Route path="/admin/transactions" element={<AdminTransactions />} />
           <Route path="/admin/audit-logs" element={<AdminAuditLogs />} />
