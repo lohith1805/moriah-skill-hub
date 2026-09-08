@@ -42,60 +42,16 @@ export default function StudentTasks() {
       "Completed": "Completed"
     };
     const status = statusMap[columnLabel];
-    const targetTask = tasks.find(t => t.id === taskId);
 
-    // Enforce FRS PIP Sprint task restrictions
-    if (status === "In Progress" && targetTask) {
-      // 1. Check Project Milestone > 48 Hours overdue
-      const now = Date.now();
-      const hasOverdueMilestone = tasks.some(t => 
-        t.id !== taskId &&
-        t.status !== "Completed" && 
-        t.due && 
-        (now - new Date(t.due).getTime() > 48 * 60 * 60 * 1000)
-      );
+    // The backend is the single source of truth for whether a move is allowed.
+    // POST /tasks/{id}/pull enforces the real PIP block (an open PROJECT_DELAY
+    // record with blocks_task_pull) and returns TASK_PULL_BLOCKED_BY_PIP;
+    // /start has no PIP restriction by design. A rejected move surfaces below as
+    // res.ok === false with the server's own message. This replaced a stale
+    // client-side heuristic that guessed "overdue milestone" / quiz-average
+    // locks from localStorage and blocked legitimate moves whenever any task on
+    // the board happened to be past due.
 
-      let hasPipBlocker = false;
-      try {
-        const rawPip = localStorage.getItem("msh_pip_records");
-        if (rawPip) {
-          hasPipBlocker = JSON.parse(rawPip).some(p => p.status === "In Recovery" && p.reason === "Project Delay");
-        }
-      } catch (e) {}
-
-      if (hasOverdueMilestone || hasPipBlocker) {
-        notify("Access Restricted: You are blocked from picking subsequent sprint tasks due to a project milestone more than 48 hours overdue! Please clear your backlog first.", {
-          type: "error",
-          title: "Sprint Board Locked"
-        });
-        load();
-        return;
-      }
-
-      // 2. Check Quiz Average < 60% blocks Advanced Tasks (8+ points)
-      if (targetTask.points >= 8) {
-        let quizAvg = 84; // default fallback
-        try {
-          const rawAttempts = localStorage.getItem("msh_assessment_attempts");
-          if (rawAttempts) {
-            const attempts = JSON.parse(rawAttempts);
-            if (attempts.length > 0) {
-              quizAvg = attempts.reduce((sum, a) => sum + a.score, 0) / attempts.length;
-            }
-          }
-        } catch (e) {}
-
-        if (quizAvg < 60) {
-          notify("Access Restricted: Your quiz average is below 60%. Access to advanced sprint tasks (8+ points) is restricted until you clear a mandatory re-test.", {
-            type: "error",
-            title: "Advanced Task Locked"
-          });
-          load();
-          return;
-        }
-      }
-    }
-    
     // Optimistic move, then reconcile with the server.
     setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status } : t)));
     const res = await updateTaskStatus(taskId, status);
