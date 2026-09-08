@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, CheckCircle2, Info, AlertTriangle } from "lucide-react";
-import { getNotifications, markAsRead } from "../../services/notificationService";
+import { getNotifications, markAsRead, markAllAsRead } from "../../services/notificationService";
 import { timeAgo } from "../../utils/formatters";
 import LoadingSpinner from "../ui/LoadingSpinner";
 import EmptyState from "../ui/EmptyState";
@@ -9,15 +9,41 @@ import clsx from "clsx";
 const ICONS = { success: CheckCircle2, warning: AlertTriangle, info: Info };
 const TONE_COLOR = { success: "text-success-600", warning: "text-warning-600", info: "text-info-600" };
 
+// The feed has no websocket, so a short poll is how a notification raised mid-session
+// (PIP triggered, doc rejected, batch allocated, …) actually reaches the user without a reload.
+const POLL_MS = 45000;
+
 export default function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const ref = useRef(null);
 
-  useEffect(() => {
-    getNotifications().then((data) => { setNotifications(data); setLoading(false); });
+  const refresh = useCallback(async () => {
+    try {
+      setNotifications(await getNotifications());
+    } catch {
+      /* transient — keep what's on screen, next poll retries */
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    refresh();
+    const id = setInterval(refresh, POLL_MS);
+    const onVisible = () => document.visibilityState === "visible" && refresh();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [refresh]);
+
+  // Re-pull the moment the dropdown opens, so it never shows a stale list.
+  useEffect(() => {
+    if (open) refresh();
+  }, [open, refresh]);
 
   useEffect(() => {
     const onClick = (e) => ref.current && !ref.current.contains(e.target) && setOpen(false);
@@ -29,8 +55,21 @@ export default function NotificationBell() {
 
   const handleOpenItem = async (n) => {
     if (n.read) return;
-    await markAsRead(n.id);
     setNotifications((prev) => prev.map((p) => (p.id === n.id ? { ...p, read: true } : p)));
+    try {
+      await markAsRead(n.id);
+    } catch {
+      setNotifications((prev) => prev.map((p) => (p.id === n.id ? { ...p, read: false } : p)));
+    }
+  };
+
+  const handleMarkAll = async () => {
+    setNotifications((prev) => prev.map((p) => ({ ...p, read: true })));
+    try {
+      await markAllAsRead();
+    } catch {
+      refresh();
+    }
   };
 
   return (
@@ -52,7 +91,11 @@ export default function NotificationBell() {
           >
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <p className="text-sm font-semibold text-ink-900">Notifications</p>
-              {unread > 0 && <span className="text-xs text-primary-700 font-medium">{unread} new</span>}
+              {unread > 0 && (
+                <button onClick={handleMarkAll} className="text-xs text-primary-700 font-medium hover:text-primary-800">
+                  Mark all read ({unread})
+                </button>
+              )}
             </div>
             <div className="max-h-[60vh] sm:max-h-80 overflow-y-auto scrollbar-thin">
               {loading ? (

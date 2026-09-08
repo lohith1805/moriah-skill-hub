@@ -5,37 +5,103 @@
 //   PUT  /api/v1/notifications/read-all
 //
 // Backend rows are { id, templateCode, payload:{...}, read, readAt, createdAt }.
-// The UI wants { id, title, body, time, read } — mapped here.
+// The UI wants { id, title, body, time, read, tone } — mapped here.
+//
+// Some backend templates put a ready "title"/"body" in the payload (MEETING_INVITE,
+// HR_DOCUMENT_REJECTED, ONBOARDING_COMPLETE, …); others store only structured fields
+// (PIP_TRIGGERED -> {ruleCode,severity}, BATCH_ALLOCATED -> {batchName,trackCode}, …).
+// TEMPLATE_RENDERERS turns the structured ones into human copy so the bell never shows a
+// bare "Pip Triggered" with an empty body.
 
 import { apiClient } from "./apiClient";
 
-function humanizeTemplate(code) {
-  if (!code) return "Notification";
-  return code
+function humanize(code) {
+  if (!code) return "";
+  return String(code)
     .toLowerCase()
     .split(/[_\s]+/)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ");
 }
 
-function toFeNotification(n) {
+const PIP_RULE_LABEL = {
+  ATTENDANCE_LOW: "low attendance",
+  PROJECT_DELAY: "overdue project tasks",
+  ASSIGNMENT_MISSED: "missed assignments",
+  QUIZ_FAILURE: "quiz scores below the pass mark",
+  REVIEW_FAILED: "an unsatisfactory weekly review",
+  TASK_ABANDONED: "no recent activity",
+};
+
+// templateCode -> ({payload}) => { title, body, tone }
+const TEMPLATE_RENDERERS = {
+  PIP_TRIGGERED: (p) => ({
+    title: "Performance Improvement Plan",
+    body:
+      `A PIP was triggered${p.severity ? ` (${String(p.severity).toLowerCase()} severity)` : ""}` +
+      `${p.ruleCode ? ` for ${PIP_RULE_LABEL[p.ruleCode] || humanize(p.ruleCode)}` : ""}.`,
+    tone: "warning",
+  }),
+  BATCH_ALLOCATED: (p) => ({
+    title: "You've been placed in a batch",
+    body:
+      `${p.batchName || "Your batch"}${p.trackCode ? ` · ${p.trackCode}` : ""}` +
+      `${p.startDate ? ` — starts ${p.startDate}` : ""}.`,
+    tone: "success",
+  }),
+  BATCH_PLACEMENT_PENDING: (p) => ({
+    title: "Finding you a batch",
+    body: p.message || `We're placing you in a ${p.trackCode || ""} batch and will let you know.`,
+    tone: "info",
+  }),
+  BATCH_ALLOCATION_PENDING: (p) => ({
+    title: "Student awaiting batch allocation",
+    body: `${p.studentName || "A student"} is waiting for a ${p.trackCode || ""} batch.`,
+    tone: "info",
+  }),
+  BATCH_ALLOCATION_PENDING_PM: (p) => ({
+    title: "Student awaiting batch allocation",
+    body: `${p.studentName || "A student"} is waiting for a ${p.trackCode || ""} batch.`,
+    tone: "info",
+  }),
+  SUBSCRIPTION_ACTIVATED: (p) => ({
+    title: "Subscription active",
+    body: `Your ${p.planName || "subscription"} is active${p.startDate ? `, starting ${p.startDate}` : ""}.`,
+    tone: "success",
+  }),
+};
+
+function render(n) {
   const p = n.payload || {};
+  if (p.title || p.body || p.message || p.text || p.subject) {
+    return {
+      title: p.title || p.subject || humanize(n.templateCode) || "Notification",
+      body: p.body || p.message || p.text || "",
+      tone: p.tone,
+    };
+  }
+  const r = TEMPLATE_RENDERERS[n.templateCode];
+  if (r) return r(p);
+  return { title: humanize(n.templateCode) || "Notification", body: "" };
+}
+
+function toFeNotification(n) {
+  const { title, body, tone } = render(n);
   return {
     id: n.id,
-    title: p.title || p.subject || humanizeTemplate(n.templateCode),
-    body: p.body || p.message || p.text || "",
+    title,
+    body,
+    tone: tone || "info",
     time: n.createdAt,
     read: !!n.read,
     templateCode: n.templateCode,
-    payload: p,
+    payload: n.payload || {},
   };
 }
 
 export async function getNotifications({ page = 0, size = 30, unreadOnly = false } = {}) {
   const res = await apiClient.get("/notifications", { page, size, unreadOnly });
-  const rows = (res && res.content ? res.content : []).map(toFeNotification);
-  // Header/NotificationBell just want the array.
-  return rows;
+  return (res && res.content ? res.content : []).map(toFeNotification);
 }
 
 export async function getUnreadCount() {
