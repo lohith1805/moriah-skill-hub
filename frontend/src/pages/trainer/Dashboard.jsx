@@ -11,16 +11,19 @@ import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import ApplyLeaveWidget from "../../components/widgets/ApplyLeaveWidget";
 import AttendanceCheckinWidget from "../../components/widgets/AttendanceCheckinWidget";
 import { getBatches, getPipCases } from "../../services/trainerService";
+import { useAuth } from "../../context/AuthContext";
 
 export default function TrainerDashboard() {
-  const [batches, setBatches] = useState([]);
+  const { user } = useAuth();
+  const myUuid = user?.uuid;
+  const [allBatches, setAllBatches] = useState([]);
   const [pipCases, setPipCases] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([getBatches().catch(() => []), getPipCases().catch(() => [])])
       .then(([b, p]) => {
-        setBatches(b);
+        setAllBatches(b);
         setPipCases(p);
       })
       .finally(() => setLoading(false));
@@ -28,9 +31,13 @@ export default function TrainerDashboard() {
 
   if (loading) return <div className="flex justify-center py-24"><LoadingSpinner label="Loading trainer dashboard…" /></div>;
 
+  // Your dashboard = your batches. A second PM's cohorts live on the Batches
+  // screen's "All batches" tab, not here.
+  const batches = myUuid ? allBatches.filter((b) => b.pmUuid === myUuid) : allBatches;
+  const myBatchNames = new Set(batches.map((b) => b.name));
   const totalStudents = batches.reduce((s, b) => s + (b.students || 0), 0);
   const avgHealth = batches.length ? Math.round(batches.reduce((s, b) => s + (b.health || 0), 0) / batches.length) : 0;
-  const activePip = pipCases.filter((p) => p.status !== "Resolved");
+  const activePip = pipCases.filter((p) => p.status !== "Resolved" && myBatchNames.has(p.batch));
 
   return (
     <div className="flex flex-col gap-6">
@@ -47,7 +54,7 @@ export default function TrainerDashboard() {
       <AttendanceCheckinWidget role="Trainer / PM" />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard label="Active Batches" value={batches.length} icon={Users} tone="primary" />
+        <StatCard label="My Batches" value={batches.length} icon={Users} tone="primary" />
         <StatCard label="Total Students" value={totalStudents} icon={GraduationCap} tone="gold" />
         <StatCard label="Avg. Batch Health" value={`${avgHealth}%`} icon={KanbanSquare} tone={avgHealth >= 70 ? "success" : "warning"} />
         <StatCard label="Active PIP Cases" value={activePip.length} icon={AlertTriangle} tone={activePip.length > 0 ? "warning" : "success"} />
@@ -57,12 +64,12 @@ export default function TrainerDashboard() {
         {/* Batch Health */}
         <Card>
           <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
-            <CardHeader title="Batch Health" subtitle="Delivery + assessment signal per batch" />
+            <CardHeader title="Batch Health" subtitle="Delivery + assessment signal per batch you run" />
             <Link to="/trainer/batches" className="text-xs text-primary-700 hover:underline font-medium">Manage Batches →</Link>
           </div>
           <div className="flex flex-col divide-y divide-border">
             {batches.length === 0 ? (
-              <p className="text-sm text-ink-400 py-6 text-center">No batches yet.</p>
+              <p className="text-sm text-ink-400 py-6 text-center">No batches assigned to you yet. Create one, or see the whole org on the Batches screen.</p>
             ) : (
               batches.map((b) => (
                 <div key={b.id} className="py-3 flex flex-col gap-1.5 text-left">

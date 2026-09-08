@@ -31,6 +31,7 @@ function toFeBatch(b) {
     track: TRACK_CODE_TO_FE[b.trackCode] || b.trackCode || "Full-Stack Development",
     trackCode: b.trackCode,
     pmName: b.pmFullName || "",
+    pmUuid: b.pmUuid || null,
     planTierMinCode: b.planTierMinCode || null,
     startDate: b.startDate || null,
     endDate: b.endDate || null,

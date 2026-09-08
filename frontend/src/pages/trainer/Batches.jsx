@@ -23,6 +23,7 @@ import {
   getPendingAllocations,
 } from "../../services/trainerService";
 import { useToast } from "../../context/ToastContext";
+import { useAuth } from "../../context/AuthContext";
 import { validateForm, required, isEmail } from "../../utils/validators";
 import { usePagination } from "../../hooks/usePagination";
 import Pagination from "../../components/ui/Pagination";
@@ -31,7 +32,13 @@ import { useSearchParams } from "react-router-dom";
 const TRACKS = ["Full-Stack Development", "Data Analytics", "Product Design", "Backend Engineering"].map((t) => ({ value: t, label: t }));
 
 export default function TrainerBatches() {
+  const { user } = useAuth();
+  const myUuid = user?.uuid;
   const [activeTab, setActiveTab] = useState("batches");
+  // "mine" = batches I'm the PM of (the ones I can actually act on); "all" = the
+  // whole org's, read-only. A second PM would otherwise see every batch with
+  // action buttons that just error with "you are not PM of this batch".
+  const [scope, setScope] = useState("mine");
 
   // Batches state
   const [batches, setBatches] = useState([]);
@@ -89,8 +96,12 @@ export default function TrainerBatches() {
 
   const [searchParams] = useSearchParams();
   const query = searchParams.get("search")?.toLowerCase() || "";
-  
-  const filteredBatches = batches.filter(
+
+  const isMine = (b) => !!myUuid && b.pmUuid === myUuid;
+  const mineCount = batches.filter(isMine).length;
+  const scopedBatches = scope === "mine" ? batches.filter(isMine) : batches;
+
+  const filteredBatches = scopedBatches.filter(
     (b) => b.name.toLowerCase().includes(query) || b.track.toLowerCase().includes(query)
   );
 
@@ -273,6 +284,28 @@ export default function TrainerBatches() {
         >
           {(active) => active === "batches" ? (
             <>
+              <div className="flex items-center gap-1 mb-4 w-fit rounded-lg border border-border bg-cream-50 p-0.5">
+                {[
+                  { key: "mine", label: `My batches (${mineCount})` },
+                  { key: "all", label: `All batches (${batches.length})` },
+                ].map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => setScope(t.key)}
+                    className={`text-xs font-semibold px-3 py-1.5 rounded-md transition-colors ${
+                      scope === t.key ? "bg-white text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-700"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              {scope === "all" && (
+                <p className="text-xs text-ink-500 mb-3">
+                  Showing every cohort for visibility. You can only edit batches where you're the PM — the rest are read-only.
+                </p>
+              )}
               <Table
                 loading={loading}
                 data={batchesPagination.pageItems}
@@ -284,6 +317,11 @@ export default function TrainerBatches() {
                         <p className="text-[10px] text-ink-400 font-medium">Mentor: {r.secondaryMentor}</p>
                       )}
                     </div>
+                  ) },
+                  { key: "pm", header: "PM", render: (r) => (
+                    isMine(r)
+                      ? <Badge tone="primary">You</Badge>
+                      : <span className="text-sm text-ink-600">{r.pmName || "—"}</span>
                   ) },
                   { key: "track", header: "Track" },
                   { key: "students", header: "Students", render: (r) => (
@@ -300,7 +338,11 @@ export default function TrainerBatches() {
                     ? <Badge tone="neutral">No activity yet</Badge>
                     : <div className="w-28"><ProgressBar value={r.health} tone={r.health > 80 ? "success" : r.health > 50 ? "gold" : "warning"} showValue={false} size="sm" /></div> },
                   { key: "status", header: "Status", render: (r) => <Badge tone={r.status === "Active" ? "success" : r.status === "Onboarding" ? "neutral" : "gold"}>{r.status}</Badge> },
-                  { key: "action", header: "", render: (r) => <Button size="sm" variant="secondary" icon={FolderKanban} onClick={() => openAssignModal(r)}>Assign Projects</Button> },
+                  { key: "action", header: "", render: (r) => (
+                    isMine(r)
+                      ? <Button size="sm" variant="secondary" icon={FolderKanban} onClick={() => openAssignModal(r)}>Assign Projects</Button>
+                      : <span className="text-xs text-ink-400">Read-only</span>
+                  ) },
                 ]}
               />
               <Pagination page={batchesPagination.page} totalPages={batchesPagination.totalPages} onChange={batchesPagination.goTo} totalItems={batchesPagination.totalItems} pageSize={batchesPagination.pageSize} />
