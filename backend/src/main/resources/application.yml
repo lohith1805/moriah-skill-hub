@@ -211,16 +211,17 @@ moriah:
   auth-links:
     # {token} is substituted with the raw (unhashed) verification/reset token. Same per-purpose
     # full-URL treatment as STRIPE_SUCCESS_URL/CANCEL_URL (feature 07) — no shared frontend-base-
-    # URL config exists (`/architect feature 08` decision).
-    email-verification-url-template: ${EMAIL_VERIFICATION_URL_TEMPLATE:http://localhost:3000/verify-email?token={token}}
-    password-reset-url-template: ${PASSWORD_RESET_URL_TEMPLATE:http://localhost:3000/reset-password?token={token}}
-    staff-invite-url-template: ${STAFF_INVITE_URL_TEMPLATE:http://localhost:3000/accept-invite?token={token}}
+    # URL config exists (`/architect feature 08` decision). Defaults point at the Vite dev server
+    # (:5173); override per environment via the *_URL_TEMPLATE env vars.
+    email-verification-url-template: ${EMAIL_VERIFICATION_URL_TEMPLATE:http://localhost:5173/verify-email?token={token}}
+    password-reset-url-template: ${PASSWORD_RESET_URL_TEMPLATE:http://localhost:5173/reset-password?token={token}}
+    staff-invite-url-template: ${STAFF_INVITE_URL_TEMPLATE:http://localhost:5173/accept-invite?token={token}}
   certificates:
     # build-plan.md feature 20: the certificate QR encodes "{APP_BASE_URL}/verify/{verification_code}"
     # — {code} substituted with verification_code. Same per-purpose full-URL-template convention as
     # moriah.auth-links immediately above (see CertificateProperties' own Javadoc for why: no shared
     # frontend-base-URL config exists in this build, a decision already made twice before this one).
-    verify-url-template: ${CERTIFICATE_VERIFY_URL_TEMPLATE:http://localhost:3000/verify/{code}}
+    verify-url-template: ${CERTIFICATE_VERIFY_URL_TEMPLATE:http://localhost:5173/verify/{code}}
   webhook:
     # Audit 2026-08-31 (C3): backstop sweep that surfaces any webhook_events row stuck in
     # RECEIVED (handler process killed between the business commit and the claim release). Does
