@@ -57,6 +57,7 @@ export default function ClientTalentPool() {
 
   // Modal states
   const [modalOpen, setModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [targetCandidate, setTargetCandidate] = useState(null);
   const [values, setValues] = useState({ date: "", time: "", roundType: "Technical Interview", notes: "", meetingLink: "" });
   // Round types the Client/Interviewer conducts directly. The HR Round is a
@@ -89,6 +90,21 @@ export default function ClientTalentPool() {
 
   const reloadRecruitments = () => loadRecruitments().then(setRecruitments).catch(() => setRecruitments([]));
 
+  // Optimistic update, persist, then re-read the truth. Any failed persist
+  // surfaces as an error toast (and the reload reverts the optimism) instead of
+  // silently disappearing on the next refresh.
+  const persistPipeline = async (updated, ok) => {
+    setRecruitments(updated);
+    try {
+      await saveRecruitments(updated);
+      await reloadRecruitments();
+      if (ok) notify(ok.msg, { type: ok.type || "success", title: ok.title });
+    } catch (err) {
+      await reloadRecruitments();
+      notify(err?.message || "That change didn't save. Please try again.", { type: "error" });
+    }
+  };
+
   useEffect(() => {
     getTalentPool()
       .then((t) => setTalent(t))
@@ -113,17 +129,19 @@ export default function ClientTalentPool() {
     setModalOpen(true);
   };
 
-  // A placement is created server-side only when HR/ADMIN approve the
-  // recruitment request — so "shortlisting" now submits that request.
+  // Shortlisting opens the hiring pipeline for this candidate immediately
+  // (server-side: the recruitment request is auto-approved and a placement is
+  // created at SHORTLISTED). Reload so the new pipeline row shows.
   const handleShortlist = async (candidate) => {
     try {
       await requestRecruitment(candidate, { roleTitle: candidate.track || "Software Engineer" });
+      await reloadRecruitments();
       notify(
-        `Recruitment request sent for ${candidate.name}. Once HR approves it, they'll appear in your hiring pipeline.`,
-        { type: "success", title: "Request submitted" }
+        `${candidate.name} shortlisted — they're in your hiring pipeline. Schedule their technical interview next.`,
+        { type: "success", title: "Shortlisted" }
       );
     } catch (err) {
-      notify(err.message || "Could not submit the recruitment request.", { type: "error" });
+      notify(err.message || "Could not shortlist this candidate.", { type: "error" });
     }
   };
 
@@ -143,7 +161,7 @@ export default function ClientTalentPool() {
     }
   };
 
-  const handleRecruitSave = (e) => {
+  const handleRecruitSave = async (e) => {
     e.preventDefault();
     const validation = validateForm(values, {
       date: [required],
@@ -156,18 +174,32 @@ export default function ClientTalentPool() {
     setErrors(validation);
     if (Object.keys(validation).length) return;
 
-    // Scheduling always follows shortlisting, so update the candidate's
-    // existing "Shortlisted" record in place (preserving its id) rather
-    // than creating a second, duplicate pipeline entry for the same
-    // candidate. Falls back to creating a fresh record only if none exists
-    // (e.g. legacy data from before shortlisting existed).
-    const existing = recruitments.find((r) => r.candidateId === targetCandidate.id && r.stage === "Shortlisted");
-    const meetingLink = values.meetingLink.trim() || generateMeetingLink();
+    setSubmitting(true);
+    try {
+      const meetingLink = values.meetingLink.trim() || generateMeetingLink();
 
-    let updated;
-    if (existing) {
-      updated = recruitments.map((r) =>
-        r.id === existing.id
+      // The candidate must have a real pipeline row (a backend placement) to
+      // schedule against — a client-only record can never be persisted. If they
+      // haven't been shortlisted yet, do it now (auto-opens the placement),
+      // then re-read to get the row.
+      let list = recruitments;
+      let placement = list.find((r) => r.candidateId === targetCandidate.id);
+      if (!placement) {
+        await requestRecruitment(
+          { uuid: targetCandidate.id, name: targetCandidate.name },
+          { roleTitle: targetCandidate.track || "Software Engineer" }
+        );
+        list = await loadRecruitments();
+        setRecruitments(list);
+        placement = list.find((r) => r.candidateId === targetCandidate.id);
+      }
+      if (!placement) {
+        notify("Couldn't open a hiring pipeline for this candidate.", { type: "error" });
+        return;
+      }
+
+      const updated = list.map((r) =>
+        r.id === placement.id
           ? {
               ...r,
               date: values.date,
@@ -179,28 +211,17 @@ export default function ClientTalentPool() {
             }
           : r
       );
-    } else {
-      const created = {
-        id: `rec_${Date.now()}`,
-        candidateId: targetCandidate.id,
-        candidateName: targetCandidate.name,
-        track: targetCandidate.track,
-        clientName: user?.company || user?.name || "the recruiting company",
-        date: values.date,
-        time: values.time,
-        roundType: values.roundType,
-        notes: values.notes || "",
-        stage: "Technical Round Scheduled",
-        meetingLink,
-      };
-      updated = [created, ...recruitments];
+      setRecruitments(updated);
+      await saveRecruitments(updated);
+      await reloadRecruitments(); // reflect the persisted state, not just optimism
+
+      notify(`Technical interview scheduled for ${targetCandidate.name}.`, { type: "success", title: "Interview scheduled" });
+      setModalOpen(false);
+    } catch (err) {
+      notify(err?.message || "Couldn't schedule the interview. Please try again.", { type: "error" });
+    } finally {
+      setSubmitting(false);
     }
-
-    setRecruitments(updated);
-    saveRecruitments(updated);
-
-    notify(`Interview scheduled for ${targetCandidate.name}.`, { type: "success", title: "Recruitment initiated" });
-    setModalOpen(false);
   };
 
   const openEdit = (item) => {
@@ -243,20 +264,19 @@ export default function ClientTalentPool() {
       return item;
     });
 
-    setRecruitments(updated);
-    saveRecruitments(updated);
-
-    notify("Interview scheduling updated.", { type: "success" });
     setEditOpen(false);
     setEditingId(null);
+    persistPipeline(updated, { msg: "Interview scheduling updated." });
   };
 
   const handleDelete = (id) => {
-    const target = recruitments.find(r => r.id === id);
-    const updated = recruitments.filter((r) => r.id !== id);
-    setRecruitments(updated);
-    saveRecruitments(updated);
-    notify(`Interview request for ${target?.candidateName} cancelled.`, { type: "success" });
+    const target = recruitments.find((r) => r.id === id);
+    // "Cancel" ends the placement — move it to REJECTED (a client may do this),
+    // don't just drop the row (which never persisted the cancellation).
+    const updated = recruitments.map((r) =>
+      r.id === id ? { ...r, stage: REJECTED, rejectedAt: r.stage, rejectionReason: "Cancelled by the recruiting company" } : r
+    );
+    persistPipeline(updated, { msg: `Recruitment for ${target?.candidateName} cancelled.`, type: "info" });
   };
 
   // Step 1 of the outcome flow: the Client/Interviewer marks the technical
@@ -266,9 +286,7 @@ export default function ClientTalentPool() {
   const handleMarkCompleted = (id) => {
     const target = recruitments.find((r) => r.id === id);
     const updated = recruitments.map((r) => (r.id === id ? { ...r, stage: "Technical Round Completed" } : r));
-    setRecruitments(updated);
-    saveRecruitments(updated);
-    notify(`Technical interview with ${target?.candidateName} marked as completed.`, { type: "success" });
+    persistPipeline(updated, { msg: `Technical interview with ${target?.candidateName} marked as completed.` });
   };
 
   // Step 2: Client/Interviewer approves or rejects the technical round.
@@ -289,14 +307,13 @@ export default function ClientTalentPool() {
       }
       return { ...r, stage: REJECTED, rejectedAt: "Technical Round" };
     });
-    setRecruitments(updated);
-    saveRecruitments(updated);
-    notify(
-      decision === "approve"
-        ? `${target?.candidateName}'s technical round approved — HR will schedule the HR round next.`
-        : `${target?.candidateName} marked as Rejected.`,
-      { type: decision === "approve" ? "success" : "info" }
-    );
+    persistPipeline(updated, {
+      msg:
+        decision === "approve"
+          ? `${target?.candidateName}'s technical round approved — HR will schedule the HR round next.`
+          : `${target?.candidateName} marked as Rejected.`,
+      type: decision === "approve" ? "success" : "info",
+    });
   };
 
   const openOfferReview = (record) => setReviewingOffer(record);
@@ -313,16 +330,14 @@ export default function ClientTalentPool() {
       }
       return { ...r, stage: REJECTED, rejectedAt: "Offer Letter Created" };
     });
-    setRecruitments(updated);
-    saveRecruitments(updated);
-
-    notify(
-      decision === "approve"
-        ? `Offer letter approved & signed — sent to ${reviewingOffer.candidateName} for their approval.`
-        : "Offer letter rejected.",
-      { type: decision === "approve" ? "success" : "info" }
-    );
     setReviewingOffer(null);
+    persistPipeline(updated, {
+      msg:
+        decision === "approve"
+          ? `Offer letter approved & signed — sent to ${reviewingOffer.candidateName} for their approval.`
+          : "Offer letter rejected.",
+      type: decision === "approve" ? "success" : "info",
+    });
   };
 
   const offerDoc = offerFieldsFor(reviewingOffer);
@@ -458,7 +473,7 @@ export default function ClientTalentPool() {
         title={targetCandidate ? `Initiate Recruitment for ${targetCandidate.name}` : "Schedule Interview"}
         footer={<>
           <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
-          <Button onClick={handleRecruitSave}>Confirm Schedule</Button>
+          <Button onClick={handleRecruitSave} loading={submitting}>Confirm Schedule</Button>
         </>}
       >
         <form className="flex flex-col gap-4 text-left font-sans" onSubmit={handleRecruitSave}>

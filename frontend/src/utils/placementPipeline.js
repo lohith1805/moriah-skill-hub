@@ -142,10 +142,11 @@ export async function loadRecruitments() {
 
 export async function saveRecruitments(list) {
   const byId = new Map(_snapshot.map((r) => [r.id, r]));
+  const failures = [];
   await Promise.all(
     (list || []).map(async (r) => {
       const prev = byId.get(r.id);
-      if (!prev) return; // no client-side create
+      if (!prev) return; // no client-side create — a placement is born server-side
       const patch = {};
       for (const k of detailKeys(r)) {
         if (JSON.stringify(r[k]) !== JSON.stringify(prev[k])) patch[k] = r[k];
@@ -154,13 +155,17 @@ export async function saveRecruitments(list) {
         try {
           await _advancePlacement(r.id, r.stage, patch);
         } catch (e) {
-          // surfaced by the page's own reload; keep going for the rest
           console.warn("[placement] update failed", r.id, e?.message);
+          failures.push(e?.message || `Update failed for ${r.id}`);
         }
       }
     })
   );
   _snapshot = (list || []).map((r) => ({ ...r }));
+  // Rethrow so the page can tell the user instead of silently reverting on the
+  // next reload — every caller that relied on the old swallow-and-warn will now
+  // surface a real error toast.
+  if (failures.length) throw new Error(failures.join("; "));
 }
 
 // A placement's offer-letter fields -> the shape renderTemplateText() expects.
