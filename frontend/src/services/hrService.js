@@ -620,6 +620,13 @@ export async function getPayroll(month) {
   return asRows(res).map(toFePayroll);
 }
 
+// GET /api/v1/hr/payroll/me — the caller's own finalised payslips, newest first,
+// each with a presigned download URL. Any employee; empty for a non-staff caller.
+export async function getMyPayslips() {
+  const res = await apiClient.get("/hr/payroll/me", { size: 24 });
+  return asRows(res).map(toFePayroll);
+}
+
 // lines: [{ employeeId, presentDays, sessionHours?, deductions? }]
 export async function generatePayroll({ month, workingDays, lines }) {
   const body = {

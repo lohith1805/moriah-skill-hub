@@ -22,6 +22,14 @@ public interface PayrollRecordRepository extends JpaRepository<PayrollRecord, Lo
             countQuery = "SELECT COUNT(p) FROM PayrollRecord p WHERE p.periodMonth = :periodMonth")
     Page<PayrollRecord> findByPeriodMonth(@Param("periodMonth") LocalDate periodMonth, Pageable pageable);
 
+    /** {@code GET /api/v1/hr/payroll/me} — the caller's own payslips, newest first. {@code
+     * employee}/{@code user} join-fetched so {@code PayrollService#toResponse} reads the code and
+     * name without an N+1. Empty for a caller with no {@code employees} row. */
+    @Query(value = "SELECT p FROM PayrollRecord p JOIN FETCH p.employee e JOIN FETCH e.user u "
+            + "WHERE u.id = :userId ORDER BY p.periodMonth DESC",
+            countQuery = "SELECT COUNT(p) FROM PayrollRecord p WHERE p.employee.user.id = :userId")
+    Page<PayrollRecord> findByEmployeeUserIdOrderByPeriodMonthDesc(@Param("userId") Long userId, Pageable pageable);
+
     /** Batch form of {@link #existsByEmployeeIdAndPeriodMonth} — one query for an entire payroll
      * batch instead of one per line. */
     @Query("SELECT p.employee.id FROM PayrollRecord p WHERE p.periodMonth = :periodMonth AND p.employee.id IN :employeeIds")

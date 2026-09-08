@@ -53,4 +53,16 @@ public class PayrollController {
 
         return ResponseEntity.ok(ApiResponse.success(payrollService.list(month, callerUuid, pageable)));
     }
+
+    /** The caller's own payslips, newest first (any authenticated user; empty when they have no
+     * employee record). Backs the "My Payslips" page. */
+    @GetMapping("/me")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<PageResponse<PayrollRecordResponse>>> mine(
+            @CurrentUser Long callerUserId,
+            @CurrentUserUuid String callerUuid,
+            @PageableDefault(size = 24) Pageable pageable) {
+
+        return ResponseEntity.ok(ApiResponse.success(payrollService.listMine(callerUserId, callerUuid, pageable)));
+    }
 }

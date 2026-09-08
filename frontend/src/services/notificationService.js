@@ -69,6 +69,13 @@ const TEMPLATE_RENDERERS = {
     body: `Your ${p.planName || "subscription"} is active${p.startDate ? `, starting ${p.startDate}` : ""}.`,
     tone: "success",
   }),
+  PAYSLIP_READY: (p) => ({
+    title: "Payslip ready",
+    body: `Your payslip for ${p.periodMonth || "the latest period"} is ready` +
+      `${p.netAmount ? ` — net ₹${Number(p.netAmount).toLocaleString("en-IN")}` : ""}. ` +
+      `Download it from My Payslips.`,
+    tone: "success",
+  }),
   // Placement pipeline hand-off. The backend sends one code with an `audience`
   // tag ("candidate" | "client" | "hr"); the copy is phrased for the reader.
   PLACEMENT_STAGE_CHANGED: (p) => {

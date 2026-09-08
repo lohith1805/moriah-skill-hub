@@ -31,6 +31,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -46,12 +48,14 @@ class PayrollServiceTest {
     private AuditLogService auditLogService;
     @Mock
     private LeaveRequestRepository leaveRequestRepository;
+    @Mock
+    private com.moriah.skillhub.common.notification.NotificationService notificationService;
 
     // Built per-test, not as a field initializer — a field initializer runs during construction,
     // before MockitoExtension's beforeEach injects @Mock fields, leaving them null.
     private PayrollService service() {
         return new PayrollService(payrollRecordRepository, employeeRepository, storageService, auditLogService,
-                leaveRequestRepository);
+                leaveRequestRepository, notificationService);
     }
 
     private Employee employee(long id, BigDecimal baseSalary, BigDecimal hourlyRate) {
@@ -200,6 +204,52 @@ class PayrollServiceTest {
 
         assertThat(responses.get(0).grossAmount()).isEqualByComparingTo("20000.00");
         assertThat(responses.get(0).deductions()).isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    void generate_notifiesTheEmployee_inAppAndEmailWithPdf() throws Exception {
+        Employee employee = employee(1L, new BigDecimal("44000.00"), null);
+        employee.getUser().setEmail("emp1@moriah.test");
+        when(employeeRepository.findAllWithUserByIdIn(List.of(1L))).thenReturn(List.of(employee));
+        when(payrollRecordRepository.findEmployeeIdsAlreadyGenerated(LocalDate.of(2026, 3, 1), List.of(1L)))
+                .thenReturn(List.of());
+        when(storageService.uploadTrusted(anyString(), any(), anyString())).thenReturn("payslips/EMP-001/2026-03.pdf");
+        when(storageService.presignedGetUrl(anyString(), anyString(), any())).thenReturn(new URL("https://s3.example.com/x"));
+
+        GeneratePayrollRequest request = new GeneratePayrollRequest(LocalDate.of(2026, 3, 1), 22,
+                List.of(new PayrollLineRequest(1L, 22, null, null)));
+
+        service().generate(request, "hr-uuid", 9L);
+
+        verify(notificationService).enqueueNow(eq(1L),
+                eq(com.moriah.skillhub.common.notification.NotificationChannel.IN_APP), eq("PAYSLIP_READY"), any());
+        verify(notificationService).enqueueNow(eq(1L),
+                eq(com.moriah.skillhub.common.notification.NotificationChannel.EMAIL), eq("PAYSLIP_READY"), any());
+    }
+
+    @Test
+    void listMine_returnsCallersOwnPayslipsNewestFirst() throws Exception {
+        Employee employee = employee(1L, new BigDecimal("50000.00"), null);
+        com.moriah.skillhub.hr.entity.PayrollRecord record = new com.moriah.skillhub.hr.entity.PayrollRecord();
+        record.setId(7L);
+        record.setEmployee(employee);
+        record.setPeriodMonth(LocalDate.of(2026, 3, 1));
+        record.setWorkingDays(22);
+        record.setPresentDays(22);
+        record.setGrossAmount(new BigDecimal("50000.00"));
+        record.setDeductions(BigDecimal.ZERO);
+        record.setNetAmount(new BigDecimal("50000.00"));
+        record.setPayslipKey("payslips/EMP-001/2026-03.pdf");
+        record.setStatus(PayrollStatus.FINALISED);
+        when(payrollRecordRepository.findByEmployeeUserIdOrderByPeriodMonthDesc(eq(1L), any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(record)));
+        when(storageService.presignedGetUrl(anyString(), anyString(), any())).thenReturn(new URL("https://s3.example.com/x"));
+
+        var page = service().listMine(1L, "emp-uuid", org.springframework.data.domain.PageRequest.of(0, 24));
+
+        assertThat(page.content()).hasSize(1);
+        assertThat(page.content().get(0).payslipDownloadUrl()).isEqualTo("https://s3.example.com/x");
+        assertThat(page.content().get(0).netAmount()).isEqualByComparingTo("50000.00");
     }
 
     @Test

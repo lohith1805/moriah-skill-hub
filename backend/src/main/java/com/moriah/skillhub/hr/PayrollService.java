@@ -8,6 +8,8 @@ import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
+import com.moriah.skillhub.common.notification.NotificationChannel;
+import com.moriah.skillhub.common.notification.NotificationService;
 import com.moriah.skillhub.common.storage.StorageService;
 import com.moriah.skillhub.common.util.Constants;
 import com.moriah.skillhub.hr.dto.GeneratePayrollRequest;
@@ -36,6 +38,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -75,6 +78,7 @@ public class PayrollService {
     private final StorageService storageService;
     private final AuditLogService auditLogService;
     private final LeaveRequestRepository leaveRequestRepository;
+    private final NotificationService notificationService;
 
     /** Feature 23 hardening: deliberately <b>not</b> {@code @Transactional} any more — {@link
      * #generateOne} calls {@code storageService.uploadTrusted} (an outbound S3 call) once per
@@ -165,7 +169,56 @@ public class PayrollService {
         auditLogService.record(callerUserId, "PAYROLL_GENERATED", "PayrollRecord", record.getId(), null, record.getNetAmount());
         log.info("[hr/payroll] generated payroll for employee {} period {}", employee.getEmployeeCode(), request.periodMonth());
 
+        notifyPayslipReady(employee, record, pdfBytes);
         return toResponse(record, callerUuid);
+    }
+
+    /** Tells the employee their payslip is ready: an in-app notification, plus an email with the
+     * PDF attached (the email only actually leaves once SendGrid is configured — see {@code
+     * EmailDispatcher}). Uses {@code enqueueNow}, not {@code enqueueAfterCommit}: the payslip row
+     * is already committed by the time this runs ({@link #generateOne} deliberately holds no
+     * ambient transaction — feature 23 hardening). A notification failure never breaks payroll. */
+    private void notifyPayslipReady(Employee employee, PayrollRecord record, byte[] payslipPdf) {
+        Long userId = employee.getUser().getId();
+        String period = PERIOD_KEY_FORMAT.format(record.getPeriodMonth());
+        try {
+            notificationService.enqueueNow(userId, NotificationChannel.IN_APP, "PAYSLIP_READY", Map.of(
+                    "periodMonth", period,
+                    "netAmount", record.getNetAmount().toPlainString(),
+                    "employeeCode", employee.getEmployeeCode()));
+        } catch (RuntimeException e) {
+            log.warn("[hr/payroll] in-app payslip notification failed for {} {}: {}",
+                    employee.getEmployeeCode(), period, e.getMessage());
+        }
+        String email = employee.getUser().getEmail();
+        if (email != null && !email.isBlank()) {
+            try {
+                notificationService.enqueueNow(userId, NotificationChannel.EMAIL, "PAYSLIP_READY", Map.of(
+                        "to", email,
+                        "subject", "Your payslip for " + period,
+                        "body", "Hi " + employee.getUser().getFullName() + ",\n\n"
+                                + "Your payslip for " + period + " is attached. Net pay: "
+                                + record.getNetAmount().toPlainString() + ".\n\n"
+                                + "You can also download it any time from My Payslips in the portal.\n\n"
+                                + "— Moriah Skill Hub HR",
+                        "attachmentBase64", Base64.getEncoder().encodeToString(payslipPdf),
+                        "attachmentFilename", employee.getEmployeeCode() + "-" + period + ".pdf",
+                        "attachmentContentType", "application/pdf"));
+            } catch (RuntimeException e) {
+                log.warn("[hr/payroll] email payslip notification failed for {} {}: {}",
+                        employee.getEmployeeCode(), period, e.getMessage());
+            }
+        }
+    }
+
+    /** {@code GET /api/v1/hr/payroll/me} — the caller's own payslips, newest first. Any
+     * authenticated user; a caller with no {@code employees} row gets an empty page. Presigns
+     * each payslip as the caller ({@code OwnershipGuard#canAccessPayslip} grants an employee
+     * their own {@code payslips/{code}/...} key). */
+    @Transactional(readOnly = true)
+    public PageResponse<PayrollRecordResponse> listMine(Long callerUserId, String callerUuid, Pageable pageable) {
+        return PageResponse.from(payrollRecordRepository.findByEmployeeUserIdOrderByPeriodMonthDesc(callerUserId, pageable)
+                .map(record -> toResponse(record, callerUuid)));
     }
 
     private BigDecimal computeGrossAmount(Employee employee, PayrollLineRequest line, int workingDays,
