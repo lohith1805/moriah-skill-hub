@@ -32,7 +32,7 @@ export default function TrainerSprintPlanning() {
   const [taskSubmitting, setTaskSubmitting] = useState(false);
 
   const load = () => Promise.all([
-    getBatches().catch(() => []),
+    getBatches({ scope: "mine" }).catch(() => []),
     getSprints().catch(() => []),
     getStaffableClientProjects().catch(() => []),
     getSprintTasks().catch(() => []),

@@ -30,7 +30,7 @@ export default function TrainerGraduation() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    getBatches()
+    getBatches({ scope: "mine" })
       .then((b) => {
         setBatches(b);
         if (b.length) setBatchId(String(b[0].id));

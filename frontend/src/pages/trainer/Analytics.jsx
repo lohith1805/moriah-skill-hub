@@ -17,7 +17,7 @@ export default function TrainerAnalytics() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getBatches()
+    getBatches({ scope: "mine" })
       .then((b) => { setBatches(b); if (b.length) setBatchId(b[0].id); })
       .catch(() => setBatches([]));
   }, []);
@@ -43,7 +43,7 @@ export default function TrainerAnalytics() {
             <Select
               value={batchId}
               onChange={(e) => setBatchId(e.target.value)}
-              options={[{ value: "", label: "All batches" }, ...batches.map((b) => ({ value: b.id, label: b.name }))]}
+              options={[{ value: "", label: "All my batches" }, ...batches.map((b) => ({ value: b.id, label: b.name }))]}
               className="w-52"
             />
           )

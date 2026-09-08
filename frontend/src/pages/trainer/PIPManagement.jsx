@@ -72,7 +72,7 @@ export default function PIPManagement() {
     return { attendance, backlogTasks, quizAverage };
   };
 
-  const load = () => Promise.all([getPipCases().catch(() => []), getBatches().catch(() => [])])
+  const load = () => Promise.all([getPipCases().catch(() => []), getBatches({ scope: "mine" }).catch(() => [])])
     .then(([data, bList]) => {
       setCases(data);
       setBatches(bList);

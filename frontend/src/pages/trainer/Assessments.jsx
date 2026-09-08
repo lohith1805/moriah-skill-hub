@@ -47,7 +47,7 @@ export default function TrainerAssessments() {
   const loadCore = () => {
     setLoading(true);
     Promise.all([
-      getBatches().catch(() => []),
+      getBatches({ scope: "mine" }).catch(() => []),
       getQuestionBanks().catch(() => []),
       getPublishedAssessments().catch(() => []),
     ]).then(([b, bk, pub]) => {
@@ -217,7 +217,7 @@ export default function TrainerAssessments() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-3">
-                  <Select className="sm:max-w-xs" placeholder="All batches" options={batches.map((b) => ({ value: String(b.id), label: b.name }))} value={fBatch} onChange={(e) => setFBatch(e.target.value)} />
+                  <Select className="sm:max-w-xs" placeholder="All my batches" options={batches.map((b) => ({ value: String(b.id), label: b.name }))} value={fBatch} onChange={(e) => setFBatch(e.target.value)} />
                   <Select className="sm:max-w-xs" placeholder="All tracks" options={TRACKS} value={fTrack} onChange={(e) => setFTrack(e.target.value)} />
                   <Select className="sm:max-w-xs" placeholder="All assessments" options={published.map((a) => ({ value: String(a.id), label: a.title }))} value={fAssessment} onChange={(e) => setFAssessment(e.target.value)} />
                 </div>

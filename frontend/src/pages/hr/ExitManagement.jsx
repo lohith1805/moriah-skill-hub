@@ -26,6 +26,9 @@ import {
   DISCIPLINARY_STATUSES,
   DEFAULT_EXIT_CHECKLIST,
 } from "../../services/hrService";
+// PIP records are a real backend resource (GET /api/v1/pip); HR_MANAGER is
+// authorised. Same reader the Trainer PIP screen uses.
+import { getPipCases } from "../../services/trainerService";
 
 const EXIT_STATUS_TONE = { INITIATED: "gold", IN_PROGRESS: "warning", COMPLETED: "success" };
 const DISC_STATUS_TONE = { OPEN: "danger", ACKNOWLEDGED: "warning", RESOLVED: "success", ESCALATED: "danger" };
@@ -82,12 +85,11 @@ export default function HrExitManagement() {
       .catch((e) => notify(e.message || "Could not load exit / disciplinary data.", { type: "error" }))
       .finally(() => setLoading(false));
 
-    try {
-      const rawPip = localStorage.getItem("msh_pip_records");
-      setPipRecords(rawPip ? JSON.parse(rawPip) : []);
-    } catch {
-      setPipRecords([]);
-    }
+    getPipCases()
+      .then((rows) =>
+        setPipRecords(rows.filter((p) => p.backendStatus === "TRIGGERED" || p.backendStatus === "IN_PROGRESS"))
+      )
+      .catch(() => setPipRecords([]));
   };
 
   useEffect(() => {
@@ -278,7 +280,7 @@ export default function HrExitManagement() {
               return (
                 <div className="flex flex-col gap-4 text-left">
                   <div className="p-3 bg-amber-50 rounded-lg border border-amber-200 text-amber-900 text-xs">
-                    ⚡ <strong>Synced with the Trainer PIP engine</strong> (local) — active Performance Improvement Plans flagged by PMs/Trainers.
+                    ⚡ <strong>Live from the PIP engine</strong> — open Performance Improvement Plans (triggered by the nightly rule engine, reviewed by PMs/Trainers). Read-only here.
                   </div>
                   {pipRecords.length === 0 ? (
                     <p className="text-sm text-ink-400 py-8 text-center">No active PIP cases.</p>
@@ -286,10 +288,12 @@ export default function HrExitManagement() {
                     <Table
                       data={pipRecords}
                       columns={[
-                        { key: "studentName", header: "Student", className: "text-left font-medium text-ink-900" },
-                        { key: "triggerReason", header: "Trigger", className: "text-left" },
-                        { key: "startDate", header: "Start date", className: "text-left" },
-                        { key: "status", header: "Status", className: "text-left", render: (r) => <Badge tone={r.status === "Active" ? "warning" : "success"}>{r.status}</Badge> },
+                        { key: "student", header: "Student", className: "text-left font-medium text-ink-900" },
+                        { key: "batch", header: "Batch", className: "text-left", render: (r) => r.batch || "—" },
+                        { key: "reason", header: "Trigger", className: "text-left" },
+                        { key: "severity", header: "Severity", className: "text-left", render: (r) => <Badge tone={/high/i.test(r.severity) ? "danger" : "warning"}>{r.severity || "—"}</Badge> },
+                        { key: "startDate", header: "Start date", className: "text-left", render: (r) => r.startDate || "—" },
+                        { key: "status", header: "Status", className: "text-left", render: (r) => <Badge tone="warning">{r.status}</Badge> },
                       ]}
                     />
                   )}

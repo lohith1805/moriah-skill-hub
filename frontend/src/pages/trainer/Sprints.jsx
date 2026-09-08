@@ -44,7 +44,7 @@ export default function Sprints() {
   const [taskErrors, setTaskErrors] = useState({});
 
   const load = (selectId = null) =>
-    Promise.all([getBatches().catch(() => []), getSprints().catch(() => [])])
+    Promise.all([getBatches({ scope: "mine" }).catch(() => []), getSprints().catch(() => [])])
       .then(([b, s]) => {
         setBatches(b);
         setSprints(s);

@@ -1,5 +1,6 @@
 import { mockRequest, apiClient } from "./apiClient";
 import { logAudit, AUDIT_CATEGORIES } from "../utils/auditLog";
+import { getPersistedUser } from "./authService";
 
 // ---------------------------------------------------------------------------
 // WIRED to the backend (this session): batch list + create (/api/v1/batches),
@@ -89,9 +90,17 @@ export async function assignBatchProjects(batchId, projectIds) {
 
 // GET /api/v1/batches — TRAINER_PM/ADMIN see every batch (a STUDENT token would
 // see only enrolled). `health` is null (no backend field); the table copes.
-export async function getBatches() {
-  const res = await apiClient.get("/batches", { size: 100 });
-  return asRows(res).map(toFeBatch);
+// `scope: "mine"` narrows to the batches the current user is PM of — used by the
+// per-batch work screens (sprints, standups, analytics, …) so a second PM isn't
+// offered batches they'd only get "you are not PM of this batch" on.
+export async function getBatches({ scope } = {}) {
+  const res = await apiClient.get("/batches", { size: 200 });
+  const rows = asRows(res).map(toFeBatch);
+  if (scope === "mine") {
+    const me = getPersistedUser();
+    return me?.uuid ? rows.filter((b) => b.pmUuid === me.uuid) : rows;
+  }
+  return rows;
 }
 
 // GET /api/v1/batches/pending-allocations — students who paid for a batch plan
