@@ -82,6 +82,15 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
             """)
     List<Long> findDistinctCompletedProjectIds(@Param("userId") Long userId);
 
+    /** {@code pip/PipService#progress} — the still-open tasks assigned to a student on a PIP, so
+     * the recovery-progress panel can list "what you still owe" (empty for e.g. an attendance PIP
+     * where the student's task board is already clear). Read directly from {@code pip} rather than
+     * through {@code sprint/TaskService} to avoid a {@code TaskService -> TaskPullGuard ->
+     * PipService -> TaskService} bean cycle — the same shared-kernel pragmatism {@code
+     * SprintService} uses to read {@code BatchRepository} directly. */
+    @EntityGraph(attributePaths = "assignedTo")
+    List<Task> findByAssignedToIdAndStatusInOrderByDueAtAsc(Long assignedToId, Collection<TaskStatus> statuses);
+
     /** {@code SprintService#taskStatusCountsForBatch}'s backing query — FRS MSH-FR-PM-02/
      * MSH-FR-BA-03: task-level progress (counts per status), not just the story-point rollup
      * {@code SprintProgressProjection} already carries. Aggregate counts only — no task title,

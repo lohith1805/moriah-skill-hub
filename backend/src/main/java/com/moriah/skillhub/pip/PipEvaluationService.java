@@ -5,12 +5,19 @@ import com.moriah.skillhub.batch.entity.Batch;
 import com.moriah.skillhub.batch.entity.BatchStudentStatus;
 import com.moriah.skillhub.batch.repository.BatchRepository;
 import com.moriah.skillhub.common.audit.AuditLogService;
+import com.moriah.skillhub.common.exception.BusinessException;
+import com.moriah.skillhub.common.exception.ErrorCode;
+import com.moriah.skillhub.common.exception.ResourceNotFoundException;
 import com.moriah.skillhub.common.notification.NotificationChannel;
 import com.moriah.skillhub.common.notification.NotificationService;
 import com.moriah.skillhub.common.util.Constants;
 import com.moriah.skillhub.metrics.StudentMetricsService;
 import com.moriah.skillhub.metrics.dto.StudentMetricProjection;
+import com.moriah.skillhub.pip.dto.CreatePipRecordRequest;
+import com.moriah.skillhub.pip.dto.PipMilestoneResponse;
+import com.moriah.skillhub.pip.dto.PipRecordResponse;
 import com.moriah.skillhub.pip.entity.PipMilestone;
+import com.moriah.skillhub.pip.entity.PipMilestoneStatus;
 import com.moriah.skillhub.pip.entity.PipRecord;
 import com.moriah.skillhub.pip.entity.PipRule;
 import com.moriah.skillhub.pip.entity.PipRuleCode;
@@ -20,6 +27,7 @@ import com.moriah.skillhub.pip.engine.PipRuleEvaluator;
 import com.moriah.skillhub.pip.repository.PipMilestoneRepository;
 import com.moriah.skillhub.pip.repository.PipRecordRepository;
 import com.moriah.skillhub.pip.repository.PipRuleRepository;
+import com.moriah.skillhub.submission.WeeklyReviewService;
 import com.moriah.skillhub.user.UserService;
 import com.moriah.skillhub.user.entity.RoleCode;
 import com.moriah.skillhub.user.entity.User;
@@ -29,6 +37,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -81,7 +90,11 @@ public class PipEvaluationService {
     private final UserService userService;
     private final AuditLogService auditLogService;
     private final NotificationService notificationService;
+    private final WeeklyReviewService weeklyReviewService;
+    private final PipClearanceProperties pipClearanceProperties;
     private final List<PipRuleEvaluator> evaluators;
+
+    private static final List<PipStatus> OPEN_STATUSES = List.of(PipStatus.TRIGGERED, PipStatus.IN_PROGRESS);
 
     /** Audit 2026-08-31 (M7): a PIP window's start/end dates must be computed in the jobs' zone —
      * on a UTC host the 02:00 IST run's {@code LocalDate.now()} is the previous calendar day, so
@@ -183,6 +196,121 @@ public class PipEvaluationService {
         auditLogService.record(null, "PIP_TRIGGERED", "PipRecord", record.getId(), null, record.getStatus());
 
         notifyTrigger(record, hrUserIds);
+    }
+
+    /** {@code POST /api/v1/pip} — a PM raises a PIP by hand for a qualitative concern the six
+     * nightly rules don't detect. Same "record + one milestone + ON_PIP + audit + notify"
+     * sequence as {@link #fire}, but with a real {@code callerUserId} on the audit row and the
+     * PM's own reason/severity instead of an evaluator's. */
+    @Transactional
+    public PipRecordResponse createManual(Long callerUserId, CreatePipRecordRequest request) {
+        User student = userRepository.findByUuid(request.studentUuid())
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.USER_NOT_FOUND, request.studentUuid()));
+        Batch batch = batchRepository.findById(request.batchId())
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.BATCH_NOT_FOUND, request.batchId()));
+        batchService.requireOwnerOrAdmin(callerUserId, batch);
+        if (pipRecordRepository.existsByOpenUserId(student.getId())) {
+            throw new BusinessException(ErrorCode.PIP_ALREADY_OPEN);
+        }
+
+        LocalDate today = LocalDate.now(ZoneId.of(jobsZone));
+        PipRecord record = new PipRecord();
+        record.setUser(student);
+        record.setBatch(batch);
+        record.setRuleCode(request.ruleCode());
+        record.setTriggerReason(request.reason());
+        record.setSeverity(request.severity());
+        record.setTriggeredAt(Instant.now());
+        record.setStartDate(today);
+        record.setEndDate(today.plusDays(Constants.PIP_RECORD_DURATION_DAYS));
+        record.setStatus(PipStatus.TRIGGERED);
+        record.setBlocksTaskPull(request.ruleCode() == PipRuleCode.PROJECT_DELAY);
+        record = pipRecordRepository.save(record);
+
+        PipMilestone milestone = new PipMilestone();
+        milestone.setPipRecord(record);
+        milestone.setTitle(request.ruleCode().milestoneTitle());
+        milestone.setDescription(request.reason());
+        milestone.setDueDate(today.plusDays(Constants.PIP_MILESTONE_DUE_DAYS));
+        pipMilestoneRepository.save(milestone);
+
+        batchService.updatePipStatus(batch.getId(), student.getId(), BatchStudentStatus.ON_PIP);
+        auditLogService.record(callerUserId, "PIP_TRIGGERED", "PipRecord", record.getId(), null, record.getStatus());
+        notifyTrigger(record, userService.findUserIdsByRole(RoleCode.HR_MANAGER));
+
+        return toRecordResponse(record, List.of(milestone));
+    }
+
+    /** The nightly job's close pass (feature 17 gap): every still-open PIP whose 15-day window
+     * has fully elapsed is auto-CLEARED if the student now meets the exact criteria {@code POST
+     * /pip/{id}/review} enforces (task completion ≥ target, no unsatisfactory review since start)
+     * AND every recovery milestone is done — the "the PM forgot but the student recovered" safety
+     * net. If the window elapsed and the student has NOT recovered, the record stays open (a PM
+     * still needs to TERMINATE / REASSIGN) and the PM gets one escalation notice the day after
+     * the window closes. Never auto-terminates. */
+    @Transactional
+    public int autoResolveElapsed() {
+        LocalDate today = LocalDate.now(ZoneId.of(jobsZone));
+        List<PipRecord> elapsed = pipRecordRepository.findByStatusInAndEndDateBefore(OPEN_STATUSES, today);
+        int resolved = 0;
+        for (PipRecord record : elapsed) {
+            List<PipMilestone> milestones = pipMilestoneRepository.findByPipRecordId(record.getId());
+            boolean allMilestonesDone = !milestones.isEmpty()
+                    && milestones.stream().allMatch(m -> m.getStatus() == PipMilestoneStatus.COMPLETED);
+            boolean taskOk = studentMetricsService.metricsFor(record.getUser().getId(), record.getBatch().getId())
+                    .map(m -> m.taskCompletionPercent() != null && m.taskCompletionPercent()
+                            .compareTo(BigDecimal.valueOf(pipClearanceProperties.minTaskCompletionPercent())) >= 0)
+                    .orElse(false);
+            boolean reviewOk = !weeklyReviewService.hasUnsatisfactoryReviewSince(
+                    record.getUser().getId(), record.getStartDate());
+
+            if (allMilestonesDone && taskOk && reviewOk) {
+                PipStatus previous = record.getStatus();
+                record.setStatus(PipStatus.CLEARED);
+                record.setReviewedBy(null); // system, not a PM
+                record.setReviewNotes("Auto-cleared: 15-day window elapsed with every recovery milestone complete "
+                        + "and all clearance criteria met.");
+                record.setOutcomeAt(Instant.now());
+                batchService.updatePipStatus(record.getBatch().getId(), record.getUser().getId(),
+                        BatchStudentStatus.ACTIVE);
+                auditLogService.record(null, "PIP_AUTO_CLEARED", "PipRecord", record.getId(),
+                        previous, PipStatus.CLEARED);
+                notifyOutcome(record, "PIP_AUTO_CLEARED");
+                resolved++;
+            } else if (record.getEndDate().equals(today.minusDays(1))) {
+                // Escalate exactly once — the first day after the window closes.
+                notifyOutcome(record, "PIP_WINDOW_ELAPSED");
+            }
+        }
+        return resolved;
+    }
+
+    /** {@code PIP_AUTO_CLEARED} -> student + PM; {@code PIP_WINDOW_ELAPSED} -> PM only. */
+    private void notifyOutcome(PipRecord record, String templateCode) {
+        Map<String, Object> payload = Map.of(
+                "studentUuid", record.getUser().getUuid(),
+                "studentName", record.getUser().getFullName(),
+                "ruleCode", record.getRuleCode().name());
+        Long pmUserId = record.getBatch().getPm().getId();
+        notificationService.enqueueAfterCommit(pmUserId, NotificationChannel.IN_APP, templateCode, payload);
+        if ("PIP_AUTO_CLEARED".equals(templateCode)) {
+            notificationService.enqueueAfterCommit(record.getUser().getId(), NotificationChannel.IN_APP, templateCode, payload);
+        }
+    }
+
+    private PipRecordResponse toRecordResponse(PipRecord record, List<PipMilestone> milestones) {
+        List<PipMilestoneResponse> milestoneResponses = milestones.stream()
+                .map(m -> new PipMilestoneResponse(m.getId(), m.getTitle(), m.getDescription(), m.getDueDate(),
+                        m.getStatus(), m.getCompletedAt(),
+                        m.getVerifiedBy() == null ? null : m.getVerifiedBy().getUuid()))
+                .toList();
+        return new PipRecordResponse(
+                record.getId(), record.getUser().getUuid(), record.getUser().getFullName(),
+                record.getBatch().getId(), record.getBatch().getName(), record.getRuleCode(),
+                record.getTriggerReason(), record.getSeverity(), record.getTriggeredAt(),
+                record.getStartDate(), record.getEndDate(), record.getStatus(), record.isBlocksTaskPull(),
+                record.getReviewedBy() == null ? null : record.getReviewedBy().getUuid(),
+                record.getReviewNotes(), record.getOutcomeAt(), milestoneResponses);
     }
 
     /** "notifications to student, PM and HR in afterCommit" (build-plan.md) — same

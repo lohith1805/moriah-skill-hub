@@ -75,6 +75,10 @@ class PipEvaluationServiceTest {
     private AuditLogService auditLogService;
     @Mock
     private NotificationService notificationService;
+    @Mock
+    private com.moriah.skillhub.submission.WeeklyReviewService weeklyReviewService;
+
+    private final PipClearanceProperties pipClearanceProperties = new PipClearanceProperties(85, 85);
 
     private static final List<PipRuleEvaluator> REAL_EVALUATORS = List.of(
             new AttendanceRule(), new ProjectDelayRule(), new AssignmentMissedRule(),
@@ -83,7 +87,8 @@ class PipEvaluationServiceTest {
     private PipEvaluationService service() {
         PipEvaluationService service = new PipEvaluationService(studentMetricsService, pipRecordRepository,
                 pipRuleRepository, pipMilestoneRepository, batchService, userRepository, batchRepository,
-                userService, auditLogService, notificationService, REAL_EVALUATORS);
+                userService, auditLogService, notificationService, weeklyReviewService, pipClearanceProperties,
+                REAL_EVALUATORS);
         org.springframework.test.util.ReflectionTestUtils.setField(service, "jobsZone", "Asia/Kolkata");
         return service;
     }

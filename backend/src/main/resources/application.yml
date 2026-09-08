@@ -258,6 +258,9 @@ moriah:
       # build-plan.md feature 17: "clearance requires task completion >= 85%." Not a pip_rules row
       # (no seventh "clearance" rule code exists) — see PipClearanceProperties' own Javadoc.
       min-task-completion-percent: ${PIP_CLEARANCE_MIN_TASK_COMPLETION_PERCENT:85}
+      # Advisory attendance bar shown on the recovery-progress panel — not part of the hard
+      # CLEARED gate (task completion + weekly review), just a "good sign" indicator.
+      min-attendance-percent: ${PIP_CLEARANCE_MIN_ATTENDANCE_PERCENT:85}
   assessment:
     # build-plan.md feature 14: not part of the nightly 01:30->02:00 chain — a quiz attempt's own
     # duration_minutes is what bounds staleness, not a fixed daily slot, so this runs frequently

@@ -4,7 +4,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * {@code minTaskCompletionPercent} — {@code POST /pip/{id}/review}'s clearance gate (build-plan.md
- * feature 17: "clearance requires task completion ≥ 85%"). Externalized rather than the hardcoded
+ * feature 17: "clearance requires task completion ≥ 85%"). {@code minAttendancePercent} is the
+ * advisory attendance bar the recovery-progress panel shows against (not part of the hard
+ * CLEARED gate, which stays task-completion + weekly-review only). Externalized rather than the hardcoded
  * {@code Constants.PIP_CLEARANCE_MIN_TASK_COMPLETION_PERCENT} an earlier draft used — a `/review`
  * finding against AGENTS.md's "PIP thresholds are rows in pip_rules, not Java" rule. This isn't
  * one of the six {@code pip_rules} rows (that table has no seventh "clearance" code, and none of
@@ -15,5 +17,5 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * specifically.
  */
 @ConfigurationProperties(prefix = "moriah.pip.clearance")
-public record PipClearanceProperties(int minTaskCompletionPercent) {
+public record PipClearanceProperties(int minTaskCompletionPercent, int minAttendancePercent) {
 }

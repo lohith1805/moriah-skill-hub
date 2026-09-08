@@ -3,7 +3,10 @@ package com.moriah.skillhub.pip;
 import com.moriah.skillhub.common.dto.ApiResponse;
 import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.common.security.CurrentUser;
+import com.moriah.skillhub.pip.dto.CreatePipMilestoneRequest;
+import com.moriah.skillhub.pip.dto.CreatePipRecordRequest;
 import com.moriah.skillhub.pip.dto.PipMilestoneResponse;
+import com.moriah.skillhub.pip.dto.PipProgressResponse;
 import com.moriah.skillhub.pip.dto.PipRecordResponse;
 import com.moriah.skillhub.pip.dto.PipRuleResponse;
 import com.moriah.skillhub.pip.dto.ReviewPipRequest;
@@ -16,8 +19,10 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -41,12 +46,30 @@ import java.util.List;
 public class PipController {
 
     private final PipService pipService;
+    private final PipEvaluationService pipEvaluationService;
 
     @GetMapping("/api/v1/pip/me")
     @PreAuthorize("hasRole('STUDENT')")
     @Operation(summary = "The caller's own currently-open PIP record")
     public ResponseEntity<ApiResponse<PipRecordResponse>> me(@CurrentUser Long callerUserId) {
         return ResponseEntity.ok(ApiResponse.success(pipService.me(callerUserId)));
+    }
+
+    @GetMapping("/api/v1/pip/me/progress")
+    @PreAuthorize("hasRole('STUDENT')")
+    @Operation(summary = "The caller's own recovery-progress panel")
+    public ResponseEntity<ApiResponse<PipProgressResponse>> myProgress(@CurrentUser Long callerUserId) {
+        return ResponseEntity.ok(ApiResponse.success(pipService.myProgress(callerUserId)));
+    }
+
+    @PostMapping("/api/v1/pip")
+    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @Operation(summary = "Raise a PIP by hand for a qualitative concern the nightly rules miss")
+    public ResponseEntity<ApiResponse<PipRecordResponse>> createManual(
+            @Valid @RequestBody CreatePipRecordRequest request, @CurrentUser Long callerUserId) {
+
+        PipRecordResponse response = pipEvaluationService.createManual(callerUserId, request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
     }
 
     @GetMapping("/api/v1/pip")
@@ -60,6 +83,27 @@ public class PipController {
         return ResponseEntity.ok(ApiResponse.success(pipService.list(batchId, status, pageable)));
     }
 
+    @PostMapping("/api/v1/pip/{id}/milestones")
+    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @Operation(summary = "Add a recovery task to a PIP record's checklist")
+    public ResponseEntity<ApiResponse<PipMilestoneResponse>> addMilestone(
+            @PathVariable Long id, @Valid @RequestBody CreatePipMilestoneRequest request,
+            @CurrentUser Long callerUserId) {
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success(pipService.addMilestone(callerUserId, id, request)));
+    }
+
+    @DeleteMapping("/api/v1/pip/{id}/milestones/{milestoneId}")
+    @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
+    @Operation(summary = "Remove a still-pending recovery task")
+    public ResponseEntity<ApiResponse<Void>> deleteMilestone(
+            @PathVariable Long id, @PathVariable Long milestoneId, @CurrentUser Long callerUserId) {
+
+        pipService.deleteMilestone(callerUserId, id, milestoneId);
+        return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
     @PostMapping("/api/v1/pip/{id}/milestones/{milestoneId}/complete")
     @PreAuthorize("hasAnyRole('TRAINER_PM','ADMIN')")
     @Operation(summary = "Mark a PIP milestone complete")
@@ -67,6 +111,15 @@ public class PipController {
             @PathVariable Long id, @PathVariable Long milestoneId, @CurrentUser Long callerUserId) {
 
         return ResponseEntity.ok(ApiResponse.success(pipService.completeMilestone(callerUserId, id, milestoneId)));
+    }
+
+    @GetMapping("/api/v1/pip/{id}/progress")
+    @PreAuthorize("hasAnyRole('TRAINER_PM','HR_MANAGER','ADMIN')")
+    @Operation(summary = "The recovery-progress panel for one PIP record")
+    public ResponseEntity<ApiResponse<PipProgressResponse>> progress(
+            @PathVariable Long id, @CurrentUser Long callerUserId) {
+
+        return ResponseEntity.ok(ApiResponse.success(pipService.progress(callerUserId, id)));
     }
 
     @PostMapping("/api/v1/pip/{id}/review")

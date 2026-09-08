@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.List;
 
 /** build-plan.md feature 12: "writes a weekly_reviews row ... the data source for the
  * REVIEW_FAILED PIP rule — the rule is unimplementable without it." {@code BatchRepository} is
@@ -59,6 +60,17 @@ public class WeeklyReviewService {
         weeklyReviewRepository.save(review);
 
         return toResponse(review);
+    }
+
+    /** {@code GET /api/v1/reviews/weekly?batchId=&weekStart=} — every rating filed for one batch
+     * in one week, for the trainer's grid. Ownership: a PM only reads their own batch's ratings. */
+    @Transactional(readOnly = true)
+    public List<WeeklyReviewResponse> list(Long callerUserId, Long batchId, LocalDate weekStart) {
+        Batch batch = requireBatch(batchId);
+        batchService.requireOwnerOrAdmin(callerUserId, batch);
+        return weeklyReviewRepository.findByBatchIdAndWeekStart(batchId, weekStart).stream()
+                .map(this::toResponse)
+                .toList();
     }
 
     /** {@code PipService}'s clearance check (feature 17) — "no unsatisfactory review since the

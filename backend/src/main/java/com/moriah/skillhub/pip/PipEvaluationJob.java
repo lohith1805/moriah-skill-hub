@@ -43,9 +43,11 @@ public class PipEvaluationJob {
         }
         JobRun run = jobRunTracker.start(JOB_NAME);
         try {
-            int count = pipEvaluationService.evaluate();
-            jobRunTracker.succeed(run.getId(), count);
-            log.info("[{}] triggered {} new PIP record(s)", JOB_NAME, count);
+            int triggered = pipEvaluationService.evaluate();
+            int autoCleared = pipEvaluationService.autoResolveElapsed();
+            jobRunTracker.succeed(run.getId(), triggered + autoCleared);
+            log.info("[{}] triggered {} new PIP record(s), auto-cleared {} elapsed record(s)",
+                    JOB_NAME, triggered, autoCleared);
         } catch (Exception e) {
             log.error("[{}] failed", JOB_NAME, e);
             jobRunTracker.fail(run.getId(), e.getMessage());

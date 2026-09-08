@@ -66,11 +66,15 @@ class PipServiceTest {
     @Mock
     private AuditLogService auditLogService;
 
-    private final PipClearanceProperties pipClearanceProperties = new PipClearanceProperties(85);
+    @Mock
+    private com.moriah.skillhub.sprint.repository.TaskRepository taskRepository;
+
+    private final PipClearanceProperties pipClearanceProperties = new PipClearanceProperties(85, 85);
 
     private PipService service() {
         return new PipService(pipRecordRepository, pipRuleRepository, pipMilestoneRepository, batchService,
-                studentMetricsService, weeklyReviewService, pipClearanceProperties, userRepository, auditLogService);
+                studentMetricsService, weeklyReviewService, pipClearanceProperties, userRepository, auditLogService,
+                taskRepository);
     }
 
     private User user(long id, String uuid) {

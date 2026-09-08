@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -41,6 +42,12 @@ public interface PipRecordRepository extends JpaRepository<PipRecord, Long> {
 
     @EntityGraph(attributePaths = {"user", "batch"})
     Optional<PipRecord> findById(Long id);
+
+    /** {@code PipEvaluationService#autoResolveElapsed} — every still-open record whose 15-day
+     * window has fully elapsed ({@code endDate} strictly before today). Bounded to cohort members
+     * currently on a PIP, so no pagination. */
+    @EntityGraph(attributePaths = {"user", "batch"})
+    List<PipRecord> findByStatusInAndEndDateBefore(List<PipStatus> statuses, LocalDate date);
 
     /** {@code PipService#blocksPull}'s check, called from {@code sprint/TaskPullGuard} on every
      * {@code POST /tasks/{id}/pull} — the hottest path this feature has, so it needs a genuinely
