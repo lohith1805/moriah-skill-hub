@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
-  FileText, CheckCircle2, XCircle, Clock, UploadCloud, Eye, PartyPopper, ShieldCheck,
+  FileText, CheckCircle2, XCircle, Clock, UploadCloud, Eye, Download, PartyPopper, ShieldCheck,
 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
@@ -187,7 +187,21 @@ export default function OnboardingDocuments() {
                         <Badge tone="neutral">{isHrSection && !hrReview ? "In progress" : "Not uploaded"}</Badge>
                       )}
                       {doc?.downloadUrl && (
-                        <Button size="sm" variant="secondary" icon={Eye} onClick={() => setViewing(doc)}>View</Button>
+                        <>
+                          <Button size="sm" variant="secondary" icon={Eye} onClick={() => setViewing(doc)}>View</Button>
+                          <Button
+                            as="a"
+                            href={doc.downloadUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            download
+                            size="sm"
+                            variant="secondary"
+                            icon={Download}
+                          >
+                            Download
+                          </Button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -229,7 +243,19 @@ export default function OnboardingDocuments() {
       )}
 
       {/* Large document preview */}
-      <Modal open={!!viewing} onClose={() => setViewing(null)} title={viewing?.documentType?.replace(/_/g, " ") || "Document"} size="full">
+      <Modal
+        open={!!viewing}
+        onClose={() => setViewing(null)}
+        title={viewing?.documentType?.replace(/_/g, " ") || "Document"}
+        size="full"
+        footer={
+          viewing?.downloadUrl ? (
+            <Button as="a" href={viewing.downloadUrl} target="_blank" rel="noopener noreferrer" download icon={Download}>
+              Download
+            </Button>
+          ) : null
+        }
+      >
         {viewing?.downloadUrl ? (
           <iframe
             src={viewing.downloadUrl}

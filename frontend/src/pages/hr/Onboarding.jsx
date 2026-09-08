@@ -1,23 +1,16 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { UserPlus, FileCheck, Edit, FileCheck2 } from "lucide-react";
+import { UserPlus, FileCheck, FileCheck2 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
 import Table from "../../components/ui/Table";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
-import { Input, Select, Textarea } from "../../components/ui/FormField";
+import { Input, Select } from "../../components/ui/FormField";
 import { useToast } from "../../context/ToastContext";
 import { validateForm, required } from "../../utils/validators";
-import {
-  getEmployees,
-  getOnboardings,
-  createOnboarding,
-  updateOnboarding,
-  ONBOARDING_STATUSES,
-  DEFAULT_ONBOARDING_CHECKLIST,
-} from "../../services/hrService";
+import { getEmployees, getOnboardings, createOnboarding } from "../../services/hrService";
 
 const STATUS_TONE = {
   NOT_STARTED: "neutral",
@@ -26,7 +19,6 @@ const STATUS_TONE = {
   CANCELLED: "danger",
 };
 const humanize = (s) => (s || "").replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
-const progress = (list) => (list?.length ? `${list.filter((c) => c.done).length} / ${list.length}` : "0 / 0");
 
 export default function HrOnboarding() {
   const [employees, setEmployees] = useState([]);
@@ -37,7 +29,6 @@ export default function HrOnboarding() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [values, setValues] = useState({ employeeId: "", startDate: "", buddyUuid: "" });
-  const [editItem, setEditItem] = useState(null);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
 
@@ -77,41 +68,11 @@ export default function HrOnboarding() {
     }
   };
 
-  const openEdit = (row) => {
-    setEditItem({
-      ...row,
-      checklist: row.checklist?.length
-        ? row.checklist
-        : DEFAULT_ONBOARDING_CHECKLIST.map((label) => ({ label, done: false })),
-      buddyUuid: row.buddyUuid || "",
-    });
-  };
-
-  const toggleItem = (idx) =>
-    setEditItem((s) => ({
-      ...s,
-      checklist: s.checklist.map((c, i) => (i === idx ? { ...c, done: !c.done } : c)),
-    }));
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      await updateOnboarding(editItem.id, editItem);
-      notify("Onboarding record updated.", { type: "success" });
-      setEditItem(null);
-      load();
-    } catch (err) {
-      notify(err.message || "Could not update the onboarding record.", { type: "error" });
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Employee Onboarding"
-        subtitle="Track documentation, buddy assignment and the joining checklist for each new hire"
+        subtitle="Each new hire's onboarding documents — open Manage Documents to view, download, approve or reject them"
         breadcrumbs={[{ label: "Dashboard", to: "/hr/dashboard" }, { label: "Onboarding" }]}
         action={
           <Button icon={UserPlus} onClick={() => { setErrors({}); setModalOpen(true); }}>
@@ -138,7 +99,6 @@ export default function HrOnboarding() {
                 </div>
               ),
             },
-            { key: "checklist", header: "Checklist", className: "text-left", render: (r) => progress(r.checklist) },
             {
               key: "status",
               header: "Status",
@@ -150,7 +110,15 @@ export default function HrOnboarding() {
               header: "",
               className: "text-right",
               render: (r) => (
-                <Button size="sm" variant="secondary" icon={Edit} onClick={() => openEdit(r)}>Manage</Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon={FileCheck2}
+                  disabled={!r.userUuid}
+                  onClick={() => navigate(`/hr/employee-documents/${r.userUuid}`)}
+                >
+                  Manage Documents
+                </Button>
               ),
             },
           ]}
@@ -196,65 +164,6 @@ export default function HrOnboarding() {
             />
           </div>
         </form>
-      </Modal>
-
-      {/* Manage onboarding modal */}
-      <Modal
-        open={!!editItem}
-        onClose={() => setEditItem(null)}
-        title={editItem ? `Onboarding — ${editItem.name}` : "Onboarding"}
-        footer={
-          <>
-            {editItem?.userUuid && (
-              <Button variant="secondary" icon={FileCheck2}
-                onClick={() => navigate(`/hr/employee-documents/${editItem.userUuid}`)}>
-                Review Documents
-              </Button>
-            )}
-            <Button variant="secondary" onClick={() => setEditItem(null)} disabled={saving}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
-          </>
-        }
-      >
-        {editItem && (
-          <div className="flex flex-col gap-4 text-left font-sans">
-            <div className="grid sm:grid-cols-2 gap-4">
-              <Input
-                label="Start date"
-                type="date"
-                value={editItem.startDate || ""}
-                onChange={(e) => setEditItem((s) => ({ ...s, startDate: e.target.value }))}
-              />
-              <Select
-                label="Status"
-                options={ONBOARDING_STATUSES.map((t) => ({ value: t, label: humanize(t) }))}
-                value={editItem.status}
-                onChange={(e) => setEditItem((s) => ({ ...s, status: e.target.value }))}
-              />
-            </div>
-            <Input
-              label="Buddy UUID"
-              placeholder="another user's uuid"
-              value={editItem.buddyUuid}
-              onChange={(e) => setEditItem((s) => ({ ...s, buddyUuid: e.target.value }))}
-            />
-            <div className="flex flex-col gap-2">
-              <span className="text-sm font-medium text-ink-900">Joining checklist</span>
-              {editItem.checklist.map((c, i) => (
-                <label key={i} className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={c.done} onChange={() => toggleItem(i)} className="accent-primary-700" />
-                  {c.label}
-                </label>
-              ))}
-            </div>
-            <Textarea
-              label="Notes"
-              rows={3}
-              value={editItem.notes}
-              onChange={(e) => setEditItem((s) => ({ ...s, notes: e.target.value }))}
-            />
-          </div>
-        )}
       </Modal>
     </div>
   );
