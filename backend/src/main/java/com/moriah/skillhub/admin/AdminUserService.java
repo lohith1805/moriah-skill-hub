@@ -145,7 +145,9 @@ public class AdminUserService {
         User user = new User();
         user.setFullName(request.fullName());
         user.setEmail(request.email());
-        user.setPhone(request.phone());
+        // blank -> null: users.phone carries a UNIQUE index, and "" is a value, so a second
+        // phone-less invite would collide on the empty string. The update path already does this.
+        user.setPhone(blankToNull(request.phone()));
         user.setStatus(UserStatus.INVITED);
         userRepository.save(user);
 

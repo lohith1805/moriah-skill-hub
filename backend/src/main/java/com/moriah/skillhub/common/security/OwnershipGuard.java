@@ -66,8 +66,13 @@ public class OwnershipGuard {
     public boolean canAccessKey(String callerUuid, String key) {
         String[] segments = key.split("/", 3);
         boolean allowed;
-        if (key.startsWith("resumes/") || key.startsWith("hr-documents/")) {
+        if (key.startsWith("resumes/")) {
             allowed = segments.length >= 2 && segments[1].equals(callerUuid);
+        } else if (key.startsWith("hr-documents/")) {
+            // The uploading employee owns their onboarding doc; HR_MANAGER/ADMIN review
+            // everyone's (feature 19's HR document verification + onboarding screens) — the same
+            // "staff, or the resource's own owner" rule already used for payslips/ and hr-letters/.
+            allowed = segments.length >= 2 && (segments[1].equals(callerUuid) || isHrStaff(callerUuid));
         } else if (key.startsWith("projects/")) {
             allowed = segments.length >= 2 && canAccessProject(segments[1], callerUuid);
         } else if (key.startsWith("payslips/")) {
