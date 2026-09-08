@@ -15,10 +15,16 @@ import { validateForm, required } from "../../utils/validators";
 
 const DIFFICULTIES = ["Beginner", "Intermediate", "Advanced"].map((d) => ({ value: d, label: d }));
 const TRACKS = ["Full-Stack Development", "Data Analytics", "Product Design", "Backend Engineering"].map((t) => ({ value: t, label: t }));
-const STATUS_OPTIONS = [
-  { value: "Draft", label: "Draft" },
-  { value: "Published", label: "Published" }
-];
+// Editing a PUBLISHED/ARCHIVED project doesn't change it in place — the backend
+// copies it forward into a NEW version (and archives the current one), so a new
+// version identifier is required. Suggest the next one: bump a trailing number,
+// else append "-2".
+function bumpVersion(v) {
+  const s = String(v || "v1").trim();
+  const m = s.match(/^(.*?)(\d+)(\D*)$/);
+  if (m) return `${m[1]}${Number(m[2]) + 1}${m[3]}`;
+  return `${s}-2`;
+}
 
 const emptyProjectValues = {
   title: "",
@@ -109,6 +115,9 @@ export default function DeveloperProjects() {
       track: p.track || "",
       description: p.description || "",
       status: p.status,
+      version: p.version || "v1",
+      // pre-filled only for a published/archived edit, which forces a version bump
+      newVersion: p.status === "Draft" ? "" : bumpVersion(p.version),
       files: p.files || [],
       starterRepo: p.starterRepo || "",
       referenceSolution: p.referenceSolution || "",
@@ -121,15 +130,27 @@ export default function DeveloperProjects() {
     setEditModalOpen(true);
   };
 
+  const isPublishedEdit = editValues.status && editValues.status !== "Draft";
+
   const handleEditSubmit = async (e) => {
     e.preventDefault();
-    const validation = validateForm(editValues, { title: [required], stack: [required], difficulty: [required] });
+    const rules = { title: [required], stack: [required], difficulty: [required] };
+    if (isPublishedEdit) rules.newVersion = [required];
+    const validation = validateForm(editValues, rules);
     setErrors(validation);
     if (Object.keys(validation).length) return;
 
     try {
-      await updateProject(editingId, editValues);
-      notify("Project updated.", { type: "success", title: "Project Updated" });
+      // A draft is edited in place; a published/archived project is copied
+      // forward into a new version (the backend requires the identifier).
+      await updateProject(editingId, {
+        ...editValues,
+        version: isPublishedEdit ? editValues.newVersion.trim() : undefined,
+      });
+      notify(
+        isPublishedEdit ? `Published as ${editValues.newVersion.trim()} — the previous version is archived.` : "Project updated.",
+        { type: "success", title: "Project Updated" }
+      );
       setEditModalOpen(false);
       setEditingId(null);
       await reload();
@@ -298,9 +319,30 @@ export default function DeveloperProjects() {
           <div className="grid sm:grid-cols-3 gap-4">
             <Input label="Tech stack (Comma-separated)" required placeholder="React, Node.js, PostgreSQL" value={editValues.stack} onChange={(e) => setEditValues((v) => ({ ...v, stack: e.target.value }))} />
             <Select label="Track" placeholder="Not tied to a track" options={TRACKS} value={editValues.track} onChange={(e) => setEditValues((v) => ({ ...v, track: e.target.value }))} />
-            <Select label="Project Status" options={STATUS_OPTIONS} value={editValues.status} onChange={(e) => setEditValues((v) => ({ ...v, status: e.target.value }))} />
+            <div>
+              <label className="text-xs font-semibold text-ink-700">Current Status</label>
+              <p className="mt-1 text-sm text-ink-900">{editValues.status || "—"} · {editValues.version}</p>
+              <p className="text-[11px] text-ink-400 mt-0.5">Use “Publish” on the card to move a draft live.</p>
+            </div>
           </div>
-          
+
+          {isPublishedEdit && (
+            <div className="rounded-lg border border-warning-200 bg-warning-50 p-3">
+              <Input
+                label="New version identifier"
+                required
+                placeholder="e.g. v2"
+                value={editValues.newVersion}
+                onChange={(e) => setEditValues((v) => ({ ...v, newVersion: e.target.value }))}
+                error={errors.newVersion}
+              />
+              <p className="text-[11px] text-warning-800 mt-1.5">
+                This project is published. Saving creates a new version <strong>{editValues.newVersion || "…"}</strong> and archives{" "}
+                <strong>{editValues.version}</strong>. Anything already using {editValues.version} keeps pointing at it.
+              </p>
+            </div>
+          )}
+
           <Textarea label="Description & milestone objectives" value={editValues.description} onChange={(e) => setEditValues((v) => ({ ...v, description: e.target.value }))} rows={2} />
           
           {/* FRS-DEV-02 Repository Starters */}
