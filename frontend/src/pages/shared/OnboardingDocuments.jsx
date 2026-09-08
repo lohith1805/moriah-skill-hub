@@ -36,6 +36,12 @@ export default function OnboardingDocuments() {
   const { user } = useAuth();
   const { notify } = useToast();
   const hrReview = !!userUuid;
+  // Whose documents this page is for: the reviewed employee on the HR review
+  // route, otherwise the signed-in user's own. Passing an explicit uuid matters
+  // for an HR_MANAGER — GET /hr/documents with no userUuid returns EVERY
+  // employee's docs for them, so "My Onboarding Documents" would show a jumble
+  // of other people's rows.
+  const targetUuid = hrReview ? userUuid : user?.uuid;
 
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -46,8 +52,9 @@ export default function OnboardingDocuments() {
   const [rejectReason, setRejectReason] = useState("");
 
   const load = () => {
+    if (!targetUuid) return; // wait for the auth user to hydrate
     setLoading(true);
-    getHrDocuments(hrReview ? { userUuid } : undefined)
+    getHrDocuments({ userUuid: targetUuid })
       .then(setDocs)
       .catch((e) => notify(e?.message || "Couldn't load documents.", { type: "error" }))
       .finally(() => setLoading(false));
@@ -56,7 +63,7 @@ export default function OnboardingDocuments() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userUuid]);
+  }, [targetUuid]);
 
   // Latest row per document type — a re-upload after a rejection is a new row.
   const latestByType = useMemo(() => {
