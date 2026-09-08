@@ -119,10 +119,15 @@ export default function ClientTalentPool() {
   // so both the candidate card and the pipeline table can open the same
   // scheduling modal.
   const openRecruitModal = (candidateOrRecruitment) => {
+    // A pipeline record has `candidateId` (a UUID) AND its own `id` (the numeric
+    // placement id) — key off candidateId so we don't mistake the placement id
+    // for the candidate. A Talent Pool card only has `id` (the candidate UUID).
+    const isRecruitment = candidateOrRecruitment.candidateId != null;
     setTargetCandidate({
-      id: candidateOrRecruitment.id ?? candidateOrRecruitment.candidateId,
+      id: isRecruitment ? candidateOrRecruitment.candidateId : candidateOrRecruitment.id,
       name: candidateOrRecruitment.name ?? candidateOrRecruitment.candidateName,
       track: candidateOrRecruitment.track,
+      placementId: isRecruitment ? candidateOrRecruitment.id : null,
     });
     setValues({ date: "", time: "", roundType: "Technical Interview", notes: "", meetingLink: "" });
     setErrors({});
@@ -182,8 +187,15 @@ export default function ClientTalentPool() {
       // schedule against — a client-only record can never be persisted. If they
       // haven't been shortlisted yet, do it now (auto-opens the placement),
       // then re-read to get the row.
+      const findPlacement = (rows) =>
+        rows.find(
+          (r) =>
+            (targetCandidate.placementId && r.id === targetCandidate.placementId) ||
+            r.candidateId === targetCandidate.id
+        );
+
       let list = recruitments;
-      let placement = list.find((r) => r.candidateId === targetCandidate.id);
+      let placement = findPlacement(list);
       if (!placement) {
         await requestRecruitment(
           { uuid: targetCandidate.id, name: targetCandidate.name },
@@ -191,7 +203,7 @@ export default function ClientTalentPool() {
         );
         list = await loadRecruitments();
         setRecruitments(list);
-        placement = list.find((r) => r.candidateId === targetCandidate.id);
+        placement = findPlacement(list);
       }
       if (!placement) {
         notify("Couldn't open a hiring pipeline for this candidate.", { type: "error" });
