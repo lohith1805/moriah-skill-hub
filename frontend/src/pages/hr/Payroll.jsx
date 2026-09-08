@@ -255,9 +255,12 @@ export default function HrPayroll() {
               <p><span className="text-ink-500">Employee:</span> <strong>{viewingSlip.name}</strong> ({viewingSlip.employeeCode})</p>
               <p className="mt-1"><span className="text-ink-500">Attendance:</span> {viewingSlip.presentDays} / {viewingSlip.workingDays} working days
                 {viewingSlip.sessionHours ? ` · ${viewingSlip.sessionHours} session hrs` : ""}</p>
+              {viewingSlip.unpaidLeaveDays > 0 && (
+                <p className="mt-1"><span className="text-ink-500">Unpaid leave:</span> {viewingSlip.unpaidLeaveDays} day(s) — base salary prorated (loss of pay)</p>
+              )}
             </div>
             <div className="flex flex-col gap-1.5 text-sm">
-              <div className="flex justify-between"><span className="text-ink-600">Gross</span><span className="font-medium">{CURRENCY(viewingSlip.gross)}</span></div>
+              <div className="flex justify-between"><span className="text-ink-600">Gross{viewingSlip.unpaidLeaveDays > 0 ? " (after LOP)" : ""}</span><span className="font-medium">{CURRENCY(viewingSlip.gross)}</span></div>
               <div className="flex justify-between"><span className="text-ink-600">Deductions</span><span className="text-error-600">-{CURRENCY(viewingSlip.deductions)}</span></div>
               <div className="flex justify-between border-t border-border pt-1.5 mt-1 font-bold font-display text-primary-900">
                 <span>Net</span><span>{CURRENCY(viewingSlip.net)}</span>

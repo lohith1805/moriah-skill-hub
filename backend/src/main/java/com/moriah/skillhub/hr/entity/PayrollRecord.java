@@ -39,6 +39,13 @@ public class PayrollRecord extends BaseEntity {
     @Column(name = "present_days", nullable = false, columnDefinition = "SMALLINT UNSIGNED")
     private Integer presentDays;
 
+    /** Approved UNPAID (loss-of-pay) leave days that fell inside this pay period. For a salaried
+     * employee the gross is reduced by {@code (baseSalary / workingDays) * unpaidLeaveDays};
+     * {@code 0} for hourly employees (their session hours already reflect worked time). Recorded
+     * so the payslip and API response can show the breakdown. */
+    @Column(name = "unpaid_leave_days", nullable = false, precision = 4, scale = 1)
+    private BigDecimal unpaidLeaveDays = BigDecimal.ZERO;
+
     @Column(name = "session_hours", precision = 6, scale = 2)
     private BigDecimal sessionHours;
 

@@ -14,9 +14,11 @@ import com.moriah.skillhub.hr.dto.GeneratePayrollRequest;
 import com.moriah.skillhub.hr.dto.PayrollLineRequest;
 import com.moriah.skillhub.hr.dto.PayrollRecordResponse;
 import com.moriah.skillhub.hr.entity.Employee;
+import com.moriah.skillhub.hr.entity.LeaveRequest;
 import com.moriah.skillhub.hr.entity.PayrollRecord;
 import com.moriah.skillhub.hr.entity.PayrollStatus;
 import com.moriah.skillhub.hr.repository.EmployeeRepository;
+import com.moriah.skillhub.hr.repository.LeaveRequestRepository;
 import com.moriah.skillhub.hr.repository.PayrollRecordRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +35,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +52,13 @@ import java.util.stream.Collectors;
  * payroll_records.status} goes straight to {@code FINALISED}, not {@code DRAFT} (see {@link
  * PayrollStatus}'s own Javadoc for why {@code DRAFT}/{@code PAID} exist in schema without a route
  * to reach them from this feature).
+ * <p>
+ * A salaried employee's gross is the base salary <b>less loss-of-pay for approved {@code UNPAID}
+ * leave days</b> that fall inside the period ({@code base / workingDays} per day) — approved
+ * paid leave (SICK/CASUAL/EARNED) still pays in full. {@code presentDays} stays informational
+ * (shown on the payslip, never a multiplier). Hourly employees are unaffected — their {@code
+ * sessionHours} already reflect actual worked time. {@code deductions} remains a separate,
+ * HR-entered amount applied after gross.
  */
 @Service
 @RequiredArgsConstructor
@@ -60,6 +72,7 @@ public class PayrollService {
     private final EmployeeRepository employeeRepository;
     private final StorageService storageService;
     private final AuditLogService auditLogService;
+    private final LeaveRequestRepository leaveRequestRepository;
 
     /** Feature 23 hardening: deliberately <b>not</b> {@code @Transactional} any more — {@link
      * #generateOne} calls {@code storageService.uploadTrusted} (an outbound S3 call) once per
@@ -82,14 +95,18 @@ public class PayrollService {
                 .collect(Collectors.toMap(Employee::getId, Function.identity()));
         Set<Long> alreadyGenerated = new HashSet<>(
                 payrollRecordRepository.findEmployeeIdsAlreadyGenerated(request.periodMonth(), employeeIds));
+        Map<Long, BigDecimal> unpaidLeaveDaysByEmployeeId =
+                unpaidLeaveDaysByEmployeeId(employeesById.values(), request.periodMonth());
 
         return request.lines().stream()
-                .map(line -> generateOne(request, line, employeesById, alreadyGenerated, callerUuid, callerUserId))
+                .map(line -> generateOne(request, line, employeesById, alreadyGenerated,
+                        unpaidLeaveDaysByEmployeeId, callerUuid, callerUserId))
                 .toList();
     }
 
     private PayrollRecordResponse generateOne(GeneratePayrollRequest request, PayrollLineRequest line,
-            Map<Long, Employee> employeesById, Set<Long> alreadyGenerated, String callerUuid, Long callerUserId) {
+            Map<Long, Employee> employeesById, Set<Long> alreadyGenerated,
+            Map<Long, BigDecimal> unpaidLeaveDaysByEmployeeId, String callerUuid, Long callerUserId) {
         Employee employee = employeesById.get(line.employeeId());
         if (employee == null) {
             throw new ResourceNotFoundException(ErrorCode.EMPLOYEE_NOT_FOUND, line.employeeId());
@@ -108,7 +125,12 @@ public class PayrollService {
 
         BigDecimal deductions = (line.deductions() == null ? BigDecimal.ZERO : line.deductions())
                 .setScale(2, RoundingMode.HALF_UP);
-        BigDecimal grossAmount = computeGrossAmount(employee, line).setScale(2, RoundingMode.HALF_UP);
+        // Salaried: base salary less loss-of-pay for approved UNPAID leave days in this period.
+        // Hourly: 0 — session hours already reflect actual worked time.
+        BigDecimal unpaidLeaveDays = employee.getHourlyRate() != null ? BigDecimal.ZERO
+                : unpaidLeaveDaysByEmployeeId.getOrDefault(employee.getId(), BigDecimal.ZERO);
+        BigDecimal grossAmount = computeGrossAmount(employee, line, request.workingDays(), unpaidLeaveDays)
+                .setScale(2, RoundingMode.HALF_UP);
         BigDecimal netAmount = grossAmount.subtract(deductions);
         if (netAmount.signum() < 0) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED,
@@ -120,6 +142,7 @@ public class PayrollService {
         record.setPeriodMonth(request.periodMonth());
         record.setWorkingDays(request.workingDays());
         record.setPresentDays(line.presentDays());
+        record.setUnpaidLeaveDays(unpaidLeaveDays);
         record.setSessionHours(employee.getHourlyRate() != null ? line.sessionHours() : null);
         record.setGrossAmount(grossAmount);
         record.setDeductions(deductions);
@@ -137,7 +160,8 @@ public class PayrollService {
         return toResponse(record, callerUuid);
     }
 
-    private BigDecimal computeGrossAmount(Employee employee, PayrollLineRequest line) {
+    private BigDecimal computeGrossAmount(Employee employee, PayrollLineRequest line, int workingDays,
+            BigDecimal unpaidLeaveDays) {
         if (employee.getHourlyRate() != null) {
             if (line.sessionHours() == null) {
                 throw new BusinessException(ErrorCode.VALIDATION_FAILED,
@@ -145,7 +169,55 @@ public class PayrollService {
             }
             return employee.getHourlyRate().multiply(line.sessionHours());
         }
-        return employee.getBaseSalary();
+        BigDecimal base = employee.getBaseSalary();
+        if (unpaidLeaveDays == null || unpaidLeaveDays.signum() <= 0) {
+            return base;
+        }
+        // Loss of pay: (base / workingDays) per unpaid day, the whole month's base at most.
+        // workingDays is @Min(1) on the request, so the division is always safe.
+        BigDecimal cappedDays = unpaidLeaveDays.min(BigDecimal.valueOf(workingDays));
+        BigDecimal lossOfPay = base.multiply(cappedDays)
+                .divide(BigDecimal.valueOf(workingDays), 2, RoundingMode.HALF_UP);
+        return base.subtract(lossOfPay).max(BigDecimal.ZERO);
+    }
+
+    /** Approved {@code UNPAID} leave days per employee that fall inside {@code periodMonth}. One
+     * flat query for the whole batch; the result is keyed by employee id (the {@code
+     * leave_requests} table is keyed by {@code user_id}, so the mapping is resolved here). */
+    private Map<Long, BigDecimal> unpaidLeaveDaysByEmployeeId(Collection<Employee> employees, LocalDate periodMonth) {
+        LocalDate monthStart = periodMonth.withDayOfMonth(1);
+        LocalDate monthEnd = monthStart.plusMonths(1).minusDays(1);
+        Map<Long, Long> employeeIdByUserId = employees.stream()
+                .collect(Collectors.toMap(e -> e.getUser().getId(), Employee::getId, (a, b) -> a));
+
+        Map<Long, BigDecimal> byEmployeeId = new HashMap<>();
+        for (LeaveRequest leave : leaveRequestRepository.findApprovedUnpaidOverlappingMonth(
+                employeeIdByUserId.keySet(), monthStart, monthEnd)) {
+            Long employeeId = employeeIdByUserId.get(leave.getUser().getId());
+            if (employeeId != null) {
+                byEmployeeId.merge(employeeId, daysWithinMonth(leave, monthStart, monthEnd), BigDecimal::add);
+            }
+        }
+        return byEmployeeId;
+    }
+
+    /** The portion of a leave's recorded {@code days} that falls inside {@code [monthStart,
+     * monthEnd]}. A leave entirely within the month (the common case) contributes its {@code days}
+     * unchanged; one that straddles a month boundary is split by its calendar-day overlap
+     * fraction. */
+    private BigDecimal daysWithinMonth(LeaveRequest leave, LocalDate monthStart, LocalDate monthEnd) {
+        LocalDate from = leave.getFromDate();
+        LocalDate to = leave.getToDate();
+        if (!from.isBefore(monthStart) && !to.isAfter(monthEnd)) {
+            return leave.getDays();
+        }
+        LocalDate overlapFrom = from.isBefore(monthStart) ? monthStart : from;
+        LocalDate overlapTo = to.isAfter(monthEnd) ? monthEnd : to;
+        long overlapDays = ChronoUnit.DAYS.between(overlapFrom, overlapTo) + 1;
+        long spanDays = ChronoUnit.DAYS.between(from, to) + 1;
+        return leave.getDays()
+                .multiply(BigDecimal.valueOf(overlapDays))
+                .divide(BigDecimal.valueOf(spanDays), 1, RoundingMode.HALF_UP);
     }
 
     private byte[] renderPayslip(Employee employee, PayrollRecord record) {
@@ -157,6 +229,10 @@ public class PayrollService {
             doc.add(new Paragraph("Employee: " + employee.getUser().getFullName() + " (" + employee.getEmployeeCode() + ")"));
             doc.add(new Paragraph("Period: " + record.getPeriodMonth()));
             doc.add(new Paragraph("Working days: " + record.getWorkingDays() + ", Present days: " + record.getPresentDays()));
+            if (record.getUnpaidLeaveDays() != null && record.getUnpaidLeaveDays().signum() > 0) {
+                doc.add(new Paragraph("Unpaid leave: " + record.getUnpaidLeaveDays()
+                        + " day(s) — base salary prorated (loss of pay)"));
+            }
             if (record.getSessionHours() != null) {
                 doc.add(new Paragraph("Session hours: " + record.getSessionHours()));
             }
@@ -188,6 +264,7 @@ public class PayrollService {
                 record.getPeriodMonth(),
                 record.getWorkingDays(),
                 record.getPresentDays(),
+                record.getUnpaidLeaveDays(),
                 record.getSessionHours(),
                 record.getGrossAmount(),
                 record.getDeductions(),
