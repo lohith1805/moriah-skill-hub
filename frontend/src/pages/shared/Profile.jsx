@@ -5,6 +5,7 @@ import Card from "../../components/ui/Card";
 import Avatar from "../../components/ui/Avatar";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
+import SignatureCard from "../../components/widgets/SignatureCard";
 import { Input, Textarea } from "../../components/ui/FormField";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
@@ -211,6 +212,8 @@ export default function SharedProfile() {
             </div>
           </form>
         </Card>
+
+        <SignatureCard className="lg:col-span-3" />
       </div>
     </div>
   );

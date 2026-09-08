@@ -4,6 +4,7 @@ import com.moriah.skillhub.common.dto.ApiResponse;
 import com.moriah.skillhub.common.security.CurrentUser;
 import com.moriah.skillhub.user.dto.PortfolioResponse;
 import com.moriah.skillhub.user.dto.ResumeDownloadResponse;
+import com.moriah.skillhub.user.dto.SignatureResponse;
 import com.moriah.skillhub.user.dto.UpdateProfileRequest;
 import com.moriah.skillhub.user.dto.UserProfileResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -33,6 +34,7 @@ public class UserController {
     private final UserService userService;
     private final ProfileService profileService;
     private final ResumeService resumeService;
+    private final SignatureService signatureService;
 
     @GetMapping("/api/v1/users/me")
     @PreAuthorize("isAuthenticated()")
@@ -66,6 +68,23 @@ public class UserController {
     @Operation(summary = "A presigned URL for downloading the caller's resume")
     public ResponseEntity<ApiResponse<ResumeDownloadResponse>> resumeDownloadUrl(@CurrentUser Long callerUserId) {
         return ResponseEntity.ok(ApiResponse.success(resumeService.getDownloadUrl(callerUserId)));
+    }
+
+    @PostMapping("/api/v1/users/me/signature")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Upload (or replace) the caller's saved signature image (PNG or JPEG)")
+    public ResponseEntity<ApiResponse<SignatureResponse>> uploadSignature(
+            @RequestParam("file") MultipartFile file,
+            @CurrentUser Long callerUserId) {
+
+        return ResponseEntity.ok(ApiResponse.success(signatureService.upload(callerUserId, file)));
+    }
+
+    @GetMapping("/api/v1/users/me/signature")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "A presigned URL for the caller's saved signature image; 404 if none is on file")
+    public ResponseEntity<ApiResponse<SignatureResponse>> signatureUrl(@CurrentUser Long callerUserId) {
+        return ResponseEntity.ok(ApiResponse.success(signatureService.getDownloadUrl(callerUserId)));
     }
 
     /** Public at the filter level (architecture.md "GET /portfolio/{slug} public") — no {@code

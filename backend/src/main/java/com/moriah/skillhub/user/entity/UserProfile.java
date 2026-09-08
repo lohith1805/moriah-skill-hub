@@ -60,6 +60,11 @@ public class UserProfile extends BaseEntity {
     @Column(name = "resume_key", length = 255)
     private String resumeKey;
 
+    /** Object-storage key for the user's saved signature image (PNG/JPEG),
+     * {@code signatures/{userUuid}/signature.<ext>} — see {@code SignatureService}. */
+    @Column(name = "signature_key", length = 255)
+    private String signatureKey;
+
     @Column(name = "portfolio_slug", unique = true, length = 150)
     private String portfolioSlug;
 

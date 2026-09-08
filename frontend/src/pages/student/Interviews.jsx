@@ -14,7 +14,9 @@ import {
   REJECTED, stageTone, stageIndex, stageMessage, loadRecruitments, saveRecruitments,
   freshDocumentChecklist, REQUIRED_DOCUMENTS, fileToDataURL, offerFieldsFor
 } from "../../utils/placementPipeline";
+import { Link } from "react-router-dom";
 import { advancePlacement } from "../../services/placementService";
+import { getMySignatureUrl } from "../../services/userService";
 import { renderTemplateText } from "../../utils/letterTemplates";
 import { downloadPdf } from "../../utils/pdf";
 
@@ -34,6 +36,7 @@ export default function StudentInterviews() {
   const [interviews, setInterviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [signingOffer, setSigningOffer] = useState(null); // recruitment record at "Student Signature"
+  const [signatureUrl, setSignatureUrl] = useState(null); // the student's saved signature image, from their profile
   const [viewingOffer, setViewingOffer] = useState(null); // recruitment record at "Student Approval" being previewed
   const [uploadingFor, setUploadingFor] = useState(null); // recruitment record the doc-upload modal is open for
   const [pendingFiles, setPendingFiles] = useState({}); // { [docKey]: File[] } while the upload modal is open
@@ -55,6 +58,7 @@ export default function StudentInterviews() {
 
   useEffect(() => {
     load();
+    getMySignatureUrl().then(setSignatureUrl).catch(() => setSignatureUrl(null));
   }, [user]);
 
   // Lets the student download a copy of the offer letter for their own records.
@@ -76,11 +80,16 @@ export default function StudentInterviews() {
   const [signing, setSigning] = useState(false);
   const handleSign = async () => {
     if (!signingOffer) return;
+    if (!signatureUrl) {
+      notify("Add your signature in your Profile first, then sign the offer.", { type: "error" });
+      return;
+    }
     setSigning(true);
     try {
       await advancePlacement(signingOffer.id, "Student Signed", {
         studentSignedAt: new Date().toISOString(),
         studentApprovalStatus: "Approved",
+        studentSignedWithSignature: true,
       });
       notify("Digital signature captured — HR will finalise your placement.", { type: "success", title: "Signed" });
       setSigningOffer(null);
@@ -349,7 +358,7 @@ export default function StudentInterviews() {
             <Button variant="secondary" icon={Download} onClick={() => downloadOfferLetter(signingOffer)}>Download</Button>
             <div className="flex gap-2">
               <Button variant="secondary" onClick={() => setSigningOffer(null)} disabled={signing}>Cancel</Button>
-              <Button icon={ShieldCheck} loading={signing} onClick={handleSign}>Digitally Sign & Accept</Button>
+              <Button icon={ShieldCheck} loading={signing} onClick={handleSign} disabled={!signatureUrl}>Digitally Sign & Accept</Button>
             </div>
           </div>
         }
@@ -362,6 +371,18 @@ export default function StudentInterviews() {
             <div className="whitespace-pre-line font-mono text-xs leading-relaxed text-ink-800 bg-cream-50/50 p-4 rounded-lg border border-border/80">
               {offerDoc ? renderTemplateText(offerDoc) : "Offer letter not found."}
             </div>
+            {signatureUrl ? (
+              <div className="rounded-lg border border-border/80 p-4">
+                <p className="text-xs text-ink-500 mb-2">Your saved signature — this is what will be applied:</p>
+                <img src={signatureUrl} alt="Your signature" className="max-h-20 object-contain" />
+              </div>
+            ) : (
+              <div className="rounded-lg border border-warning-300 bg-warning-50 p-4 text-sm text-warning-800">
+                You haven't saved a signature yet.{" "}
+                <Link to="/student/profile" className="font-semibold underline">Add one in your Profile</Link>{" "}
+                to sign this offer.
+              </div>
+            )}
           </div>
         )}
       </Modal>

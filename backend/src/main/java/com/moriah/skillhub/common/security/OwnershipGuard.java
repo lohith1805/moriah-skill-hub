@@ -68,6 +68,10 @@ public class OwnershipGuard {
         boolean allowed;
         if (key.startsWith("resumes/")) {
             allowed = segments.length >= 2 && segments[1].equals(callerUuid);
+        } else if (key.startsWith("signatures/")) {
+            // The user owns their saved signature; HR_MANAGER/ADMIN also presign it to stamp it
+            // onto the offer letters they generate (feature: profile digital signature).
+            allowed = segments.length >= 2 && (segments[1].equals(callerUuid) || isHrStaff(callerUuid));
         } else if (key.startsWith("hr-documents/")) {
             // The uploading employee owns their onboarding doc; HR_MANAGER/ADMIN review
             // everyone's (feature 19's HR document verification + onboarding screens) — the same

@@ -8,6 +8,7 @@ import Button from "../../components/ui/Button";
 import Badge from "../../components/ui/Badge";
 import Avatar from "../../components/ui/Avatar";
 import FileUpload from "../../components/ui/FileUpload";
+import SignatureCard from "../../components/widgets/SignatureCard";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import Modal from "../../components/ui/Modal";
@@ -574,6 +575,8 @@ export default function StudentProfile() {
             }}
           </Tabs>
         </Card>
+
+        <SignatureCard className="lg:col-span-3" />
       </div>
     </div>
   );

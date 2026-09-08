@@ -59,6 +59,7 @@ public enum ErrorCode {
     INVOICE_NOT_FOUND(HttpStatus.NOT_FOUND, "No invoice PDF is available for this payment yet."),
     COUPON_NOT_FOUND(HttpStatus.NOT_FOUND, "This coupon code does not exist."),
     RESUME_NOT_FOUND(HttpStatus.NOT_FOUND, "No resume has been uploaded for this account yet."),
+    SIGNATURE_NOT_FOUND(HttpStatus.NOT_FOUND, "No signature has been saved for this account yet."),
     PORTFOLIO_NOT_FOUND(HttpStatus.NOT_FOUND, "This portfolio does not exist."),
     BATCH_NOT_FOUND(HttpStatus.NOT_FOUND, "This batch does not exist."),
     BATCH_STUDENT_NOT_FOUND(HttpStatus.NOT_FOUND, "This student is not enrolled in this batch."),
