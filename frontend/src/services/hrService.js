@@ -332,6 +332,23 @@ export async function getOnboardings({ status, employeeId } = {}) {
   return asRows(res).map(toFeOnboarding);
 }
 
+// GET /api/v1/hr/onboardings/my-status — the caller's own provisioning state,
+// for the dashboard access gate. { staff, provisioningStatus, accessGated }.
+// A non-employee account (student/client/admin) returns { staff:false, accessGated:false }.
+export async function getMyOnboardingStatus() {
+  try {
+    const res = await apiClient.get("/hr/onboardings/my-status");
+    return {
+      staff: !!res?.staff,
+      provisioningStatus: res?.provisioningStatus || null,
+      accessGated: !!res?.accessGated,
+    };
+  } catch {
+    // On any error, fail open — never lock someone out of their dashboard over a flaky call.
+    return { staff: false, provisioningStatus: null, accessGated: false };
+  }
+}
+
 export async function createOnboarding(input) {
   const body = {
     employeeId: Number(input.employeeId),

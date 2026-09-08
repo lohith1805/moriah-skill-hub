@@ -9,9 +9,11 @@ import com.moriah.skillhub.common.exception.ErrorCode;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
 import com.moriah.skillhub.hr.dto.CreateOnboardingRequest;
 import com.moriah.skillhub.hr.dto.EmployeeOnboardingResponse;
+import com.moriah.skillhub.hr.dto.MyOnboardingStatusResponse;
 import com.moriah.skillhub.hr.dto.UpdateOnboardingRequest;
 import com.moriah.skillhub.hr.entity.Employee;
 import com.moriah.skillhub.hr.entity.EmployeeOnboarding;
+import com.moriah.skillhub.hr.entity.EmployeeProvisioningStatus;
 import com.moriah.skillhub.hr.entity.OnboardingStatus;
 import com.moriah.skillhub.hr.repository.EmployeeOnboardingRepository;
 import com.moriah.skillhub.hr.repository.EmployeeRepository;
@@ -48,6 +50,20 @@ public class OnboardingService {
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
     private final ObjectMapper objectMapper;
+
+    /** {@code GET /api/v1/hr/onboardings/my-status} — the caller's own provisioning state, for
+     * the dashboard access gate. A non-employee account (no {@code employees} row) is never
+     * gated; a staff member is gated only while their record is still {@code PENDING_HR}. */
+    @Transactional(readOnly = true)
+    public MyOnboardingStatusResponse myStatus(Long callerUserId) {
+        return employeeRepository.findByUserId(callerUserId)
+                .map(e -> {
+                    EmployeeProvisioningStatus ps = e.getProvisioningStatus();
+                    return new MyOnboardingStatusResponse(true, ps.name(),
+                            ps == EmployeeProvisioningStatus.PENDING_HR);
+                })
+                .orElse(new MyOnboardingStatusResponse(false, null, false));
+    }
 
     @Transactional
     public EmployeeOnboardingResponse create(CreateOnboardingRequest request, Long callerUserId) {

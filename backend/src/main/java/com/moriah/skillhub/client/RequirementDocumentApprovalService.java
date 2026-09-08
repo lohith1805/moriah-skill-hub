@@ -33,11 +33,12 @@ import java.util.Optional;
 
 /**
  * Multi-party sign-off on a {@link RequirementDocument} — the redesign of the old single-approver
- * {@code RequirementDocumentService#approve}, which let any BA (including a document's own
- * author) flip {@code IN_REVIEW -> APPROVED} alone, with no CLIENT or DEVELOPER visibility at
- * all. Now every document gets one required "slot" per {@link #REQUIRED_ROLES}, and the document
- * only reaches {@code APPROVED} once every slot is filled — see {@code
- * RequirementDocumentApproval}'s own Javadoc for the slot model.
+ * {@code RequirementDocumentService#approve}, which flipped {@code IN_REVIEW -> APPROVED} on one
+ * BA click with no CLIENT or DEVELOPER visibility at all. Now every document gets one required
+ * "slot" per {@link #REQUIRED_ROLES}, and only reaches {@code APPROVED} once every slot is filled
+ * — see {@code RequirementDocumentApproval}'s own Javadoc for the slot model. The BA slot may be
+ * filled by the document's own author (product decision — the CLIENT and DEVELOPER slots are the
+ * real outside checks; a second-BA requirement just stalls docs on a small team).
  */
 @Service
 @RequiredArgsConstructor
@@ -236,19 +237,10 @@ public class RequirementDocumentApprovalService {
             }
         }
         if (userRoleRepository.findRoleCodesByUserId(callerUserId).contains(RoleCode.BUSINESS_ANALYST)) {
-            // Same exception as resolveCallerSlot's own self-approval block below: a BA's own
-            // document is only excluded from their inbox when there's *another* BA to hand it to.
-            // Missing this the first time around left a sole BA's own documents fully approvable
-            // (via approve()) but permanently invisible in this inbox — confirmed live: a BRD a
-            // solo BA authored, with CLIENT already signed off, never appeared here for them to
-            // act on, even though nothing else blocked it.
-            boolean anotherBaOnStaff = anotherBaOnStaff(callerUserId);
-            for (RequirementDocumentApproval slot : approvalRepository.findByApproverRoleAndApprovedByIsNull(RoleCode.BUSINESS_ANALYST)) {
-                boolean isOwnDocument = Objects.equals(slot.getDocument().getAuthoredBy().getId(), callerUserId);
-                if (!isOwnDocument || !anotherBaOnStaff) {
-                    results.add(slot);
-                }
-            }
+            // Every open BA slot, including one on a document this BA authored. The BA slot is the
+            // author confirming their own spec; the real cross-checks are the CLIENT and DEVELOPER
+            // slots. Mirrors resolveCallerSlot's own self-approval rule below.
+            results.addAll(approvalRepository.findByApproverRoleAndApprovedByIsNull(RoleCode.BUSINESS_ANALYST));
         }
 
         return results.stream()
@@ -275,13 +267,10 @@ public class RequirementDocumentApprovalService {
     }
 
     /** Decision order (see class Javadoc): the project's own CLIENT contact, then its assigned
-     * DEVELOPER, then any BUSINESS_ANALYST other than the document's own author — self-approval
-     * is blocked outright rather than silently falling through to a generic 403, so a BA gets a
-     * clear reason. The one exception is a team with a single BA on staff: if no *other* BA
-     * exists to hand the slot to, blocking self-approval unconditionally would strand the
-     * document (and every doc downstream of it — the developer never gets auto-assigned, since
-     * that only fires off a BUSINESS_ANALYST slot being filled) in {@code IN_REVIEW} forever, with
-     * no path for anyone to ever fill it. Anyone else is not a party to this document at all. */
+     * DEVELOPER, then any BUSINESS_ANALYST — <em>including</em> the document's own author. Product
+     * decision: the BA slot is the analyst confirming their own spec, and the meaningful outside
+     * sign-off comes from the CLIENT and DEVELOPER slots — requiring a second BA just stalls docs
+     * on a small team. Anyone who is none of those three is not a party to this document at all. */
     private RequirementDocumentApproval resolveCallerSlot(RequirementDocument document, ClientProject project,
             List<RequirementDocumentApproval> slots, User caller) {
         if (project != null && project.getClient() != null && project.getClient().getUser() != null
@@ -295,27 +284,10 @@ public class RequirementDocumentApprovalService {
                     .orElseThrow(() -> new ForbiddenOperationException(ErrorCode.NOT_RESOURCE_OWNER));
         }
         if (userRoleRepository.findRoleCodesByUserId(caller.getId()).contains(RoleCode.BUSINESS_ANALYST)) {
-            if (Objects.equals(document.getAuthoredBy().getId(), caller.getId())) {
-                if (anotherBaOnStaff(caller.getId())) {
-                    throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION,
-                            "You authored this document — another business analyst must sign it off.");
-                }
-                log.info("[requirement-documents] {} is the only business analyst on staff — allowing "
-                        + "self sign-off on document {} they authored", caller.getId(), document.getId());
-            }
             return findSlot(slots, RoleCode.BUSINESS_ANALYST)
                     .orElseThrow(() -> new ForbiddenOperationException(ErrorCode.NOT_RESOURCE_OWNER));
         }
         throw new ForbiddenOperationException(ErrorCode.NOT_RESOURCE_OWNER);
-    }
-
-    /** Shared by {@link #resolveCallerSlot} (may this BA self-approve their own document?) and
-     * {@link #pendingFor} (should their own document even show up in their inbox?) — the two
-     * questions must have the same answer, or a document becomes approvable but invisible (or
-     * visible but rejected on click), either of which is a dead end for the caller. */
-    private boolean anotherBaOnStaff(Long callerUserId) {
-        return userRoleRepository.findUserIdsByRoleCode(RoleCode.BUSINESS_ANALYST).stream()
-                .anyMatch(id -> !Objects.equals(id, callerUserId));
     }
 
     private static Optional<RequirementDocumentApproval> findSlot(List<RequirementDocumentApproval> slots, RoleCode role) {

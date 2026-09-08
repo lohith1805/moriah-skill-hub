@@ -5,6 +5,7 @@ import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.common.security.CurrentUser;
 import com.moriah.skillhub.hr.dto.CreateOnboardingRequest;
 import com.moriah.skillhub.hr.dto.EmployeeOnboardingResponse;
+import com.moriah.skillhub.hr.dto.MyOnboardingStatusResponse;
 import com.moriah.skillhub.hr.dto.UpdateOnboardingRequest;
 import com.moriah.skillhub.hr.entity.OnboardingStatus;
 import io.swagger.v3.oas.annotations.Operation;
@@ -35,6 +36,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class OnboardingController {
 
     private final OnboardingService onboardingService;
+
+    @GetMapping("/my-status")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "The caller's own provisioning state, for the dashboard access gate")
+    public ResponseEntity<ApiResponse<MyOnboardingStatusResponse>> myStatus(@CurrentUser Long callerUserId) {
+        return ResponseEntity.ok(ApiResponse.success(onboardingService.myStatus(callerUserId)));
+    }
 
     @PostMapping
     @PreAuthorize("hasAnyRole('HR_MANAGER','ADMIN')")

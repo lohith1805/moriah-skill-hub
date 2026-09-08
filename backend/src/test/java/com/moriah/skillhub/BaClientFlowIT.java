@@ -236,17 +236,15 @@ class BaClientFlowIT extends IntegrationTestBase {
                 .body("data.version", equalTo(2));
 
         // Multi-party sign-off (BRD needs CLIENT + BUSINESS_ANALYST + DEVELOPER — see
-        // RequirementDocumentApprovalService): the document's own author may not sign the
-        // BUSINESS_ANALYST slot themselves.
-        String baToken2 = registerVerifyGrantRoleAndLogin("Ba Analyst Flow Second", "BUSINESS_ANALYST");
-
+        // RequirementDocumentApprovalService): the document's own author fills the
+        // BUSINESS_ANALYST slot themselves (the CLIENT and DEVELOPER slots are the outside checks).
         given()
                 .header("Authorization", "Bearer " + baToken)
             .when()
                 .put("/api/v1/ba/documents/" + firstDocumentId + "/approve")
             .then()
-                .statusCode(409)
-                .body("error.code", equalTo("BUSINESS_RULE_VIOLATION"));
+                .statusCode(200)
+                .body("data.status", equalTo("IN_REVIEW")); // CLIENT + DEVELOPER slots still open
 
         given()
                 .header("Authorization", "Bearer " + clientToken)
@@ -264,13 +262,14 @@ class BaClientFlowIT extends IntegrationTestBase {
                 .statusCode(409)
                 .body("error.code", equalTo("BUSINESS_RULE_VIOLATION"));
 
+        // The BA slot is already filled — a second BA click is rejected as "already approved".
         given()
-                .header("Authorization", "Bearer " + baToken2)
+                .header("Authorization", "Bearer " + baToken)
             .when()
                 .put("/api/v1/ba/documents/" + firstDocumentId + "/approve")
             .then()
-                .statusCode(200)
-                .body("data.status", equalTo("IN_REVIEW")); // DEVELOPER slot still open
+                .statusCode(409)
+                .body("error.code", equalTo("BUSINESS_RULE_VIOLATION"));
 
         // ADMIN fast-tracks whichever slot(s) are still pending in one call — here, just DEVELOPER.
         given()
