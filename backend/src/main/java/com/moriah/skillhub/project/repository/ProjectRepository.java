@@ -38,6 +38,12 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
     @EntityGraph(attributePaths = "createdBy")
     Optional<Project> findById(Long id);
 
+    /** {@code GET /api/v1/projects?mine=true} — a DEVELOPER's own projects, every status
+     * (including the DRAFTs the main {@code search} deliberately hides from non-admins). Bounded
+     * by one author's output, so the same page size is fine. */
+    @EntityGraph(attributePaths = "createdBy")
+    Page<Project> findByCreatedByIdOrderByCreatedAtDesc(Long createdById, Pageable pageable);
+
     /** Slug-collision probe for {@code ProjectService}'s slugify-then-disambiguate logic — a
      * single indexed lookup per candidate slug, not a table scan. */
     boolean existsBySlug(String slug);

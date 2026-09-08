@@ -10,6 +10,7 @@ import { Input, Textarea, Select } from "../../components/ui/FormField";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
 import { getProjects, createProject, updateProject, publishProject } from "../../services/developerService";
 import { useToast } from "../../context/ToastContext";
+import { useAuth } from "../../context/AuthContext";
 import { validateForm, required } from "../../utils/validators";
 
 const DIFFICULTIES = ["Beginner", "Intermediate", "Advanced"].map((d) => ({ value: d, label: d }));
@@ -36,6 +37,11 @@ const emptyProjectValues = {
 };
 
 export default function DeveloperProjects() {
+  const { user } = useAuth();
+  const myUuid = user?.uuid;
+  // "mine" = my own projects (drafts + published, via ?mine=true); "all" = the
+  // published catalogue everyone shares. You can only edit/publish your own.
+  const [scope, setScope] = useState("mine");
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   
@@ -53,14 +59,17 @@ export default function DeveloperProjects() {
   const { notify } = useToast();
 
   const reload = () =>
-    getProjects()
+    getProjects(scope === "mine" ? { mine: true } : {})
       .then((p) => setProjects(p.map((proj) => ({ ...proj, files: [] }))))
       .catch(() => setProjects([]))
       .finally(() => setLoading(false));
 
   useEffect(() => {
+    setLoading(true);
     reload();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scope]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const canEdit = (p) => !myUuid || !p.createdByUuid || p.createdByUuid === myUuid;
 
   const submit = async (e) => {
     e.preventDefault();
@@ -138,6 +147,24 @@ export default function DeveloperProjects() {
         action={<Button icon={Plus} onClick={() => setModalOpen(true)}>New Project</Button>}
       />
 
+      <div className="flex items-center gap-1 mb-4 w-fit rounded-lg border border-border bg-cream-50 p-0.5">
+        {[
+          { key: "mine", label: "My projects" },
+          { key: "all", label: "All published" },
+        ].map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setScope(t.key)}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-md transition-colors ${
+              scope === t.key ? "bg-white text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-700"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       {loading ? (
         <div className="flex justify-center py-16"><LoadingSpinner label="Loading projects…" /></div>
       ) : (
@@ -155,6 +182,9 @@ export default function DeveloperProjects() {
                   </div>
                   <Badge tone={p.status === "Published" ? "success" : "neutral"}>{p.status}</Badge>
                 </div>
+                {!canEdit(p) && (
+                  <p className="text-[11px] text-ink-400 mt-1.5">Authored by {p.createdBy || "another developer"}</p>
+                )}
                 <div className="flex flex-wrap gap-1.5 mt-3.5">
                   {p.stack.map((s) => <Badge key={s} tone="primary">{s}</Badge>)}
                 </div>
@@ -165,10 +195,16 @@ export default function DeveloperProjects() {
                 )}
               </div>
               <div className="flex gap-2 mt-4 pt-3 border-t border-border/60">
-                {p.status === "Draft" && (
-                  <Button size="sm" variant="secondary" icon={Send} onClick={() => publish(p.id)}>Publish</Button>
+                {canEdit(p) ? (
+                  <>
+                    {p.status === "Draft" && (
+                      <Button size="sm" variant="secondary" icon={Send} onClick={() => publish(p.id)}>Publish</Button>
+                    )}
+                    <Button size="sm" variant="secondary" icon={Edit} onClick={() => openEdit(p)}>Edit</Button>
+                  </>
+                ) : (
+                  <span className="text-xs text-ink-400">Read-only</span>
                 )}
-                <Button size="sm" variant="secondary" icon={Edit} onClick={() => openEdit(p)}>Edit</Button>
               </div>
             </Card>
           ))}

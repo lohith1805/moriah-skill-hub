@@ -45,6 +45,7 @@ function toFeProject(p) {
     status: PROJECT_STATUS_TO_FE[p.status] || p.status,
     backendStatus: p.status,
     createdBy: p.createdByFullName || "",
+    createdByUuid: p.createdByUuid || null,
     assets: p.assets || [],
     challenges: (p.challenges || []).map(toFeChallenge),
   };
@@ -61,12 +62,16 @@ function toFeChallenge(c) {
   };
 }
 
-export async function getProjects({ status, difficulty, domain, track } = {}) {
+// `mine: true` -> GET /projects?mine=true — the caller's own projects, every
+// status (incl. DRAFT). Without it, a DEVELOPER only ever sees the PUBLISHED
+// catalogue (everyone's), which is fine for browsing but wrong for "my work".
+export async function getProjects({ status, difficulty, domain, track, mine } = {}) {
   const res = await apiClient.get("/projects", {
     status: status || undefined,
     difficulty: difficulty ? DIFFICULTY_TO_API[difficulty] || difficulty : undefined,
     domain: domain || undefined,
     track: track ? TRACK_FE_TO_CODE[track] || track : undefined,
+    mine: mine ? true : undefined,
     size: 100,
   });
   return (res && res.content ? res.content : []).map(toFeProject);
@@ -434,6 +439,7 @@ function toFeBank(b, questions = []) {
     active: b.active !== false,
     questionCount: b.questionCount ?? questions.length,
     questions,
+    createdByUuid: b.createdByUuid || null,
     createdAt: b.createdAt,
   };
 }
@@ -560,6 +566,7 @@ function toFeLesson(l, quiz = []) {
     status: l.published ? "Published" : "Draft",
     published: !!l.published,
     progress: l.progress,
+    createdByUuid: l.createdByUuid || null,
     createdAt: l.createdAt,
     updatedAt: l.updatedAt,
   };

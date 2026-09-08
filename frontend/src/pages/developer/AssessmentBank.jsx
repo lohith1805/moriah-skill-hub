@@ -10,6 +10,7 @@ import FileUpload from "../../components/ui/FileUpload";
 import { Input, Select, Textarea } from "../../components/ui/FormField";
 import Breadcrumbs from "../../components/widgets/Breadcrumbs";
 import { useToast } from "../../context/ToastContext";
+import { useAuth } from "../../context/AuthContext";
 import { validateForm, required } from "../../utils/validators";
 import { parseQuestionFile } from "../../utils/questionFileParser";
 import {
@@ -25,6 +26,9 @@ const emptyMcqForm = { text: "", option1: "", option2: "", option3: "", option4:
 
 export default function AssessmentBank() {
   const { notify } = useToast();
+  const { user } = useAuth();
+  const myUuid = user?.uuid;
+  const canEdit = (r) => !myUuid || !r?.createdByUuid || r.createdByUuid === myUuid;
   const [banks, setBanks] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -194,9 +198,13 @@ export default function AssessmentBank() {
               { key: "type", header: "Type", className: "text-left", render: () => <Badge tone="primary">Multiple Choice</Badge> },
               { key: "questions", header: "Questions", className: "text-left", render: (r) => r.questions.length },
               { key: "action", header: "", className: "text-right", render: (r) => (
-                <div className="flex gap-2 justify-end">
+                <div className="flex gap-2 justify-end items-center">
                   <Button size="sm" variant="secondary" icon={ListChecks} onClick={() => openManage(r)}>Manage Questions</Button>
-                  <Button size="sm" variant="danger" icon={Trash2} onClick={() => handleDeleteBank(r)}>Delete</Button>
+                  {canEdit(r) ? (
+                    <Button size="sm" variant="danger" icon={Trash2} onClick={() => handleDeleteBank(r)}>Delete</Button>
+                  ) : (
+                    <span className="text-xs text-ink-400">Another dev's bank</span>
+                  )}
                 </div>
               ) },
             ]}

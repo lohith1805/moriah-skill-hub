@@ -54,17 +54,19 @@ public class ProjectController {
 
     @GetMapping("/api/v1/projects")
     @PreAuthorize("hasAnyRole('DEVELOPER','ADMIN','TRAINER_PM','STUDENT')")
-    @Operation(summary = "Browse projects — non-admin callers always see PUBLISHED only")
+    @Operation(summary = "Browse projects — non-admin callers always see PUBLISHED only, "
+            + "unless ?mine=true (the caller's own projects, every status)")
     public ResponseEntity<ApiResponse<PageResponse<ProjectResponse>>> list(
             @RequestParam(required = false) ProjectDifficulty difficulty,
             @RequestParam(required = false) String domain,
             @RequestParam(required = false) ProjectStatus status,
             @RequestParam(required = false) String track,
+            @RequestParam(required = false, defaultValue = "false") boolean mine,
             @PageableDefault(size = 20) Pageable pageable,
             @CurrentUser Long callerUserId) {
 
         return ResponseEntity.ok(ApiResponse.success(
-                projectService.list(callerUserId, difficulty, domain, status, track, pageable)));
+                projectService.list(callerUserId, difficulty, domain, status, track, mine, pageable)));
     }
 
     @PutMapping("/api/v1/projects/{id}")

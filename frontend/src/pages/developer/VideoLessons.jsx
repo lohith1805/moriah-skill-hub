@@ -10,6 +10,7 @@ import EmptyState from "../../components/ui/EmptyState";
 import FileUpload from "../../components/ui/FileUpload";
 import { Input, Select, Textarea } from "../../components/ui/FormField";
 import { useToast } from "../../context/ToastContext";
+import { useAuth } from "../../context/AuthContext";
 import { validateForm, required } from "../../utils/validators";
 import { TRACKS, TRACK_LABELS } from "../../utils/constants";
 import {
@@ -28,6 +29,9 @@ const emptyQForm = { question: "", option1: "", option2: "", option3: "", option
 
 export default function DeveloperVideoLessons() {
   const { notify } = useToast();
+  const { user } = useAuth();
+  const myUuid = user?.uuid;
+  const canEdit = (r) => !myUuid || !r?.createdByUuid || r.createdByUuid === myUuid;
   const [lessons, setLessons] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -192,14 +196,20 @@ export default function DeveloperVideoLessons() {
               { key: "quiz", header: "Questions", className: "text-left", render: (r) => r.quiz.length },
               { key: "status", header: "Status", className: "text-left", render: (r) => <Badge tone={r.status === "Published" ? "success" : "neutral"}>{r.status}</Badge> },
               { key: "action", header: "", className: "text-right", render: (r) => (
-                <div className="flex gap-2 justify-end flex-wrap">
+                <div className="flex gap-2 justify-end flex-wrap items-center">
                   <Button size="sm" variant="secondary" icon={ListChecks} onClick={() => openManage(r)}>Manage Quiz</Button>
-                  {r.status === "Published" ? (
-                    <Button size="sm" variant="secondary" icon={EyeOff} onClick={() => handleUnpublish(r)}>Unpublish</Button>
+                  {canEdit(r) ? (
+                    <>
+                      {r.status === "Published" ? (
+                        <Button size="sm" variant="secondary" icon={EyeOff} onClick={() => handleUnpublish(r)}>Unpublish</Button>
+                      ) : (
+                        <Button size="sm" icon={Rocket} onClick={() => handlePublish(r)}>Publish</Button>
+                      )}
+                      <Button size="sm" variant="danger" icon={Trash2} onClick={() => handleDelete(r)}>Delete</Button>
+                    </>
                   ) : (
-                    <Button size="sm" icon={Rocket} onClick={() => handlePublish(r)}>Publish</Button>
+                    <span className="text-xs text-ink-400">Another dev's lesson</span>
                   )}
-                  <Button size="sm" variant="danger" icon={Trash2} onClick={() => handleDelete(r)}>Delete</Button>
                 </div>
               ) },
             ]}

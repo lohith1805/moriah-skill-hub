@@ -103,12 +103,19 @@ public class ProjectService {
      * they already hold from {@link #create}'s response. */
     @Transactional(readOnly = true)
     public PageResponse<ProjectResponse> list(Long callerUserId, ProjectDifficulty difficulty, String domain,
-            ProjectStatus status, String track, Pageable pageable) {
+            ProjectStatus status, String track, boolean mine, Pageable pageable) {
         String callerUuid = requireUser(callerUserId).getUuid();
-        ProjectStatus effectiveStatus = SecurityUtils.currentUserRoles().contains(RoleCode.ADMIN.name())
-                ? status : ProjectStatus.PUBLISHED;
 
-        Page<Project> page = projectRepository.search(difficulty, domain, effectiveStatus, track, pageable);
+        // ?mine=true — the caller's own projects, every status (the DRAFTs the normal read hides
+        // from non-admins). Filters don't apply: one author's list is short and they want all of it.
+        Page<Project> page;
+        if (mine) {
+            page = projectRepository.findByCreatedByIdOrderByCreatedAtDesc(callerUserId, pageable);
+        } else {
+            ProjectStatus effectiveStatus = SecurityUtils.currentUserRoles().contains(RoleCode.ADMIN.name())
+                    ? status : ProjectStatus.PUBLISHED;
+            page = projectRepository.search(difficulty, domain, effectiveStatus, track, pageable);
+        }
         List<Project> projects = page.getContent();
         if (projects.isEmpty()) {
             return PageResponse.from(page.map(p -> toResponse(p, List.of(), List.of(), callerUuid)));
