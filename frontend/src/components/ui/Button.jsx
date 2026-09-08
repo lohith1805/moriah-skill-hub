@@ -17,16 +17,18 @@ const SIZES = {
 };
 
 const Button = forwardRef(
-  ({ children, variant = "primary", size = "md", loading = false, icon: Icon, iconPosition = "left", fullWidth = false, className, disabled, ...props }, ref) => {
+  ({ as: Component = "button", children, variant = "primary", size = "md", loading = false, icon: Icon, iconPosition = "left", fullWidth = false, className, disabled, ...props }, ref) => {
+    const isNativeButton = Component === "button";
     return (
-      <button
+      <Component
         ref={ref}
-        disabled={disabled || loading}
+        {...(isNativeButton ? { disabled: disabled || loading } : {})}
         className={clsx(
           "inline-flex items-center justify-center whitespace-nowrap rounded-lg font-medium transition-colors duration-150 disabled:cursor-not-allowed",
           VARIANTS[variant],
           SIZES[size],
           fullWidth && "w-full",
+          !isNativeButton && (disabled || loading) && "pointer-events-none opacity-60",
           className
         )}
         {...props}
@@ -38,7 +40,7 @@ const Button = forwardRef(
         )}
         {children}
         {!loading && Icon && iconPosition === "right" && <Icon size={16} />}
-      </button>
+      </Component>
     );
   }
 );

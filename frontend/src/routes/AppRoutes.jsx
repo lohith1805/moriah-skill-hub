@@ -32,6 +32,7 @@ import StudentProfile from "../pages/student/Profile";
 import StudentSubscription from "../pages/student/Subscription";
 import StudentTasks from "../pages/student/Tasks";
 import StudentProjects from "../pages/student/Projects";
+import StudentChallenges from "../pages/student/Challenges";
 import StudentSubmissions from "../pages/student/Submissions";
 import StudentAssessments from "../pages/student/Assessments";
 import StudentLearning from "../pages/student/Learning";
@@ -128,6 +129,7 @@ export default function AppRoutes() {
           <Route path="/student/tasks" element={<StudentTasks />} />
           <Route path="/student/attendance" element={<StudentAttendance />} />
           <Route path="/student/projects" element={<StudentProjects />} />
+          <Route path="/student/challenges" element={<StudentChallenges />} />
           <Route path="/student/submissions" element={<StudentSubmissions />} />
           <Route path="/student/learning" element={<StudentLearning />} />
           <Route path="/student/assessments" element={<StudentAssessments />} />
