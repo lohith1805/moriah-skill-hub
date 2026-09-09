@@ -161,6 +161,8 @@ function toFeRequirementDoc(d) {
   return {
     id: d.id,
     clientProjectId: d.clientProjectId,
+    clientName: d.clientName || "",
+    projectTitle: d.projectTitle || "",
     docType: d.docType,
     title: d.title,
     version: d.version,

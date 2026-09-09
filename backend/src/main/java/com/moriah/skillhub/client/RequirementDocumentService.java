@@ -243,9 +243,12 @@ public class RequirementDocumentService {
         User approver = document.getApprovedBy();
         User devReviewer = document.getDevReviewedBy();
         User rejecter = document.getRejectedBy();
+        ClientProject project = document.getClientProject();
         return new RequirementDocumentResponse(
                 document.getId(),
-                document.getClientProject() == null ? null : document.getClientProject().getId(),
+                project == null ? null : project.getId(),
+                project == null || project.getClient() == null ? null : project.getClient().getCompanyName(),
+                project == null ? null : project.getTitle(),
                 document.getDocType(),
                 document.getTitle(),
                 document.getVersion(),
@@ -270,9 +273,12 @@ public class RequirementDocumentService {
         User devReviewer = document.getDevReviewedBy();
         User rejecter = document.getRejectedBy();
         List<RequirementDocumentApproval> approvals = requirementDocumentApprovalRepository.findByDocumentId(document.getId());
+        ClientProject project = document.getClientProject();
         return new RequirementDocumentDetailResponse(
                 document.getId(),
-                document.getClientProject() == null ? null : document.getClientProject().getId(),
+                project == null ? null : project.getId(),
+                project == null || project.getClient() == null ? null : project.getClient().getCompanyName(),
+                project == null ? null : project.getTitle(),
                 document.getDocType(),
                 document.getTitle(),
                 document.getVersion(),

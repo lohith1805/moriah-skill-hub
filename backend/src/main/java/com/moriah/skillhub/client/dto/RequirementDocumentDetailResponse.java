@@ -14,6 +14,8 @@ import java.util.List;
 public record RequirementDocumentDetailResponse(
         Long id,
         Long clientProjectId,
+        String clientName,
+        String projectTitle,
         RequirementDocumentType docType,
         String title,
         int version,

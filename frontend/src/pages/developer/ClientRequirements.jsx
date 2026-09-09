@@ -87,6 +87,8 @@ export default function DeveloperClientRequirements() {
           emptyTitle="No approved requirement documents yet"
           emptyHint="Once every required party signs off a BRD, SRS, or FRS, it will show up here automatically."
           columns={[
+            { key: "clientName", header: "Client", className: "text-left text-xs font-medium text-ink-800", render: (r) => r.clientName || <span className="text-ink-400">—</span> },
+            { key: "projectTitle", header: "Project", className: "text-left text-xs", render: (r) => r.projectTitle || <span className="text-ink-400">—</span> },
             { key: "title", header: "Document Title", className: "text-left font-medium text-ink-900" },
             { key: "docType", header: "Spec Type", className: "text-left", render: (r) => <Badge tone="primary">{DOC_TYPE_LABEL[r.docType] || r.docType}</Badge> },
             { key: "version", header: "Version", className: "text-left text-xs", render: (r) => `v${r.version}` },
