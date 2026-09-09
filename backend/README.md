@@ -8,7 +8,7 @@ Spring Boot 3.5 · Java 21 · MySQL 8.0 · Redis 7 · Maven. Backend and databas
 Requires: JDK 21, Maven, Docker Desktop.
 
 ```bash
-cp .env.example .env   # already present with dev-only values; only needed if you deleted it
+cp .env.example .env   # ships with working dev-only infra values — runs as-is, no editing needed
 docker compose up -d
 mvn spring-boot:run
 ```
@@ -21,6 +21,13 @@ Once running:
 
 - `GET http://localhost:8080/actuator/health` → `{"status":"UP"}`
 - `http://localhost:8080/swagger-ui.html` — Swagger UI (dev profile only)
+
+### Troubleshooting startup
+
+| Error at startup | Cause → fix |
+|---|---|
+| `Failed to parse the host:port pair '${DB_HOST}:${DB_PORT}'` | No `.env`, so the placeholders never resolved → `cp .env.example .env` and re-run. |
+| `Access denied for user 'moriah_migrate'@'…' (using password: YES)` (SQLState `28000`) | Your `.env` DB passwords don't match the MySQL container's users — either a hand-edited `.env` or a **stale MySQL volume** from an earlier run (the init script only runs on a fresh data dir). Reset it: `docker compose down -v && docker compose up -d`, then start the app. `.env.example`'s `DB_PASSWORD` / `MIGRATE_DB_PASSWORD` / `MYSQL_ROOT_PASSWORD` already match `docker/mysql-init/01-users.sql` — don't change them for local dev. |
 
 ## Tests
 
