@@ -140,15 +140,39 @@ class PipServiceTest {
         assertThat(response.status()).isEqualTo(PipStatus.TRIGGERED);
     }
 
+    @org.junit.jupiter.api.AfterEach
+    void clearSecurityContext() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
+
+    private void authenticateAs(long userId, java.util.List<String> roles) {
+        var principal = new com.moriah.skillhub.common.security.AuthenticatedPrincipal(userId, "uuid-" + userId, roles);
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.TestingAuthenticationToken(principal, null));
+    }
+
     @Test
-    void list_delegatesToRepositorySearch() {
+    void list_trainerPm_scopesSearchToTheirOwnBatches() {
+        // no ADMIN / HR_MANAGER role -> pmId filter = the caller's id
         Pageable pageable = PageRequest.of(0, 20);
-        when(pipRecordRepository.search(10L, PipStatus.TRIGGERED, pageable))
+        when(pipRecordRepository.search(10L, PipStatus.TRIGGERED, 9L, pageable))
                 .thenReturn(org.springframework.data.domain.Page.empty());
 
-        PageResponse<?> response = service().list(10L, PipStatus.TRIGGERED, pageable);
+        PageResponse<?> response = service().list(9L, 10L, PipStatus.TRIGGERED, pageable);
 
         assertThat(response.content()).isEmpty();
+    }
+
+    @Test
+    void list_hrManager_seesEveryBatch() {
+        authenticateAs(5L, java.util.List.of("HR_MANAGER"));
+        Pageable pageable = PageRequest.of(0, 20);
+        when(pipRecordRepository.search(null, null, null, pageable))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+
+        service().list(5L, null, null, pageable);
+
+        verify(pipRecordRepository).search(null, null, null, pageable);
     }
 
     // --- completeMilestone ---

@@ -25,11 +25,18 @@ public interface BatchRepository extends JpaRepository<Batch, Long> {
     Page<Batch> findAll(@NonNull Pageable pageable);
 
     /** {@code GET /api/v1/batches} for a STUDENT-only caller — narrowed to the batches they are
-     * enrolled in (any {@code batch_students} status: ACTIVE / ON_PIP / GRADUATED / …). ADMIN and
-     * TRAINER_PM keep the full {@link #findAll} list. */
+     * enrolled in (any {@code batch_students} status: ACTIVE / ON_PIP / GRADUATED / …). Only ADMIN
+     * gets the full {@link #findAll} list. */
     @EntityGraph(attributePaths = "pm")
     @Query("SELECT b FROM Batch b WHERE b.id IN (SELECT bs.batch.id FROM BatchStudent bs WHERE bs.user.id = :userId)")
     Page<Batch> findEnrolledByUserId(@Param("userId") Long userId, Pageable pageable);
+
+    /** {@code GET /api/v1/batches} for a TRAINER_PM — only the batches they run ({@code pm_id =
+     * callerUserId}). A second PM must not see, or get the ids of, batches another PM owns
+     * (per-batch ownership was already enforced on every drill-in and mutation; this closes the
+     * list itself). ADMIN still gets {@link #findAll}. */
+    @EntityGraph(attributePaths = "pm")
+    Page<Batch> findByPmId(Long pmId, Pageable pageable);
 
     /**
      * `/architect feature 10`: native SQL, not JPQL — {@code Batch.planTierMinId} is a bare

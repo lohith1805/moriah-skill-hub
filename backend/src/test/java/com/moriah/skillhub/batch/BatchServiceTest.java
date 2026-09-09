@@ -113,14 +113,29 @@ class BatchServiceTest {
     }
 
     @Test
-    void list_notStudentScoped_usesTheFullList() {
+    void list_admin_usesTheFullList() {
+        authenticateAs(99L, List.of("ADMIN"));
         when(entitlementService.planCodesById()).thenReturn(java.util.Map.of());
         when(batchRepository.findAll(org.mockito.ArgumentMatchers.any(org.springframework.data.domain.Pageable.class)))
                 .thenReturn(org.springframework.data.domain.Page.empty());
 
-        batchService.list(1L, false, org.springframework.data.domain.PageRequest.of(0, 20));
+        batchService.list(99L, false, org.springframework.data.domain.PageRequest.of(0, 20));
 
         verify(batchRepository).findAll(org.mockito.ArgumentMatchers.any(org.springframework.data.domain.Pageable.class));
+        verify(batchRepository, org.mockito.Mockito.never()).findByPmId(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void list_trainerPm_scopedToBatchesTheyOwn() {
+        authenticateAs(10L, List.of("TRAINER_PM"));
+        when(entitlementService.planCodesById()).thenReturn(java.util.Map.of());
+        when(batchRepository.findByPmId(org.mockito.ArgumentMatchers.eq(10L), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+
+        batchService.list(10L, false, org.springframework.data.domain.PageRequest.of(0, 20));
+
+        verify(batchRepository).findByPmId(org.mockito.ArgumentMatchers.eq(10L), org.mockito.ArgumentMatchers.any());
+        verify(batchRepository, org.mockito.Mockito.never()).findAll(org.mockito.ArgumentMatchers.any(org.springframework.data.domain.Pageable.class));
     }
 
     @Test

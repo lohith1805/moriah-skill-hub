@@ -6,6 +6,7 @@ import com.moriah.skillhub.common.audit.AuditLogService;
 import com.moriah.skillhub.common.dto.PageResponse;
 import com.moriah.skillhub.common.exception.BusinessException;
 import com.moriah.skillhub.common.exception.ErrorCode;
+import com.moriah.skillhub.common.security.SecurityUtils;
 import com.moriah.skillhub.common.exception.ResourceNotFoundException;
 import com.moriah.skillhub.metrics.StudentMetricsService;
 import com.moriah.skillhub.metrics.dto.StudentMetricProjection;
@@ -29,6 +30,7 @@ import com.moriah.skillhub.sprint.entity.Task;
 import com.moriah.skillhub.sprint.entity.TaskStatus;
 import com.moriah.skillhub.sprint.repository.TaskRepository;
 import com.moriah.skillhub.submission.WeeklyReviewService;
+import com.moriah.skillhub.user.entity.RoleCode;
 import com.moriah.skillhub.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -106,9 +108,15 @@ public class PipService {
     /** Bulk-fetches milestones for the whole page in one flat query rather than one {@code
      * findByPipRecordId} call per record (code-standards.md "N+1 Prevention" — a `/review` finding
      * against the original per-record version of {@link #toResponse}). */
+    /** {@code GET /api/v1/pip} — a TRAINER_PM only browses PIPs in the batches they run; a
+     * HR_MANAGER or ADMIN sees every batch's (HR reviews outcomes cohort-wide). Before this the
+     * list had no caller scoping at all — any PM could page through every student's PIP record. */
     @Transactional(readOnly = true)
-    public PageResponse<PipRecordResponse> list(Long batchId, PipStatus status, Pageable pageable) {
-        Page<PipRecord> page = pipRecordRepository.search(batchId, status, pageable);
+    public PageResponse<PipRecordResponse> list(Long callerUserId, Long batchId, PipStatus status, Pageable pageable) {
+        java.util.List<String> roles = SecurityUtils.currentUserRoles();
+        Long pmScope = roles.contains(RoleCode.ADMIN.name()) || roles.contains(RoleCode.HR_MANAGER.name())
+                ? null : callerUserId;
+        Page<PipRecord> page = pipRecordRepository.search(batchId, status, pmScope, pageable);
         List<Long> recordIds = page.getContent().stream().map(PipRecord::getId).toList();
         Map<Long, List<PipMilestone>> milestonesByRecordId = pipMilestoneRepository.findByPipRecordIdIn(recordIds)
                 .stream()

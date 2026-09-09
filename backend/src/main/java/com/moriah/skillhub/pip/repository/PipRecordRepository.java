@@ -29,16 +29,20 @@ public interface PipRecordRepository extends JpaRepository<PipRecord, Long> {
     @EntityGraph(attributePaths = {"user", "batch"})
     Optional<PipRecord> findByUserIdAndStatusIn(Long userId, List<PipStatus> statuses);
 
-    /** Backs {@code GET /api/v1/pip?batchId=&status=} — both filters optional, matching {@code
-     * ProjectRepository#search}'s exact shape. */
+    /** Backs {@code GET /api/v1/pip?batchId=&status=} — {@code batchId}/{@code status} optional.
+     * {@code pmId} scopes the result to batches that PM runs: {@code PipService#list} passes the
+     * caller's id for a TRAINER_PM (so a PM can't browse another PM's students' PIPs) and {@code
+     * null} for HR_MANAGER / ADMIN, who see every batch's. */
     @EntityGraph(attributePaths = {"user", "batch"})
     @Query("""
             SELECT p FROM PipRecord p
              WHERE (:batchId IS NULL OR p.batch.id = :batchId)
                AND (:status IS NULL OR p.status = :status)
+               AND (:pmId IS NULL OR p.batch.pm.id = :pmId)
              ORDER BY p.triggeredAt DESC
             """)
-    Page<PipRecord> search(@Param("batchId") Long batchId, @Param("status") PipStatus status, Pageable pageable);
+    Page<PipRecord> search(@Param("batchId") Long batchId, @Param("status") PipStatus status,
+            @Param("pmId") Long pmId, Pageable pageable);
 
     @EntityGraph(attributePaths = {"user", "batch"})
     Optional<PipRecord> findById(Long id);

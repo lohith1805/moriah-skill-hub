@@ -78,9 +78,10 @@ public class PipController {
     public ResponseEntity<ApiResponse<PageResponse<PipRecordResponse>>> list(
             @RequestParam(required = false) Long batchId,
             @RequestParam(required = false) PipStatus status,
-            @PageableDefault(size = 20) Pageable pageable) {
+            @PageableDefault(size = 20) Pageable pageable,
+            @CurrentUser Long callerUserId) {
 
-        return ResponseEntity.ok(ApiResponse.success(pipService.list(batchId, status, pageable)));
+        return ResponseEntity.ok(ApiResponse.success(pipService.list(callerUserId, batchId, status, pageable)));
     }
 
     @PostMapping("/api/v1/pip/{id}/milestones")

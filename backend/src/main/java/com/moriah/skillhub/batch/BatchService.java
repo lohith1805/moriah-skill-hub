@@ -35,6 +35,7 @@ import com.moriah.skillhub.user.entity.RoleCode;
 import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -128,22 +129,23 @@ public class BatchService {
         return get(batchId);
     }
 
-    @Transactional(readOnly = true)
-    public PageResponse<BatchResponse> list(Pageable pageable) {
-        Map<Long, String> planCodes = entitlementService.planCodesById();
-        return PageResponse.from(batchRepository.findAll(pageable).map(batch -> toResponse(batch, planCodes)));
-    }
-
-    /** {@code GET /api/v1/batches} — {@code studentScoped} true (a STUDENT-only caller) narrows
-     * the page to the batches they are enrolled in; ADMIN / TRAINER_PM get the full list. */
+    /** {@code GET /api/v1/batches} — the page is scoped to what the caller may actually act on:
+     * a STUDENT-only caller sees the batches they are enrolled in; a TRAINER_PM sees only the
+     * batches they run ({@code pm_id}); ADMIN sees every batch. Before this, TRAINER_PM got the
+     * full {@code findAll} list — a second PM could see, and get the ids of, another PM's batches,
+     * even though every drill-in / mutation already 403s via {@link #requireOwnerOrAdmin}. */
     @Transactional(readOnly = true)
     public PageResponse<BatchResponse> list(Long callerUserId, boolean studentScoped, Pageable pageable) {
-        if (!studentScoped) {
-            return list(pageable);
-        }
         Map<Long, String> planCodes = entitlementService.planCodesById();
-        return PageResponse.from(
-                batchRepository.findEnrolledByUserId(callerUserId, pageable).map(batch -> toResponse(batch, planCodes)));
+        Page<Batch> page;
+        if (studentScoped) {
+            page = batchRepository.findEnrolledByUserId(callerUserId, pageable);
+        } else if (SecurityUtils.currentUserRoles().contains(RoleCode.ADMIN.name())) {
+            page = batchRepository.findAll(pageable);
+        } else {
+            page = batchRepository.findByPmId(callerUserId, pageable);
+        }
+        return PageResponse.from(page.map(batch -> toResponse(batch, planCodes)));
     }
 
     /** {@code GET /api/v1/batches/{id}/students} — the batch roster. PM/ADMIN only (route-gated),
