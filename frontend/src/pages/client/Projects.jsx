@@ -3,7 +3,6 @@ import { Plus, Send, Activity } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import Card from "../../components/ui/Card";
 import Table from "../../components/ui/Table";
-import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
 import ProgressBar from "../../components/ui/ProgressBar";
@@ -97,11 +96,6 @@ export default function ClientProjects() {
             { key: "budgetRange", header: "Budget", className: "text-left text-xs", render: (r) => r.budgetRange || "—" },
             { key: "assignedBa", header: "Your BA", className: "text-left text-xs", render: (r) => r.assignedBaName || <span className="text-ink-400">Assigning…</span> },
             { key: "submittedAt", header: "Submitted", className: "text-left text-xs" },
-            { key: "status", header: "Status", className: "text-left", render: (r) => (
-              <Badge tone={r.status === "Completed" ? "success" : r.status === "In Progress" ? "primary" : "warning"}>
-                {r.allocated ? r.status : "Awaiting batch"}
-              </Badge>
-            ) },
             { key: "action", header: "", className: "text-right", render: (r) => (
               r.allocated
                 ? <Button size="sm" variant="secondary" icon={Activity} onClick={() => viewProgress(r)}>Progress</Button>
