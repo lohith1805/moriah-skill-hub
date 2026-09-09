@@ -28,6 +28,8 @@ import com.moriah.skillhub.common.security.SecurityUtils;
 import com.moriah.skillhub.project.entity.Project;
 import com.moriah.skillhub.project.entity.ProjectStatus;
 import com.moriah.skillhub.project.repository.ProjectRepository;
+import com.moriah.skillhub.sprint.entity.TaskStatus;
+import com.moriah.skillhub.sprint.repository.TaskRepository;
 import com.moriah.skillhub.subscription.EntitlementService;
 import com.moriah.skillhub.user.entity.RoleCode;
 import com.moriah.skillhub.user.entity.User;
@@ -60,6 +62,10 @@ public class BatchService {
     private final UserRepository userRepository;
     private final EntitlementService entitlementService;
     private final org.springframework.context.ApplicationEventPublisher eventPublisher;
+    /** Read directly (not via {@code sprint/TaskService}) for the feature-20 graduation gate —
+     * see {@code TaskRepository#countUnfinishedForStudentInBatch}'s Javadoc for the cycle it
+     * avoids. */
+    private final TaskRepository taskRepository;
 
     /** build-plan.md feature 10: "Creation restricted to TRAINER_PM and ADMIN; creator becomes
      * pm_id" — literally, with no exception for ADMIN (`/architect feature 10` reading). */
@@ -458,6 +464,13 @@ public class BatchService {
             throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION,
                     "Only an ACTIVE student can be graduated (current status: %s). Clear an open PIP back to ACTIVE first."
                             .formatted(batchStudent.getStatus()));
+        }
+        long unfinished = taskRepository.countUnfinishedForStudentInBatch(
+                student.getId(), batch.getId(), TaskStatus.UNFINISHED);
+        if (unfinished > 0) {
+            throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION,
+                    "This student has %d unfinished sprint task(s). Every task assigned to them must be COMPLETED "
+                            .formatted(unfinished) + "(or reassigned) before they can be graduated.");
         }
 
         Instant graduatedAt = Instant.now();

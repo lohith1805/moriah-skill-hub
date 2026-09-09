@@ -91,6 +91,22 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
     @EntityGraph(attributePaths = "assignedTo")
     List<Task> findByAssignedToIdAndStatusInOrderByDueAtAsc(Long assignedToId, Collection<TaskStatus> statuses);
 
+    /** {@code BatchService#graduate} and {@code CertificateService#issue} — feature 20's gate
+     * "a student with unfinished sprint work is not graduated or certified". Counts tasks
+     * assigned to this student, in this batch's sprints, still in a non-terminal status
+     * ({@link TaskStatus#UNFINISHED}). An unassigned {@code BACKLOG} task is nobody's blocker.
+     * Read straight from those two packages rather than via {@code TaskService} for the same
+     * {@code TaskService -> TaskPullGuard -> PipService} cycle-avoidance {@link
+     * #findByAssignedToIdAndStatusInOrderByDueAtAsc} already documents. */
+    @Query("""
+            SELECT COUNT(t) FROM Task t
+             WHERE t.assignedTo.id = :studentId
+               AND t.sprint.batch.id = :batchId
+               AND t.status IN :statuses
+            """)
+    long countUnfinishedForStudentInBatch(@Param("studentId") Long studentId,
+            @Param("batchId") Long batchId, @Param("statuses") Collection<TaskStatus> statuses);
+
     /** {@code SprintService#taskStatusCountsForBatch}'s backing query — FRS MSH-FR-PM-02/
      * MSH-FR-BA-03: task-level progress (counts per status), not just the story-point rollup
      * {@code SprintProgressProjection} already carries. Aggregate counts only — no task title,

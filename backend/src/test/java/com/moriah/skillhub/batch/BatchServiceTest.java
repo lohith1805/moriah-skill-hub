@@ -37,6 +37,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -64,6 +66,8 @@ class BatchServiceTest {
     private UserRepository userRepository;
     @Mock
     private EntitlementService entitlementService;
+    @Mock
+    private com.moriah.skillhub.sprint.repository.TaskRepository taskRepository;
 
     @InjectMocks
     private BatchService batchService;
@@ -198,6 +202,26 @@ class BatchServiceTest {
         assertThat(batchStudent.getGraduatedAt()).isEqualTo(result.graduatedAt());
         assertThat(batchStudent.getGraduatedBy()).isEqualTo(pm);
         verify(batchRepository, times(1)).releaseSeat(100L);
+    }
+
+    @Test
+    void graduate_studentWithUnfinishedTask_throwsBusinessRuleViolation() {
+        authenticateAs(10L, List.of("TRAINER_PM"));
+        User student = new User();
+        student.setId(5L);
+        student.setUuid("student-uuid");
+        BatchStudent batchStudent = new BatchStudent();
+        batchStudent.setStatus(BatchStudentStatus.ACTIVE);
+        when(batchRepository.findById(100L)).thenReturn(Optional.of(batch));
+        when(userRepository.findByUuid("student-uuid")).thenReturn(Optional.of(student));
+        when(batchStudentRepository.findByBatchIdAndUserId(100L, 5L)).thenReturn(Optional.of(batchStudent));
+        when(taskRepository.countUnfinishedForStudentInBatch(eq(5L), eq(100L), any())).thenReturn(2L);
+
+        assertThatThrownBy(() -> batchService.graduate(10L, 100L, "student-uuid"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.BUSINESS_RULE_VIOLATION);
+        assertThat(batchStudent.getStatus()).isEqualTo(BatchStudentStatus.ACTIVE);
+        verify(batchRepository, times(0)).releaseSeat(100L);
     }
 
     @Test

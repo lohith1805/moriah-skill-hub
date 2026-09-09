@@ -65,6 +65,8 @@ class CertificateServiceTest {
     private StorageService storageService;
     @Mock
     private AuditLogService auditLogService;
+    @Mock
+    private com.moriah.skillhub.sprint.repository.TaskRepository taskRepository;
 
     private final QrCodeService qrCodeService = new QrCodeService();
     private final CertificateProperties certificateProperties =
@@ -72,7 +74,8 @@ class CertificateServiceTest {
 
     private CertificateService service() {
         return new CertificateService(certificateRepository, batchRepository, batchService, pipService,
-                sprintService, userRepository, storageService, qrCodeService, certificateProperties, auditLogService);
+                sprintService, userRepository, storageService, qrCodeService, certificateProperties, auditLogService,
+                taskRepository);
     }
 
     private Batch batch(long id) {
@@ -143,6 +146,25 @@ class CertificateServiceTest {
         when(sprintService.allSprintsClosed(3L)).thenReturn(false);
 
         IssueCertificateRequest request = new IssueCertificateRequest(3L, "student-uuid-3", null);
+
+        assertThatThrownBy(() -> service().issue(request, 99L, "pm-uuid"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.BUSINESS_RULE_VIOLATION);
+        verify(certificateRepository, never()).save(any());
+    }
+
+    @Test
+    void issue_studentHasUnfinishedTask_throwsBusinessRuleViolation() {
+        Batch batch = batch(4L);
+        User student = user(13L, "student-uuid-4", "Grace Hopper");
+        when(batchRepository.findById(4L)).thenReturn(Optional.of(batch));
+        when(userRepository.findByUuid("student-uuid-4")).thenReturn(Optional.of(student));
+        when(batchService.hasGraduatedFromBatch(4L, 13L)).thenReturn(true);
+        when(pipService.hasOpenPip(13L)).thenReturn(false);
+        when(sprintService.allSprintsClosed(4L)).thenReturn(true);
+        when(taskRepository.countUnfinishedForStudentInBatch(eq(13L), eq(4L), any())).thenReturn(1L);
+
+        IssueCertificateRequest request = new IssueCertificateRequest(4L, "student-uuid-4", null);
 
         assertThatThrownBy(() -> service().issue(request, 99L, "pm-uuid"))
                 .isInstanceOf(BusinessException.class)

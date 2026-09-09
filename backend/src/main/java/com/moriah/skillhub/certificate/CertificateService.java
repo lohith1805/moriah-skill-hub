@@ -25,6 +25,8 @@ import com.moriah.skillhub.common.storage.StorageService;
 import com.moriah.skillhub.common.util.Constants;
 import com.moriah.skillhub.pip.PipService;
 import com.moriah.skillhub.sprint.SprintService;
+import com.moriah.skillhub.sprint.entity.TaskStatus;
+import com.moriah.skillhub.sprint.repository.TaskRepository;
 import com.moriah.skillhub.user.entity.User;
 import com.moriah.skillhub.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -42,12 +44,16 @@ import java.time.Year;
 import java.util.List;
 
 /**
- * build-plan.md feature 20. Issuance's three eligibility checks each call into a sibling module's
+ * build-plan.md feature 20. Issuance's eligibility checks mostly call into a sibling module's
  * *service* — never its repository or entity (architecture.md layer rule) — exactly the boundary
  * {@code BatchService#hasGraduatedFromBatch}/{@code PipService#hasOpenPip}/{@code
  * SprintService#allSprintsClosed} each document on their own side. {@code BatchRepository} is
  * still injected directly here, same as {@code SprintService} injects it — {@code Batch} is the
- * established shared-kernel entity, not a boundary violation.
+ * established shared-kernel entity, not a boundary violation. {@code TaskRepository} is the one
+ * repository read that has no thin service method to go through: {@code sprint/TaskService}
+ * cannot be depended on from here without the {@code TaskService -> TaskPullGuard -> PipService}
+ * bean cycle its own Javadoc calls out, so the "no unfinished sprint task" count is read
+ * straight from the repository, the same pragmatism {@code PipService} already uses.
  */
 @Service
 @RequiredArgsConstructor
@@ -74,6 +80,9 @@ public class CertificateService {
     private final QrCodeService qrCodeService;
     private final CertificateProperties certificateProperties;
     private final AuditLogService auditLogService;
+    /** Read directly for the "no unfinished sprint work" eligibility check — see {@code
+     * TaskRepository#countUnfinishedForStudentInBatch}'s Javadoc. */
+    private final TaskRepository taskRepository;
 
     /** The three eligibility checks build-plan.md's "Verify" line names explicitly: "A student
      * with an open PIP cannot be issued. A student never graduated cannot be issued." (the third,
@@ -125,6 +134,13 @@ public class CertificateService {
         if (!sprintService.allSprintsClosed(batch.getId())) {
             throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION,
                     "Not every sprint in this batch is COMPLETED yet.");
+        }
+        long unfinished = taskRepository.countUnfinishedForStudentInBatch(
+                student.getId(), batch.getId(), TaskStatus.UNFINISHED);
+        if (unfinished > 0) {
+            throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION,
+                    "This student has %d unfinished sprint task(s) and cannot be issued a certificate."
+                            .formatted(unfinished));
         }
 
         CertificateType type = request.certificateType() != null ? request.certificateType() : CertificateType.COMPLETION;

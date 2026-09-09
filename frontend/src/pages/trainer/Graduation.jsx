@@ -157,7 +157,7 @@ export default function TrainerGraduation() {
         onConfirm={approve}
         loading={submitting}
         title={target ? `Graduate ${target.name}?` : "Approve graduation?"}
-        description="This sets the student to GRADUATED and issues a completion certificate (requires every sprint in the batch COMPLETED and no open PIP). It cannot be undone."
+        description="This sets the student to GRADUATED and issues a completion certificate (requires no open PIP, no unfinished tasks assigned to the student, and every sprint in the batch COMPLETED). It cannot be undone."
         confirmLabel="Approve & issue certificate"
       />
     </div>
