@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moriah System Blueprint</title>
+<meta name="description" content="The whole Moriah Skill Hub platform on one zoomable flow diagram.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+<style>
+  :root{
+    --ground:#f6f3ec; --surface:#ffffff; --canvas:#fbfaf6;
+    --ink:#171d2b; --ink-soft:#586074; --ink-faint:#8a92a3;
+    --accent:#a9741f; --line:#e6e0d2; --line-soft:#efe9dc;
+    --shadow:0 1px 2px rgba(23,29,43,.05), 0 14px 40px -18px rgba(23,29,43,.16);
+    color-scheme:light dark;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme=light]){
+      --ground:#0f131b; --surface:#161c27; --canvas:#0f131b;
+      --ink:#e9eaed; --ink-soft:#9aa2b2; --ink-faint:#6b7486;
+      --accent:#e0a94a; --line:#28303e; --line-soft:#222a37;
+      --shadow:0 1px 2px rgba(0,0,0,.35), 0 18px 46px -20px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme=dark]{
+    --ground:#0f131b; --surface:#161c27; --canvas:#0f131b;
+    --ink:#e9eaed; --ink-soft:#9aa2b2; --ink-faint:#6b7486;
+    --accent:#e0a94a; --line:#28303e; --line-soft:#222a37;
+    --shadow:0 1px 2px rgba(0,0,0,.35), 0 18px 46px -20px rgba(0,0,0,.6);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    line-height:1.55; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1280px; margin:0 auto; padding:0 28px}
+  @media (max-width:640px){.wrap{padding:0 16px}}
+  header{padding:56px 0 24px}
+  .kicker{
+    font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.15em;
+    text-transform:uppercase; color:var(--accent); margin:0 0 15px;
+  }
+  h1{
+    font-family:'Bricolage Grotesque',sans-serif; font-weight:800; letter-spacing:-.025em;
+    font-size:clamp(32px,5.4vw,52px); line-height:1.05; margin:0 0 16px;
+  }
+  .dek{font-size:clamp(15px,2vw,18px); color:var(--ink-soft); max-width:70ch; margin:0}
+  .legend{
+    display:flex; flex-wrap:wrap; gap:8px 10px; margin:26px 0 0;
+    font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft);
+  }
+  .legend span{
+    border:1px solid var(--line); background:var(--surface); border-radius:999px;
+    padding:5px 11px; white-space:nowrap;
+  }
+  .legend span b{color:var(--ink); font-weight:500}
+  .toolbar{
+    display:flex; align-items:center; gap:6px; margin:14px 0 8px;
+    font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft);
+  }
+  .toolbar button{
+    font:inherit; color:var(--ink); background:var(--surface); border:1px solid var(--line);
+    border-radius:8px; padding:5px 10px; cursor:pointer; line-height:1;
+  }
+  .toolbar button:hover{border-color:var(--ink-faint)}
+  .toolbar .zval{min-width:44px; text-align:center}
+  .toolbar .sp{flex:1}
+  .board{
+    background:var(--canvas); border:1px solid var(--line);
+    border-radius:16px; box-shadow:var(--shadow); overflow:auto; max-height:82vh;
+  }
+  .board .pad{padding:26px; width:max-content}
+  #diagram{transform-origin:top left}
+  #diagram svg{display:block; max-width:none !important; height:auto; font-family:'IBM Plex Sans',sans-serif}
+  .board.loading{overflow:hidden}
+  .board.loading .pad{
+    width:auto; min-height:340px; display:flex; align-items:center; justify-content:center;
+    color:var(--ink-faint); font-family:'IBM Plex Mono',monospace; font-size:13px;
+  }
+  .hint{margin:10px 0 56px; font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-faint)}
+  footer{
+    border-top:1px solid var(--line); padding:28px 0 56px; color:var(--ink-faint);
+    font-size:13px; font-family:'IBM Plex Mono',monospace;
+  }
+  footer .wrap{display:flex; flex-wrap:wrap; gap:6px 18px; justify-content:space-between}
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <p class="kicker">Moriah Skill Hub &middot; one-page system map</p>
+  <h1>The whole platform, one diagram</h1>
+  <p class="dek">Every path a person or an artifact takes &mdash; a lead becoming a paying student, sprint work and reviews feeding the nightly metrics, the PIP engine, graduation and the certificate, a client&rsquo;s requirement becoming a spec a batch builds against, and the placement pipeline that ends in a hire. The nightly job chain and admin governance sit underneath it all.</p>
+  <div class="legend">
+    <span><b>rectangle</b> step / service call</span>
+    <span><b>diamond</b> branch &mdash; label is the condition</span>
+    <span><b>stadium</b> datastore</span>
+    <span><b>dashed</b> occasional / compensating path</span>
+    <span><b>lane</b> a domain of the system</span>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="toolbar" id="toolbar" hidden>
+    <button data-z="out" aria-label="Zoom out">&minus;</button>
+    <span class="zval" id="zval">100%</span>
+    <button data-z="in" aria-label="Zoom in">+</button>
+    <button data-z="fit">Fit width</button>
+    <button data-z="reset">Actual size</button>
+    <span class="sp"></span>
+    <span>scroll to pan</span>
+  </div>
+  <div class="board loading" id="board"><div class="pad"><div id="diagram">building diagram&hellip;</div></div></div>
+  <p class="hint">Re-themes with your system light / dark setting. Per-flow detail is in project-flows.md.</p>
+</div>
+
+<footer>
+  <div class="wrap">
+    <span>Companion to docs/project-flows.md &mdash; per-flow detail</span>
+    <span>Moriah Skill Hub</span>
+  </div>
+</footer>
+
+<script type="text/plain" id="src">
+flowchart TB
+  subgraph ACQ["1 - Acquisition"]
+    LEAD["Lead pipeline<br/>NEW to CONTACTED to DEMO to<br/>COUNSELLING to PAYMENT to ENROLLED"]
+    CHK["Checkout - plan + coupon"]
+    PAYWH["Payment webhook<br/>Razorpay / Stripe, HMAC-verified"]
+    SUBACT["Subscription active + entitlements<br/>invoice PDF emailed"]
+    ALLOC["Batch allocation<br/>PROJECT_BASED+ only<br/>no seat to a PM-notified queue"]
+    LEAD --> CHK --> PAYWH --> SUBACT --> ALLOC
+  end
+
+  subgraph TRAIN["2 - Training lifecycle"]
+    ENROL["ACTIVE in a batch"]
+    SPRINT["Sprints and task board<br/>BACKLOG to ASSIGNED to IN_PROGRESS<br/>to IN_REVIEW to COMPLETED / REJECTED"]
+    PR["GitHub PR submission - author-verified<br/>then mentor code review"]
+    SIGNALS["Standups and attendance<br/>weekly reviews, lesson quizzes"]
+    MET[("student_metrics<br/>rebuilt nightly")]
+    ENROL --> SPRINT --> PR
+    ENROL --> SIGNALS
+    PR --> MET
+    SIGNALS --> MET
+  end
+
+  subgraph PIPX["3 - PIP engine (nightly)"]
+    RULES["6 rule evaluators<br/>attendance, project delay, assignments<br/>quiz, weekly review, inactivity"]
+    TRIG["PIP TRIGGERED - 15-day window<br/>seeded milestone, student ON_PIP<br/>notify student / PM / HR"]
+    RECOV["Nightly reconcile<br/>auto-complete or revert seeded milestone<br/>auto-clear on elapse, early-clear nudge"]
+    OUT{"PM review<br/>outcome"}
+    CLR["CLEARED - back to ACTIVE"]
+    ENDPIP["TERMINATED or REASSIGNED<br/>seat released"]
+    RULES --> TRIG --> RECOV --> OUT
+    OUT -->|criteria met or auto| CLR
+    OUT -->|no improvement / move| ENDPIP
+  end
+
+  subgraph GRAD["4 - Graduation and certificate"]
+    GATE{"ACTIVE, no open PIP,<br/>no unfinished tasks,<br/>every sprint COMPLETED?"}
+    GRADUATED["GRADUATED - seat released"]
+    CERT["Certificate - number + PDF<br/>+ QR verification code"]
+    GATE -->|yes| GRADUATED --> CERT
+  end
+
+  subgraph BIZ["5 - Client intake to spec"]
+    CREQ["Client submits a requirement"]
+    AUTHOR["BA authors BRD then SRS then FRS<br/>versioned per doc type"]
+    APPROVE{"All required parties<br/>signed off?"}
+    DEVREV["Developer reads + marks reviewed"]
+    CREQ --> AUTHOR --> APPROVE
+    APPROVE -->|rejected + reason| AUTHOR
+    APPROVE -->|approved| DEVREV
+  end
+
+  subgraph PLACE["6 - Talent pool to hire (PlacementStage)"]
+    POOL["Talent pool"]
+    TECH["Technical round<br/>scheduled to completed to approved"]
+    HRR["HR round<br/>scheduled to completed to approved"]
+    DOCS["Document verification"]
+    OFFER["Offer created to client signs<br/>to student accepts"]
+    PLACED["PLACED"]
+    POOL --> TECH --> HRR --> DOCS --> OFFER --> PLACED
+  end
+
+  subgraph OPS["7 - People ops and nightly jobs"]
+    HR["Staff - onboarding + provisioning<br/>to attendance and leave<br/>to payroll and payslips to exit"]
+    JOBS["Nightly chain (Asia/Kolkata)<br/>attendance ~01:30 to metrics ~01:45<br/>to PIP eval ~02:00 to subs / quiz expiry ~03:00<br/>to invoice generation"]
+  end
+
+  ADMIN["ADMIN - users, roles, plans, refunds,<br/>reports, audit and security logs"]
+
+  ALLOC ==> ENROL
+  MET ==> RULES
+  CLR ==> ENROL
+  SPRINT ==> GATE
+  CERT ==> POOL
+  DEVREV ==> SPRINT
+  JOBS -.-> MET
+  JOBS -.-> RULES
+  PAYWH -.-> DEALLOC["Refund path - de-allocate<br/>+ revoke entitlements"]
+  DEALLOC -.-> ENROL
+  ADMIN -.-> SUBACT
+  ADMIN -.-> SPRINT
+</script>
+
+<script>
+  (function () {
+    var SRC = document.getElementById('src').textContent.replace(/^\s*\n/, '').replace(/\s+$/, '');
+    var board = document.getElementById('board');
+    var host = document.getElementById('diagram');
+    var n = 0, natW = 0, natH = 0, zoom = 1, fitted = false;
+
+    function themeVars() {
+      var root = document.documentElement;
+      var dark = root.dataset.theme === 'dark' ||
+        (root.dataset.theme !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      var font = "'IBM Plex Sans', sans-serif";
+      return dark ? {
+        fontFamily: font, fontSize: '14px', background: 'transparent',
+        primaryColor: '#1c2432', primaryBorderColor: '#8b95a7', primaryTextColor: '#e9eaed',
+        secondaryColor: '#222c3d', tertiaryColor: '#19212e', lineColor: '#8b95a7', textColor: '#e9eaed',
+        nodeBorder: '#8b95a7', mainBkg: '#1c2432', clusterBkg: '#141b26', clusterBorder: '#38424f',
+        edgeLabelBackground: '#161c27', titleColor: '#e9eaed', nodeTextColor: '#e9eaed',
+        labelBoxBkgColor: '#1c2432', labelBoxBorderColor: '#8b95a7', labelTextColor: '#e9eaed'
+      } : {
+        fontFamily: font, fontSize: '14px', background: 'transparent',
+        primaryColor: '#ffffff', primaryBorderColor: '#5b6577', primaryTextColor: '#171d2b',
+        secondaryColor: '#f1ece1', tertiaryColor: '#faf8f2', lineColor: '#7c8496', textColor: '#171d2b',
+        nodeBorder: '#5b6577', mainBkg: '#ffffff', clusterBkg: '#f6f2e8', clusterBorder: '#d9d1bf',
+        edgeLabelBackground: '#fbfaf6', titleColor: '#171d2b', nodeTextColor: '#171d2b',
+        labelBoxBkgColor: '#ffffff', labelBoxBorderColor: '#5b6577', labelTextColor: '#171d2b'
+      };
+    }
+    function applyZoom() {
+      host.style.transform = 'scale(' + zoom + ')';
+      host.style.width = natW + 'px'; host.style.height = natH + 'px';
+      var pad = board.querySelector('.pad');
+      pad.style.width = Math.ceil(natW * zoom) + 'px';
+      pad.style.height = Math.ceil(natH * zoom) + 'px';
+      document.getElementById('zval').textContent = Math.round(zoom * 100) + '%';
+    }
+    function fitWidth() {
+      var avail = board.clientWidth - 52;
+      zoom = natW ? Math.min(1, Math.max(0.15, avail / natW)) : 1;
+      fitted = true; applyZoom();
+    }
+    async function render() {
+      if (!window.mermaid) { if (n++ < 90) return setTimeout(render, 100); return; }
+      try {
+        window.mermaid.initialize({
+          startOnLoad: false, theme: 'base', themeVariables: themeVars(), securityLevel: 'loose',
+          flowchart: { htmlLabels: false, nodeSpacing: 34, rankSpacing: 52, padding: 10, defaultRenderer: 'dagre-wrapper' }
+        });
+        var res = await window.mermaid.render('moriah-map-' + Date.now(), SRC);
+        host.innerHTML = res.svg;
+        var svg = host.querySelector('svg');
+        var vb = (svg.getAttribute('viewBox') || '0 0 1200 800').split(/\s+/).map(Number);
+        natW = vb[2]; natH = vb[3];
+        svg.removeAttribute('width'); svg.removeAttribute('height');
+        svg.style.width = natW + 'px'; svg.style.height = natH + 'px';
+        board.classList.remove('loading');
+        document.getElementById('toolbar').hidden = false;
+        if (!fitted || zoom === 1) fitWidth(); else applyZoom();
+      } catch (e) {
+        host.textContent = 'diagram failed to render - see console';
+        console.error(e);
+      }
+    }
+    render();
+
+    document.getElementById('toolbar').addEventListener('click', function (e) {
+      var k = e.target && e.target.dataset ? e.target.dataset.z : null;
+      if (!k) return;
+      if (k === 'in') zoom = Math.min(2.5, zoom * 1.25);
+      else if (k === 'out') zoom = Math.max(0.15, zoom / 1.25);
+      else if (k === 'reset') zoom = 1;
+      else if (k === 'fit') return fitWidth();
+      fitted = false; applyZoom();
+    });
+    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+    if (mq.addEventListener) mq.addEventListener('change', render);
+    new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    window.addEventListener('resize', function () { if (fitted) fitWidth(); });
+  })();
+</script>
+</body>
+</html>
