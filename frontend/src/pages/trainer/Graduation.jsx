@@ -28,6 +28,8 @@ export default function TrainerGraduation() {
   const [loading, setLoading] = useState(false);
   const [target, setTarget] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [issuingUuid, setIssuingUuid] = useState("");
+  const [issuedUuids, setIssuedUuids] = useState(() => new Set());
 
   useEffect(() => {
     getBatches({ scope: "mine" })
@@ -51,6 +53,25 @@ export default function TrainerGraduation() {
     loadRoster(batchId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batchId]);
+
+  // Issue (or re-attempt) a certificate for a student who is already GRADUATED — the `approve`
+  // flow only tries once, in the same click as graduating, so a student graduated while a
+  // precondition wasn't met (open sprint, unfinished task) otherwise has no path to a certificate.
+  const issueFor = async (student) => {
+    setIssuingUuid(student.userUuid);
+    try {
+      const cert = await issueCertificate(batchId, student.userUuid, "COMPLETION");
+      setIssuedUuids((s) => new Set(s).add(student.userUuid));
+      notify(`Certificate ${cert.certificateNumber || ""} issued for ${student.name}.`, {
+        type: "success",
+        title: "Certificate issued",
+      });
+    } catch (err) {
+      notify(err.message || "Could not issue the certificate.", { type: "error" });
+    } finally {
+      setIssuingUuid("");
+    }
+  };
 
   const approve = async () => {
     const student = target;
@@ -139,7 +160,22 @@ export default function TrainerGraduation() {
                 className: "text-right",
                 render: (r) =>
                   r.status === "GRADUATED" ? (
-                    <Badge tone="success"><CheckCircle2 size={11} className="inline mr-1" />Graduated</Badge>
+                    <div className="flex items-center justify-end gap-2">
+                      <Badge tone="success"><CheckCircle2 size={11} className="inline mr-1" />Graduated</Badge>
+                      {issuedUuids.has(r.userUuid) ? (
+                        <Badge tone="neutral"><Award size={11} className="inline mr-1" />Certificate issued</Badge>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          icon={Award}
+                          loading={issuingUuid === r.userUuid}
+                          onClick={() => issueFor(r)}
+                        >
+                          Issue certificate
+                        </Button>
+                      )}
+                    </div>
                   ) : canGraduate(r) ? (
                     <Button size="sm" icon={GraduationCap} onClick={() => setTarget(r)}>Approve</Button>
                   ) : (
