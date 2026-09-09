@@ -82,4 +82,11 @@ public class PipRecord extends BaseEntity {
 
     @Column(name = "outcome_at")
     private Instant outcomeAt;
+
+    /** Set by {@code PipEvaluationService#nudgeEarlyRecoveries} the first night this still-open
+     * record meets every clearance criterion before its window ends, so the "you can clear this
+     * PIP early" PM notification is sent once, not re-sent every subsequent night. Null until then;
+     * the dev {@code elapse-window} helper clears it back to null. */
+    @Column(name = "early_clear_nudged_at")
+    private Instant earlyClearNudgedAt;
 }

@@ -65,7 +65,10 @@ public class DevJobController {
         int processed = switch (job) {
             case "attendance-finalisation" -> attendanceFinalisationService.finalise();
             case "metrics-refresh" -> studentMetricsService.refresh();
-            case "pip-evaluation" -> pipEvaluationService.evaluate() + pipEvaluationService.autoResolveElapsed();
+            case "pip-evaluation" -> pipEvaluationService.evaluate()
+                    + pipEvaluationService.reconcileSeededMilestones()
+                    + pipEvaluationService.autoResolveElapsed()
+                    + pipEvaluationService.nudgeEarlyRecoveries();
             case "subscription-expiry" -> subscriptionExpiryService.runExpiry();
             case "quiz-attempt-expiry" -> quizAttemptExpiryService.expire();
             case "invoice-generation" -> regenerateInvoice(paymentId);

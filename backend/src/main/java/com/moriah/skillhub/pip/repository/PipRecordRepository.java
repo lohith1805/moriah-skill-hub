@@ -49,6 +49,18 @@ public interface PipRecordRepository extends JpaRepository<PipRecord, Long> {
     @EntityGraph(attributePaths = {"user", "batch"})
     List<PipRecord> findByStatusInAndEndDateBefore(List<PipStatus> statuses, LocalDate date);
 
+    /** {@code PipEvaluationService#reconcileSeededMilestones} — every still-open record, window
+     * elapsed or not, so the one auto-seeded milestone's state can be re-derived from its trigger
+     * metric before the elapsed-window pass reads it. */
+    @EntityGraph(attributePaths = {"user", "batch"})
+    List<PipRecord> findByStatusIn(List<PipStatus> statuses);
+
+    /** {@code PipEvaluationService#nudgeEarlyRecoveries} — still-open records whose 15-day window
+     * has NOT yet elapsed ({@code endDate} today or later); the elapsed ones are the other pass's
+     * job. */
+    @EntityGraph(attributePaths = {"user", "batch"})
+    List<PipRecord> findByStatusInAndEndDateGreaterThanEqual(List<PipStatus> statuses, LocalDate date);
+
     /** {@code PipService#blocksPull}'s check, called from {@code sprint/TaskPullGuard} on every
      * {@code POST /tasks/{id}/pull} — the hottest path this feature has, so it needs a genuinely
      * indexed lookup, not a scan (see V11's {@code idx_pip_records_pull_block} comment). */

@@ -16,10 +16,13 @@ import com.moriah.skillhub.pip.engine.ProjectDelayRule;
 import com.moriah.skillhub.pip.engine.QuizFailureRule;
 import com.moriah.skillhub.pip.engine.ReviewFailedRule;
 import com.moriah.skillhub.pip.engine.TaskAbandonedRule;
+import com.moriah.skillhub.pip.entity.PipMilestone;
+import com.moriah.skillhub.pip.entity.PipMilestoneStatus;
 import com.moriah.skillhub.pip.entity.PipRecord;
 import com.moriah.skillhub.pip.entity.PipRule;
 import com.moriah.skillhub.pip.entity.PipRuleCode;
 import com.moriah.skillhub.pip.entity.PipSeverity;
+import com.moriah.skillhub.pip.entity.PipStatus;
 import com.moriah.skillhub.pip.repository.PipMilestoneRepository;
 import com.moriah.skillhub.pip.repository.PipRecordRepository;
 import com.moriah.skillhub.pip.repository.PipRuleRepository;
@@ -34,7 +37,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -252,6 +258,215 @@ class PipEvaluationServiceTest {
 
         assertThat(count).isZero();
         verify(pipRecordRepository, never()).save(any());
+    }
+
+    // --- autoResolveElapsed ---
+
+    private PipRecord elapsedRecord(long id, long userId, long batchId, long pmId) {
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        PipRecord record = new PipRecord();
+        record.setId(id);
+        record.setUser(user(userId, "student-uuid"));
+        record.setBatch(batch(batchId, pmId));
+        record.setRuleCode(PipRuleCode.ATTENDANCE_LOW);
+        record.setSeverity(PipSeverity.MEDIUM);
+        record.setStartDate(today.minusDays(17));
+        record.setEndDate(today.minusDays(2));
+        record.setStatus(PipStatus.IN_PROGRESS);
+        return record;
+    }
+
+    private PipMilestone doneMilestone(PipRecord record) {
+        return seededMilestone(record, PipMilestoneStatus.COMPLETED);
+    }
+
+    /** The row {@code fire()} auto-creates — title == the rule's {@code milestoneTitle()}, which
+     * is how {@code reconcileSeededMilestones} identifies it. */
+    private PipMilestone seededMilestone(PipRecord record, PipMilestoneStatus status) {
+        PipMilestone milestone = new PipMilestone();
+        milestone.setId(1L);
+        milestone.setPipRecord(record);
+        milestone.setTitle(record.getRuleCode().milestoneTitle());
+        milestone.setStatus(status);
+        if (status == PipMilestoneStatus.COMPLETED) {
+            milestone.setCompletedAt(java.time.Instant.now());
+        }
+        return milestone;
+    }
+
+    private PipRecord withinWindowRecord(long id, long userId, long batchId, long pmId) {
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        PipRecord record = elapsedRecord(id, userId, batchId, pmId);
+        record.setStartDate(today.minusDays(3));
+        record.setEndDate(today.plusDays(12));
+        return record;
+    }
+
+    /** attendance recovered (>= 75), task-completion null (non-blocking). */
+    private StudentMetricProjection recoveredMetrics() {
+        return new StudentMetricProjection(1L, 10L, new BigDecimal("95.00"), 0, null, 0,
+                new BigDecimal("90.00"), 0, 0);
+    }
+
+    @Test
+    void autoResolveElapsed_milestonesDone_triggerRecovered_nullTaskCompletion_autoClears() {
+        PipRecord record = elapsedRecord(1L, 1L, 10L, 99L);
+        when(pipRecordRepository.findByStatusInAndEndDateBefore(any(), any())).thenReturn(List.of(record));
+        when(pipMilestoneRepository.findByPipRecordId(1L)).thenReturn(List.of(doneMilestone(record)));
+        when(studentMetricsService.metricsFor(1L, 10L)).thenReturn(Optional.of(recoveredMetrics()));
+        when(pipRuleRepository.findByRuleCode(PipRuleCode.ATTENDANCE_LOW))
+                .thenReturn(Optional.of(rule(PipRuleCode.ATTENDANCE_LOW, "75.00")));
+        when(weeklyReviewService.hasUnsatisfactoryReviewSince(eq(1L), any())).thenReturn(false);
+
+        int resolved = service().autoResolveElapsed();
+
+        assertThat(resolved).isEqualTo(1);
+        assertThat(record.getStatus()).isEqualTo(PipStatus.CLEARED);
+        assertThat(record.getReviewedBy()).isNull();
+        verify(batchService).updatePipStatus(10L, 1L, BatchStudentStatus.ACTIVE);
+        verify(auditLogService).record(isNull(), eq("PIP_AUTO_CLEARED"), eq("PipRecord"), eq(1L), any(), any());
+        verify(notificationService, times(2)).enqueueAfterCommit(anyLong(), eq(NotificationChannel.IN_APP),
+                eq("PIP_AUTO_CLEARED"), any());
+    }
+
+    @Test
+    void autoResolveElapsed_concreteTaskCompletionBelowTarget_staysOpen() {
+        PipRecord record = elapsedRecord(1L, 1L, 10L, 99L);
+        when(pipRecordRepository.findByStatusInAndEndDateBefore(any(), any())).thenReturn(List.of(record));
+        when(pipMilestoneRepository.findByPipRecordId(1L)).thenReturn(List.of(doneMilestone(record)));
+        StudentMetricProjection lowCompletion = new StudentMetricProjection(1L, 10L,
+                new BigDecimal("90.00"), 0, new BigDecimal("40.00"), 0, new BigDecimal("90.00"), 0, 0);
+        when(studentMetricsService.metricsFor(1L, 10L)).thenReturn(Optional.of(lowCompletion));
+
+        int resolved = service().autoResolveElapsed();
+
+        assertThat(resolved).isZero();
+        assertThat(record.getStatus()).isEqualTo(PipStatus.IN_PROGRESS);
+        verify(batchService, never()).updatePipStatus(any(), any(), any());
+    }
+
+    @Test
+    void autoResolveElapsed_milestonesDoneButTriggerMetricStillFailing_doesNotAutoClear() {
+        // Attendance is still 0% — a premature "Verify" on the milestone must not be enough.
+        PipRecord record = elapsedRecord(1L, 1L, 10L, 99L);
+        when(pipRecordRepository.findByStatusInAndEndDateBefore(any(), any())).thenReturn(List.of(record));
+        when(pipMilestoneRepository.findByPipRecordId(1L)).thenReturn(List.of(doneMilestone(record)));
+        StudentMetricProjection stillFailing = new StudentMetricProjection(1L, 10L,
+                new BigDecimal("0.00"), 0, new BigDecimal("90.00"), 0, new BigDecimal("90.00"), 0, 0);
+        when(studentMetricsService.metricsFor(1L, 10L)).thenReturn(Optional.of(stillFailing));
+        when(pipRuleRepository.findByRuleCode(PipRuleCode.ATTENDANCE_LOW))
+                .thenReturn(Optional.of(rule(PipRuleCode.ATTENDANCE_LOW, "75.00")));
+        when(weeklyReviewService.hasUnsatisfactoryReviewSince(eq(1L), any())).thenReturn(false);
+
+        int resolved = service().autoResolveElapsed();
+
+        assertThat(resolved).isZero();
+        assertThat(record.getStatus()).isEqualTo(PipStatus.IN_PROGRESS);
+        verify(batchService, never()).updatePipStatus(any(), any(), any());
+    }
+
+    // --- reconcileSeededMilestones ---
+
+    @Test
+    void reconcileSeededMilestones_triggerRecovered_autoCompletesPendingSeededMilestone() {
+        PipRecord record = withinWindowRecord(1L, 1L, 10L, 99L);
+        PipMilestone seeded = seededMilestone(record, PipMilestoneStatus.PENDING);
+        when(pipRecordRepository.findByStatusIn(any())).thenReturn(List.of(record));
+        when(pipMilestoneRepository.findByPipRecordId(1L)).thenReturn(List.of(seeded));
+        when(studentMetricsService.metricsFor(1L, 10L)).thenReturn(Optional.of(recoveredMetrics()));
+        when(pipRuleRepository.findByRuleCode(PipRuleCode.ATTENDANCE_LOW))
+                .thenReturn(Optional.of(rule(PipRuleCode.ATTENDANCE_LOW, "75.00")));
+
+        int changed = service().reconcileSeededMilestones();
+
+        assertThat(changed).isEqualTo(1);
+        assertThat(seeded.getStatus()).isEqualTo(PipMilestoneStatus.COMPLETED);
+        assertThat(seeded.getVerifiedBy()).isNull();
+        verify(auditLogService).record(isNull(), eq("PIP_MILESTONE_AUTO_COMPLETED"), eq("PipMilestone"),
+                eq(1L), any(), any());
+    }
+
+    @Test
+    void reconcileSeededMilestones_triggerStillFailing_revertsPrematurelyVerifiedSeededMilestoneAndNotifiesPm() {
+        PipRecord record = withinWindowRecord(1L, 1L, 10L, 99L);
+        PipMilestone seeded = seededMilestone(record, PipMilestoneStatus.COMPLETED);
+        when(pipRecordRepository.findByStatusIn(any())).thenReturn(List.of(record));
+        when(pipMilestoneRepository.findByPipRecordId(1L)).thenReturn(List.of(seeded));
+        StudentMetricProjection stillFailing = new StudentMetricProjection(1L, 10L,
+                new BigDecimal("0.00"), 0, new BigDecimal("90.00"), 0, new BigDecimal("90.00"), 0, 0);
+        when(studentMetricsService.metricsFor(1L, 10L)).thenReturn(Optional.of(stillFailing));
+        when(pipRuleRepository.findByRuleCode(PipRuleCode.ATTENDANCE_LOW))
+                .thenReturn(Optional.of(rule(PipRuleCode.ATTENDANCE_LOW, "75.00")));
+
+        int changed = service().reconcileSeededMilestones();
+
+        assertThat(changed).isEqualTo(1);
+        assertThat(seeded.getStatus()).isEqualTo(PipMilestoneStatus.PENDING);
+        assertThat(seeded.getCompletedAt()).isNull();
+        verify(auditLogService).record(isNull(), eq("PIP_MILESTONE_AUTO_REVERTED"), eq("PipMilestone"),
+                eq(1L), any(), any());
+        verify(notificationService).enqueueAfterCommit(eq(99L), eq(NotificationChannel.IN_APP),
+                eq("PIP_MILESTONE_AUTO_REVERTED"), any());
+    }
+
+    @Test
+    void reconcileSeededMilestones_pmAddedMilestoneWithDifferentTitle_isNeverTouched() {
+        PipRecord record = withinWindowRecord(1L, 1L, 10L, 99L);
+        PipMilestone pmAdded = seededMilestone(record, PipMilestoneStatus.COMPLETED);
+        pmAdded.setTitle("Pair with your mentor twice this week");
+        when(pipRecordRepository.findByStatusIn(any())).thenReturn(List.of(record));
+        when(pipMilestoneRepository.findByPipRecordId(1L)).thenReturn(List.of(pmAdded));
+
+        int changed = service().reconcileSeededMilestones();
+
+        assertThat(changed).isZero();
+        assertThat(pmAdded.getStatus()).isEqualTo(PipMilestoneStatus.COMPLETED);
+        verify(auditLogService, never()).record(any(), eq("PIP_MILESTONE_AUTO_REVERTED"), any(), any(), any(), any());
+    }
+
+    // --- nudgeEarlyRecoveries ---
+
+    @Test
+    void nudgeEarlyRecoveries_allCriteriaMetWithinWindow_notifiesPmOnceThenNoOp() {
+        PipRecord record = withinWindowRecord(1L, 1L, 10L, 99L);
+        when(pipRecordRepository.findByStatusInAndEndDateGreaterThanEqual(any(), any()))
+                .thenReturn(List.of(record));
+        when(pipMilestoneRepository.findByPipRecordId(1L))
+                .thenReturn(List.of(seededMilestone(record, PipMilestoneStatus.COMPLETED)));
+        when(studentMetricsService.metricsFor(1L, 10L)).thenReturn(Optional.of(recoveredMetrics()));
+        when(pipRuleRepository.findByRuleCode(PipRuleCode.ATTENDANCE_LOW))
+                .thenReturn(Optional.of(rule(PipRuleCode.ATTENDANCE_LOW, "75.00")));
+        when(weeklyReviewService.hasUnsatisfactoryReviewSince(eq(1L), any())).thenReturn(false);
+
+        int first = service().nudgeEarlyRecoveries();
+        int second = service().nudgeEarlyRecoveries(); // early_clear_nudged_at now set -> skipped
+
+        assertThat(first).isEqualTo(1);
+        assertThat(second).isZero();
+        assertThat(record.getEarlyClearNudgedAt()).isNotNull();
+        verify(notificationService, times(1)).enqueueAfterCommit(eq(99L), eq(NotificationChannel.IN_APP),
+                eq("PIP_READY_TO_CLEAR"), any());
+    }
+
+    @Test
+    void nudgeEarlyRecoveries_triggerMetricStillFailing_doesNotNudge() {
+        PipRecord record = withinWindowRecord(1L, 1L, 10L, 99L);
+        when(pipRecordRepository.findByStatusInAndEndDateGreaterThanEqual(any(), any()))
+                .thenReturn(List.of(record));
+        when(pipMilestoneRepository.findByPipRecordId(1L))
+                .thenReturn(List.of(seededMilestone(record, PipMilestoneStatus.COMPLETED)));
+        StudentMetricProjection stillFailing = new StudentMetricProjection(1L, 10L,
+                new BigDecimal("10.00"), 0, new BigDecimal("90.00"), 0, new BigDecimal("90.00"), 0, 0);
+        when(studentMetricsService.metricsFor(1L, 10L)).thenReturn(Optional.of(stillFailing));
+        when(pipRuleRepository.findByRuleCode(PipRuleCode.ATTENDANCE_LOW))
+                .thenReturn(Optional.of(rule(PipRuleCode.ATTENDANCE_LOW, "75.00")));
+        when(weeklyReviewService.hasUnsatisfactoryReviewSince(eq(1L), any())).thenReturn(false);
+
+        int nudged = service().nudgeEarlyRecoveries();
+
+        assertThat(nudged).isZero();
+        assertThat(record.getEarlyClearNudgedAt()).isNull();
+        verify(notificationService, never()).enqueueAfterCommit(any(), any(), eq("PIP_READY_TO_CLEAR"), any());
     }
 
     @Test

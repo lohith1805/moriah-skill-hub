@@ -214,6 +214,36 @@ class PipServiceTest {
     }
 
     @Test
+    void review_clearedWithNullTaskCompletion_succeeds_noSprintTasksIsNonBlocking() {
+        PipRecord record = openRecord(1L, PipStatus.IN_PROGRESS);
+        when(pipRecordRepository.findById(1L)).thenReturn(Optional.of(record));
+        StudentMetricProjection noTasks = new StudentMetricProjection(1L, 10L,
+                new BigDecimal("90.00"), 0, null, 0, new BigDecimal("90.00"), 0, 0);
+        when(studentMetricsService.metricsFor(1L, 10L)).thenReturn(Optional.of(noTasks));
+        when(pipMilestoneRepository.findByPipRecordId(1L)).thenReturn(List.of());
+        when(userRepository.getReferenceById(9L)).thenReturn(user(9L, "pm-uuid"));
+
+        var response = service().review(9L, 1L, new ReviewPipRequest(PipStatus.CLEARED, "Attendance recovered."));
+
+        assertThat(response.status()).isEqualTo(PipStatus.CLEARED);
+        verify(batchService).updatePipStatus(10L, 1L, BatchStudentStatus.ACTIVE);
+    }
+
+    @Test
+    void review_clearedWithNoMetricsRow_succeeds_nothingToMeasureIsNonBlocking() {
+        PipRecord record = openRecord(1L, PipStatus.IN_PROGRESS);
+        when(pipRecordRepository.findById(1L)).thenReturn(Optional.of(record));
+        when(studentMetricsService.metricsFor(1L, 10L)).thenReturn(Optional.empty());
+        when(pipMilestoneRepository.findByPipRecordId(1L)).thenReturn(List.of());
+        when(userRepository.getReferenceById(9L)).thenReturn(user(9L, "pm-uuid"));
+
+        var response = service().review(9L, 1L, new ReviewPipRequest(PipStatus.CLEARED, "Recovered."));
+
+        assertThat(response.status()).isEqualTo(PipStatus.CLEARED);
+        verify(batchService).updatePipStatus(10L, 1L, BatchStudentStatus.ACTIVE);
+    }
+
+    @Test
     void review_clearedWithTaskCompletionBelow85_throwsClearanceCriteriaNotMet() {
         PipRecord record = openRecord(1L, PipStatus.IN_PROGRESS);
         when(pipRecordRepository.findById(1L)).thenReturn(Optional.of(record));

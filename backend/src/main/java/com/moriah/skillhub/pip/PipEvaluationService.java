@@ -243,11 +243,14 @@ public class PipEvaluationService {
 
     /** The nightly job's close pass (feature 17 gap): every still-open PIP whose 15-day window
      * has fully elapsed is auto-CLEARED if the student now meets the exact criteria {@code POST
-     * /pip/{id}/review} enforces (task completion ≥ target, no unsatisfactory review since start)
-     * AND every recovery milestone is done — the "the PM forgot but the student recovered" safety
-     * net. If the window elapsed and the student has NOT recovered, the record stays open (a PM
-     * still needs to TERMINATE / REASSIGN) and the PM gets one escalation notice the day after
-     * the window closes. Never auto-terminates. */
+     * /pip/{id}/review} enforces (task completion ≥ target, no unsatisfactory review since start),
+     * every recovery milestone is done, AND {@link #triggerRuleStillTrips the metric that raised
+     * this PIP has genuinely recovered} — the last check is what stops a PM's premature "Verify"
+     * at 0% attendance from auto-clearing a student who never recovered. If the window elapsed
+     * and the student has NOT recovered, the record stays open (a PM still needs to TERMINATE /
+     * REASSIGN) and the PM gets one escalation notice the day after the window closes. Never
+     * auto-terminates. Runs after {@link #reconcileSeededMilestones}, which has already put the
+     * seeded milestone's state in sync with its metric. */
     @Transactional
     public int autoResolveElapsed() {
         LocalDate today = LocalDate.now(ZoneId.of(jobsZone));
@@ -257,19 +260,22 @@ public class PipEvaluationService {
             List<PipMilestone> milestones = pipMilestoneRepository.findByPipRecordId(record.getId());
             boolean allMilestonesDone = !milestones.isEmpty()
                     && milestones.stream().allMatch(m -> m.getStatus() == PipMilestoneStatus.COMPLETED);
-            boolean taskOk = studentMetricsService.metricsFor(record.getUser().getId(), record.getBatch().getId())
-                    .map(m -> m.taskCompletionPercent() != null && m.taskCompletionPercent()
-                            .compareTo(BigDecimal.valueOf(pipClearanceProperties.minTaskCompletionPercent())) >= 0)
-                    .orElse(false);
+            StudentMetricProjection metrics = studentMetricsService
+                    .metricsFor(record.getUser().getId(), record.getBatch().getId()).orElse(null);
+            // Null task-completion (no metrics row, or no sprint tasks in the window) is
+            // non-blocking — mirrors PipService.requireClearanceCriteria. A concrete percent
+            // below target still blocks.
+            boolean taskOk = taskCompletionOk(metrics);
             boolean reviewOk = !weeklyReviewService.hasUnsatisfactoryReviewSince(
                     record.getUser().getId(), record.getStartDate());
+            boolean triggerResolved = !triggerRuleStillTrips(record, metrics);
 
-            if (allMilestonesDone && taskOk && reviewOk) {
+            if (allMilestonesDone && taskOk && reviewOk && triggerResolved) {
                 PipStatus previous = record.getStatus();
                 record.setStatus(PipStatus.CLEARED);
                 record.setReviewedBy(null); // system, not a PM
-                record.setReviewNotes("Auto-cleared: 15-day window elapsed with every recovery milestone complete "
-                        + "and all clearance criteria met.");
+                record.setReviewNotes("Auto-cleared: 15-day window elapsed with every recovery milestone complete, "
+                        + "all clearance criteria met, and the trigger metric recovered.");
                 record.setOutcomeAt(Instant.now());
                 batchService.updatePipStatus(record.getBatch().getId(), record.getUser().getId(),
                         BatchStudentStatus.ACTIVE);
@@ -283,6 +289,134 @@ public class PipEvaluationService {
             }
         }
         return resolved;
+    }
+
+    /** Nightly pass, runs before {@link #autoResolveElapsed}: keep the one auto-seeded recovery
+     * milestone honest against the metric that raised the PIP. The seeded milestone is the row
+     * {@link #fire} / {@link #createManual} create from {@code ruleCode.milestoneTitle()} —
+     * identified back by that exact title, since PM-added milestones carry PM-chosen titles and
+     * must never be auto-touched. When the trigger metric has recovered the seeded milestone is
+     * auto-completed ({@code verifiedBy = null}, i.e. by the system); when the metric is still
+     * failing but the milestone has been marked COMPLETED anyway (a careless or optimistic PM
+     * "Verify"), it is reverted to PENDING and the PM is notified. This is what makes the
+     * window-elapsed auto-clear trustworthy without a human in the loop. */
+    @Transactional
+    public int reconcileSeededMilestones() {
+        int changed = 0;
+        for (PipRecord record : pipRecordRepository.findByStatusIn(OPEN_STATUSES)) {
+            String seededTitle = record.getRuleCode().milestoneTitle();
+            PipMilestone seeded = pipMilestoneRepository.findByPipRecordId(record.getId()).stream()
+                    .filter(m -> seededTitle.equals(m.getTitle()))
+                    .findFirst().orElse(null);
+            if (seeded == null) {
+                continue;
+            }
+            StudentMetricProjection metrics = studentMetricsService
+                    .metricsFor(record.getUser().getId(), record.getBatch().getId()).orElse(null);
+            boolean stillTrips = triggerRuleStillTrips(record, metrics);
+
+            if (!stillTrips && seeded.getStatus() == PipMilestoneStatus.PENDING) {
+                seeded.setStatus(PipMilestoneStatus.COMPLETED);
+                seeded.setCompletedAt(Instant.now());
+                seeded.setVerifiedBy(null);
+                auditLogService.record(null, "PIP_MILESTONE_AUTO_COMPLETED", "PipMilestone", seeded.getId(),
+                        PipMilestoneStatus.PENDING, PipMilestoneStatus.COMPLETED);
+                changed++;
+            } else if (stillTrips && seeded.getStatus() == PipMilestoneStatus.COMPLETED) {
+                seeded.setStatus(PipMilestoneStatus.PENDING);
+                seeded.setCompletedAt(null);
+                seeded.setVerifiedBy(null);
+                auditLogService.record(null, "PIP_MILESTONE_AUTO_REVERTED", "PipMilestone", seeded.getId(),
+                        PipMilestoneStatus.COMPLETED, PipMilestoneStatus.PENDING);
+                Map<String, Object> payload = Map.of(
+                        "studentUuid", record.getUser().getUuid(),
+                        "studentName", record.getUser().getFullName(),
+                        "ruleCode", record.getRuleCode().name(),
+                        "milestoneTitle", seeded.getTitle());
+                notificationService.enqueueAfterCommit(record.getBatch().getPm().getId(),
+                        NotificationChannel.IN_APP, "PIP_MILESTONE_AUTO_REVERTED", payload);
+                changed++;
+            }
+        }
+        return changed;
+    }
+
+    /** Nightly pass, runs after {@link #autoResolveElapsed}: a still-open PIP whose window has NOT
+     * elapsed but which already meets every clearance criterion — nudge the PM once so they can
+     * clear it early instead of waiting out the full 15 days. The PM still makes the call ({@code
+     * POST /pip/{id}/review}); this only surfaces the opportunity. {@code early_clear_nudged_at}
+     * makes it a one-time notice, not a nightly repeat. */
+    @Transactional
+    public int nudgeEarlyRecoveries() {
+        LocalDate today = LocalDate.now(ZoneId.of(jobsZone));
+        int nudged = 0;
+        for (PipRecord record : pipRecordRepository
+                .findByStatusInAndEndDateGreaterThanEqual(OPEN_STATUSES, today)) {
+            if (record.getEarlyClearNudgedAt() != null) {
+                continue;
+            }
+            List<PipMilestone> milestones = pipMilestoneRepository.findByPipRecordId(record.getId());
+            boolean allMilestonesDone = !milestones.isEmpty()
+                    && milestones.stream().allMatch(m -> m.getStatus() == PipMilestoneStatus.COMPLETED);
+            if (!allMilestonesDone) {
+                continue;
+            }
+            StudentMetricProjection metrics = studentMetricsService
+                    .metricsFor(record.getUser().getId(), record.getBatch().getId()).orElse(null);
+            boolean ready = taskCompletionOk(metrics)
+                    && !weeklyReviewService.hasUnsatisfactoryReviewSince(
+                            record.getUser().getId(), record.getStartDate())
+                    && !triggerRuleStillTrips(record, metrics);
+            if (!ready) {
+                continue;
+            }
+            record.setEarlyClearNudgedAt(Instant.now());
+            auditLogService.record(null, "PIP_READY_TO_CLEAR", "PipRecord", record.getId(),
+                    null, record.getStatus());
+            Map<String, Object> payload = Map.of(
+                    "studentUuid", record.getUser().getUuid(),
+                    "studentName", record.getUser().getFullName(),
+                    "ruleCode", record.getRuleCode().name());
+            notificationService.enqueueAfterCommit(record.getBatch().getPm().getId(),
+                    NotificationChannel.IN_APP, "PIP_READY_TO_CLEAR", payload);
+            nudged++;
+        }
+        return nudged;
+    }
+
+    /** Null task-completion — no metrics row, or a window with no sprint tasks — is non-blocking:
+     * an attendance- or review-triggered PIP is not held open by a figure that can never be
+     * computed. A concrete percent below target still blocks. Shared by every pass and {@code
+     * PipService.requireClearanceCriteria} so they agree. */
+    private boolean taskCompletionOk(StudentMetricProjection metrics) {
+        return metrics == null || metrics.taskCompletionPercent() == null
+                || metrics.taskCompletionPercent()
+                        .compareTo(BigDecimal.valueOf(pipClearanceProperties.minTaskCompletionPercent())) >= 0;
+    }
+
+    /** Has the specific rule that raised this PIP recovered for the student? {@code
+     * REVIEW_FAILED}'s evaluator reads a lifetime-cumulative count that never falls once a bad
+     * review is on record, so for "is this PIP's own concern resolved?" it is asked directly
+     * whether any unsatisfactory review has landed since the PIP started. Every other rule is
+     * re-run through its own evaluator against the current metrics and threshold. Conservative on
+     * missing data: no metrics row -> still tripping; rule retired / no evaluator -> nothing left
+     * to hold the record open on. */
+    private boolean triggerRuleStillTrips(PipRecord record, StudentMetricProjection metrics) {
+        if (record.getRuleCode() == PipRuleCode.REVIEW_FAILED) {
+            return weeklyReviewService.hasUnsatisfactoryReviewSince(
+                    record.getUser().getId(), record.getStartDate());
+        }
+        if (metrics == null) {
+            return true;
+        }
+        PipRule rule = pipRuleRepository.findByRuleCode(record.getRuleCode()).orElse(null);
+        PipRuleEvaluator evaluator = evaluators.stream()
+                .filter(e -> e.ruleCode() == record.getRuleCode())
+                .findFirst().orElse(null);
+        if (rule == null || evaluator == null) {
+            return false;
+        }
+        return evaluator.evaluate(metrics, rule).isPresent();
     }
 
     /** {@code PIP_AUTO_CLEARED} -> student + PM; {@code PIP_WINDOW_ELAPSED} -> PM only. */

@@ -228,7 +228,11 @@ public class PipService {
 
         int taskTarget = pipClearanceProperties.minTaskCompletionPercent();
         int attTarget = pipClearanceProperties.minAttendancePercent();
-        boolean taskMet = taskCompletion != null && taskCompletion.compareTo(BigDecimal.valueOf(taskTarget)) >= 0;
+        // A null task-completion percent (no sprint tasks assigned in the window, or no metrics row
+        // yet) is non-blocking: a student on PIP for attendance or a failed review with no sprint
+        // work to do is not held open by a figure that can never be computed. A concrete percent
+        // below target still blocks. Kept identical to requireClearanceCriteria / autoResolveElapsed.
+        boolean taskMet = taskCompletion == null || taskCompletion.compareTo(BigDecimal.valueOf(taskTarget)) >= 0;
         boolean attMet = attendance != null && attendance.compareTo(BigDecimal.valueOf(attTarget)) >= 0;
         boolean overdueCleared = overdue != null && overdue == 0;
         boolean weeklyReviewOk = !weeklyReviewService.hasUnsatisfactoryReviewSince(
@@ -328,13 +332,18 @@ public class PipService {
      * {@code CLEARED} permanently unreachable for any student who ever had one unsatisfactory
      * review, even long before this PIP started. */
     private void requireClearanceCriteria(PipRecord record) {
-        StudentMetricProjection metrics = studentMetricsService
+        // A null task-completion percent — no metrics row yet, or a row whose window held no sprint
+        // tasks — is non-blocking: the student has no sprint work the gate can measure, so an
+        // attendance- or review-triggered PIP is not held open by it. A concrete percent below
+        // target still blocks. Kept identical to buildProgress / autoResolveElapsed.
+        BigDecimal taskCompletion = studentMetricsService
                 .metricsFor(record.getUser().getId(), record.getBatch().getId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.PIP_CLEARANCE_CRITERIA_NOT_MET));
+                .map(StudentMetricProjection::taskCompletionPercent)
+                .orElse(null);
 
         BigDecimal minCompletion = BigDecimal.valueOf(pipClearanceProperties.minTaskCompletionPercent());
-        boolean taskCompletionMet = metrics.taskCompletionPercent() != null
-                && metrics.taskCompletionPercent().compareTo(minCompletion) >= 0;
+        boolean taskCompletionMet = taskCompletion == null
+                || taskCompletion.compareTo(minCompletion) >= 0;
         boolean reviewPassed = !weeklyReviewService.hasUnsatisfactoryReviewSince(
                 record.getUser().getId(), record.getStartDate());
         if (!taskCompletionMet || !reviewPassed) {

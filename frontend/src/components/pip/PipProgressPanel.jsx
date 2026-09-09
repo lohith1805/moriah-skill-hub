@@ -127,7 +127,7 @@ export default function PipProgressPanel({
                 </p>
                 <p className="text-xs text-ink-500 mt-0.5">
                   {g.current == null
-                    ? "No data yet"
+                    ? (g.met ? "No sprint tasks in this window — not blocking" : "No data yet")
                     : typeof g.current === "number"
                       ? `Current ${g.current}${g.unit || ""}${g.target != null ? ` · target ${g.key === "overdue" ? "" : "≥ "}${g.target}${g.unit || ""}` : ""}`
                       : g.current}

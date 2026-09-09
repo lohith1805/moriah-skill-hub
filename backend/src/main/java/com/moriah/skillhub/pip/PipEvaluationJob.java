@@ -44,10 +44,13 @@ public class PipEvaluationJob {
         JobRun run = jobRunTracker.start(JOB_NAME);
         try {
             int triggered = pipEvaluationService.evaluate();
+            int reconciled = pipEvaluationService.reconcileSeededMilestones();
             int autoCleared = pipEvaluationService.autoResolveElapsed();
-            jobRunTracker.succeed(run.getId(), triggered + autoCleared);
-            log.info("[{}] triggered {} new PIP record(s), auto-cleared {} elapsed record(s)",
-                    JOB_NAME, triggered, autoCleared);
+            int nudged = pipEvaluationService.nudgeEarlyRecoveries();
+            jobRunTracker.succeed(run.getId(), triggered + reconciled + autoCleared + nudged);
+            log.info("[{}] triggered {} new PIP record(s), reconciled {} seeded milestone(s), "
+                    + "auto-cleared {} elapsed record(s), nudged {} early recovery(ies)",
+                    JOB_NAME, triggered, reconciled, autoCleared, nudged);
         } catch (Exception e) {
             log.error("[{}] failed", JOB_NAME, e);
             jobRunTracker.fail(run.getId(), e.getMessage());

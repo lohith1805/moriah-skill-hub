@@ -83,6 +83,20 @@ const TEMPLATE_RENDERERS = {
       `Open PIP Management to terminate or reassign.`,
     tone: "warning",
   }),
+  PIP_MILESTONE_AUTO_REVERTED: (p) => ({
+    title: "Recovery task re-opened",
+    body:
+      `"${p.milestoneTitle || "A recovery task"}" for ${p.studentName || "a student"} was marked back as pending — ` +
+      `the metric behind it hasn't recovered yet, so verifying it early won't clear the PIP.`,
+    tone: "warning",
+  }),
+  PIP_READY_TO_CLEAR: (p) => ({
+    title: "PIP ready to clear early",
+    body:
+      `${p.studentName || "A student"} has met every recovery criterion before their PIP window ends. ` +
+      `Open PIP Management to clear it now if you agree.`,
+    tone: "success",
+  }),
   PAYSLIP_READY: (p) => ({
     title: "Payslip ready",
     body: `Your payslip for ${p.periodMonth || "the latest period"} is ready` +
